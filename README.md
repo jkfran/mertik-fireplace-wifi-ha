@@ -1,22 +1,46 @@
-# Mertik Maxitrol for Home Assistant
-- Please use on own risk, I take no responsibility.
+# Mertik Maxitrol Fireplace Integration for Home Assistant
 
-## Requirements
-- A Mertik Maxitrol wifi module that is connected to your local wifi.
+Welcome to the Mertik Maxitrol Fireplace Integration for Home Assistant, an innovative solution designed to seamlessly integrate your fireplace into your smart home ecosystem. This custom component allows you to control and monitor your fireplace directly from Home Assistant, enhancing your home's comfort and convenience. 
 
-## Installation
-Files are installed by downloading the files to your custom_components folder directly from here or by adding it via HACS.
+## **Compatibility**
 
-Afterwards you can go to the Integrations sections and click the add integration button. Search for Mertik and choose the newly added Mertik integration.
+This integration is designed to be universally compatible with fireplaces that utilize the Mertik Maxitrol wifi module and are controllable via the following applications:
 
-It will search your local network for the module and add the entities.
+- MyFire
+- Trimline Fires
+- RAISfire
+- Gazco MyFire
+- Thermocet International
+- Fire Connects
+- ITALKERO Fires
+- Signi Fires
+- SAFIRE
+- attika Fire
+- Ortal Heating Solutions
 
-## Todo
-- Move mertik.py to a python module with own repo
-- Change I/O calls to async I/O calls
-- Add to HACS repository for even easier installation
-- Move Entities to a single Device / Platform
-- Implement Zero Conf / autodetect IP
+This broad compatibility ensures that the majority of users with these apps can benefit from integrating their fireplace with Home Assistant.
 
-## Changelog
-- 2023-01-15 Initial version
+## **Requirements**
+
+- A compatible fireplace equipped with a Mertik Maxitrol wifi module that is connected to your local Wi-Fi network.
+
+## **Installation Guide**
+
+### **Method 1: Manual Installation**
+1. **Download Files**: Clone or download the `custom_components` folder from this repository.
+2. **Copy to Home Assistant**: Transfer the downloaded files to your Home Assistant's `custom_components` directory.
+3. **Restart Home Assistant**: Ensure the new integration is recognized by restarting Home Assistant.
+
+### **Method 2: HACS (Home Assistant Community Store)**
+1. **Add Repository**: In HACS, navigate to "Integrations" then click on the "+ Explore & Add Integrations" button. Use the URL of this GitHub repository to add it as a custom repository.
+2. **Install Integration**: Search for "Mertik Maxitrol Fireplace Integration" and click "Install".
+
+### **Configuration**
+After installation by either method, proceed to configure the integration:
+1. Navigate to **Configuration > Integrations** in Home Assistant.
+2. Click the **+ Add Integration** button and search for **Mertik Maxitrol**.
+3. Select the integration and Home Assistant will automatically search your local network for the module, adding the entities to your system.
+
+## **Disclaimer**
+
+Please use this integration at your own risk. The developers take no responsibility for any issues that may arise from the use of this software.
