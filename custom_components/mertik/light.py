@@ -33,15 +33,25 @@ class MertikLightEntity(CoordinatorEntity, LightEntity):
 
     @property
     def brightness(self):
-        """Return true if the device is on."""
+        """Return the brightness of the light."""
         return self._dataservice.light_brightness
 
     async def async_turn_on(self, **kwargs):
-        """Turn the entity on."""
-        await(self.hass.async_add_executor_job(self._dataservice.set_light_brightness, int(kwargs.get(ATTR_BRIGHTNESS))))
+        """Turn the entity on. Adjust brightness if provided."""
+        # Check if brightness adjustment is requested.
+        if ATTR_BRIGHTNESS in kwargs:
+            brightness = kwargs[ATTR_BRIGHTNESS]
+            await self.hass.async_add_executor_job(
+                self._dataservice.set_light_brightness, brightness
+            )
+        elif not self.is_on:
+            # If no brightness adjustment is requested and the light is off, just turn it on.
+            await self.hass.async_add_executor_job(self._dataservice.light_on)
+
+        # Notify Home Assistant that the data has been updated.
         self._dataservice.async_set_updated_data(None)
 
     async def async_turn_off(self, **kwargs):
         """Turn the entity off."""
-        await(self.hass.async_add_executor_job(self._dataservice.light_off))
+        await self.hass.async_add_executor_job(self._dataservice.light_off)
         self._dataservice.async_set_updated_data(None)
