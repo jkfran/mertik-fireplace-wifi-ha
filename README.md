@@ -4,7 +4,15 @@ Welcome to the Mertik Maxitrol Fireplace Integration for Home Assistant, an inno
 
 ## **Compatibility**
 
-This integration is designed to be universally compatible with fireplaces that utilize the Mertik Maxitrol wifi module and are controllable via the following applications:
+This integration is designed to be compatible with fireplaces that utilize the Mertik Maxitrol WiFi modules
+
+| Part No.     	| Compatible? 	| Auto discovery?* 	|
+|--------------	|-------------	|------------------	|
+| B6R-WME      	| Yes         	| Yes              	|
+| B6R-W2BE-0   	| Yes         	| Yes              	|
+| B6R-WWN 	    | Yes         	| No / Not sure    	|
+
+Fireplaces using these modules are usually controllable via the following iOS/Android applications:
 
 - MyFire
 - Trimline Fires
@@ -18,7 +26,6 @@ This integration is designed to be universally compatible with fireplaces that u
 - attika Fire
 - Ortal Heating Solutions
 
-This broad compatibility ensures that the majority of users with these apps can benefit from integrating their fireplace with Home Assistant.
 
 ## **Requirements**
 
@@ -39,7 +46,7 @@ This broad compatibility ensures that the majority of users with these apps can 
 After installation by either method, proceed to configure the integration:
 1. Navigate to **Configuration > Integrations** in Home Assistant.
 2. Click the **+ Add Integration** button and search for **Mertik Maxitrol**.
-3. Select the integration and Home Assistant will automatically search your local network for the module, adding the entities to your system.
+3. Select the integration and Home Assistant will automatically search your local network for the module, adding the entities to your system. If auto discovery is not working for you, figure out the IP (look in the WLAN client list on your Internet Router) and fill it in manually.
 
 ## **Disclaimer**
 
