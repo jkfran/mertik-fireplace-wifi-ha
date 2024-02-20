@@ -16,6 +16,7 @@ __all__ = []
 send_command_prefix = "0233303330333033303830"
 process_status_prefixes = ("303030300003", "030300000003")
 
+
 class Mertik:
     def __init__(self, ip):
         self.ip = ip
@@ -110,15 +111,33 @@ class Mertik:
         self.__sendCommand(msg)
 
     def set_light_brightness(self, brightness) -> None:
-        if brightness is None:
-            self.light_on()
-            return
+        # Normalizing brightness from Home Assistant's scale (1-255) to 0-100 scale for easier calculation.
+        normalized_brightness = (brightness - 1) / 254 * 100
 
-        l = 36 + round((brightness / 255) * 10)
-        if l >= 40:
-            l += 1 # For some reason 40 should be skipped..?
+        # Mapping the normalized brightness to the device's scale.
+        # Assuming the device's scale somewhat linearly correlates with the normalized percentage.
+        if normalized_brightness == 100:
+            # Maximum brightness.
+            device_code = "4642"
+        elif normalized_brightness == 0:
+            # Minimum brightness.
+            device_code = "3633"
+        else:
+            # Intermediate brightness - trying to mimic the previous logic.
+            # Calculate an adjusted value based on the percentage.
+            l = 36 + round(normalized_brightness / 100 * 8)
 
-        msg = "33304645" + str(l) + str(l) + "030a"
+            # For some reason this level is not allowed
+            if l >= 40:
+                l += 1
+
+            # Ensuring the adjusted value is encoded as expected by the device.
+            device_code = f"{l:02d}{l:02d}"
+
+        # Construct the command with the device's code.
+        msg = f"33304645{device_code}03"
+
+        # Send the command to the device.
         self.__sendCommand(msg)
 
     def set_eco(self):
@@ -201,8 +220,10 @@ class Mertik:
         self._light_on = self.__fromBitStatus(statusBits, 13)
 
         # Convert the range 100 -> 251 to 0 -> 255
-        self._light_brightness = round(((int("0x" + statusStr[20:22], 0) - 100) / 151) * 255)
-        
+        self._light_brightness = round(
+            ((int("0x" + statusStr[20:22], 0) - 100) / 151) * 255
+        )
+
         if self._light_brightness < 0 or not self._light_on:
             self._light_brightness = 0
 
