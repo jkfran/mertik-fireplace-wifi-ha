@@ -1,0 +1,14 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "name": "Donner un nom au foyer",
+          "host": "Adresse IP du controleur du foyer"
+        },
+        "description": "Choisir un appareil.",
+        "title": "Appareil"
+      }
+    }
+  }
+}
