@@ -9,6 +9,7 @@ from .mertik import Mertik
 
 _LOGGER = logging.getLogger(__name__)
 OPTIMISTIC_ON_SECONDS = 20
+OPTIMISTIC_OFF_SECONDS = 20
 
 
 class MertikDataCoordinator(DataUpdateCoordinator):
@@ -25,18 +26,29 @@ class MertikDataCoordinator(DataUpdateCoordinator):
         )
         self.mertik = mertik
         self._optimistic_on_until = None
+        self._optimistic_off_until = None
 
     @property
     def is_on(self) -> bool:
+        now = dt_util.utcnow()
+        if self._optimistic_off_until is not None and now < self._optimistic_off_until:
+            return False
         if self.mertik.is_on or self.mertik.is_igniting:
             return True
         if self._optimistic_on_until is None:
             return False
-        return dt_util.utcnow() < self._optimistic_on_until
+        return now < self._optimistic_on_until
 
     def mark_optimistic_on(self) -> None:
+        self._optimistic_off_until = None
         self._optimistic_on_until = dt_util.utcnow() + timedelta(
             seconds=OPTIMISTIC_ON_SECONDS
+        )
+
+    def mark_optimistic_off(self) -> None:
+        self._optimistic_on_until = None
+        self._optimistic_off_until = dt_util.utcnow() + timedelta(
+            seconds=OPTIMISTIC_OFF_SECONDS
         )
 
     def ignite_fireplace(self):
@@ -44,6 +56,7 @@ class MertikDataCoordinator(DataUpdateCoordinator):
 
     def guard_flame_off(self):
         self._optimistic_on_until = None
+        self._optimistic_off_until = None
         self.mertik.guard_flame_off()
 
     @property
