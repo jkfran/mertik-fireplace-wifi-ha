@@ -1,12 +1,14 @@
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-
+from datetime import timedelta
 import logging
 
-_LOGGER = logging.getLogger(__name__)
-
-from datetime import timedelta
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util import dt as dt_util
 
 from .mertik import Mertik
+
+
+_LOGGER = logging.getLogger(__name__)
+OPTIMISTIC_ON_SECONDS = 10
 
 
 class MertikDataCoordinator(DataUpdateCoordinator):
@@ -22,15 +24,26 @@ class MertikDataCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=10),
         )
         self.mertik = mertik
+        self._optimistic_on_until = None
 
     @property
     def is_on(self) -> bool:
-        return self.mertik.is_on or self.mertik.is_igniting
+        if self.mertik.is_on or self.mertik.is_igniting:
+            return True
+        if self._optimistic_on_until is None:
+            return False
+        return dt_util.utcnow() < self._optimistic_on_until
+
+    def mark_optimistic_on(self) -> None:
+        self._optimistic_on_until = dt_util.utcnow() + timedelta(
+            seconds=OPTIMISTIC_ON_SECONDS
+        )
 
     def ignite_fireplace(self):
         self.mertik.ignite_fireplace()
 
     def guard_flame_off(self):
+        self._optimistic_on_until = None
         self.mertik.guard_flame_off()
 
     @property

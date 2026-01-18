@@ -38,6 +38,7 @@ class MertikOnOffSwitchEntity(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs):
         await( self.hass.async_add_executor_job(self._dataservice.ignite_fireplace ))
+        self._dataservice.mark_optimistic_on()
         self._dataservice.async_set_updated_data(None)
 
     async def async_turn_off(self, **kwargs):
