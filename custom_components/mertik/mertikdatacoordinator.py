@@ -8,7 +8,7 @@ from .mertik import Mertik
 
 
 _LOGGER = logging.getLogger(__name__)
-OPTIMISTIC_ON_SECONDS = 10
+OPTIMISTIC_ON_SECONDS = 20
 
 
 class MertikDataCoordinator(DataUpdateCoordinator):
