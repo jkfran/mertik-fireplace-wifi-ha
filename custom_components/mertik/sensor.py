@@ -1,6 +1,6 @@
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 
 from homeassistant.const import UnitOfTemperature
 
@@ -20,9 +20,6 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     async_add_entities(entities)
 
-    hass.async_create_task(
-        hass.config_entries.async_forward_entry_setups(entry, ["light"])
-    )
 
 
 class MertikAmbientTemperatureSensorEntity(CoordinatorEntity, SensorEntity):
@@ -30,14 +27,10 @@ class MertikAmbientTemperatureSensorEntity(CoordinatorEntity, SensorEntity):
         super().__init__(dataservice)
         self._dataservice = dataservice
         self._attr_name = name + " Ambient Temperature"
-        self._device_class = "temperature"
+        self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_unique_id = entry_id + "-AmbientTemperature"
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
 
     @property
-    def state(self):
+    def native_value(self):
         return self._dataservice.ambient_temperature
-
-    @property
-    def unit_of_measurement(self) -> str:
-        """Return the unit of measurement."""
-        return UnitOfTemperature.CELSIUS

@@ -22,9 +22,6 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     async_add_entities(entities)
 
-    hass.async_create_task(
-        hass.config_entries.async_forward_entry_setups(entry, ["number"])
-    )
 
 
 class MertikOnOffSwitchEntity(CoordinatorEntity, SwitchEntity):

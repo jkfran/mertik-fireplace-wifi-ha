@@ -1,15 +1,8 @@
 from homeassistant import config_entries, core
-
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-
-from homeassistant.exceptions import ConfigEntryAuthFailed, Unauthorized
-
-from .const import DOMAIN
-
 from homeassistant.const import CONF_HOST
 
+from .const import DOMAIN
 from .mertik import Mertik
-
 from .mertikdatacoordinator import MertikDataCoordinator
 
 
@@ -24,9 +17,9 @@ async def async_setup_entry(
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
-    # Forward the setup to the sensor platform.
-    hass.async_create_task(
-        hass.config_entries.async_forward_entry_setups(entry, ["switch"])
+    # Forward setup to all platforms directly.
+    await hass.config_entries.async_forward_entry_setups(
+        entry, ["switch", "number", "sensor", "light"]
     )
 
     return True
@@ -34,3 +27,15 @@ async def async_setup_entry(
 
 async def async_setup(hass: core.HomeAssistant, config: dict) -> bool:
     return True
+
+
+async def async_unload_entry(
+    hass: core.HomeAssistant, entry: config_entries.ConfigEntry
+) -> bool:
+    """Unload a config entry."""
+    unload_ok = await hass.config_entries.async_unload_platforms(
+        entry, ["switch", "number", "sensor", "light"]
+    )
+    if unload_ok:
+        hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+    return unload_ok
