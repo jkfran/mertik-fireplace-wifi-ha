@@ -1,1 +1,4 @@
 /custom_components/mertik/__pycache__
+__pycache__/
+*.pyc
+CLAUDE.md
