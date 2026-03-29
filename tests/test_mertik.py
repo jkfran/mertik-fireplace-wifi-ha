@@ -7,8 +7,7 @@ import socket
 
 from custom_components.mertik.mertik import (
     Mertik,
-    send_command_prefix,
-    process_status_prefixes,
+    COMMAND_PREFIX as send_command_prefix,
 )
 from tests.conftest import _build_status_bytes
 
@@ -377,18 +376,18 @@ class TestSocketReconnection:
 class TestHelperMethods:
     """Test hex2bin and fromBitStatus helpers."""
 
-    def test_hex2bin(self, mertik_device):
-        assert mertik_device._Mertik__hex2bin("FF") == "11111111"
-        assert mertik_device._Mertik__hex2bin("00") == "00000000"
-        assert mertik_device._Mertik__hex2bin("80") == "10000000"
-        assert mertik_device._Mertik__hex2bin("01") == "00000001"
+    def test_hex_to_bin(self, mertik_device):
+        assert mertik_device._hex_to_bin("FF") == "11111111"
+        assert mertik_device._hex_to_bin("00") == "00000000"
+        assert mertik_device._hex_to_bin("80") == "10000000"
+        assert mertik_device._hex_to_bin("01") == "00000001"
 
-    def test_from_bit_status(self, mertik_device):
-        assert mertik_device._Mertik__fromBitStatus("FF", 0) is True
-        assert mertik_device._Mertik__fromBitStatus("FF", 7) is True
-        assert mertik_device._Mertik__fromBitStatus("00", 0) is False
-        assert mertik_device._Mertik__fromBitStatus("80", 0) is True
-        assert mertik_device._Mertik__fromBitStatus("80", 1) is False
+    def test_bit_at(self, mertik_device):
+        assert mertik_device._bit_at("FF", 0) is True
+        assert mertik_device._bit_at("FF", 7) is True
+        assert mertik_device._bit_at("00", 0) is False
+        assert mertik_device._bit_at("80", 0) is True
+        assert mertik_device._bit_at("80", 1) is False
 
 
 class TestNonStatusResponses:
@@ -450,3 +449,111 @@ class TestAllFlameHeightSteps:
         mertik_device.set_flame_height(step)
         expected = bytearray.fromhex(send_command_prefix + "3136" + hex_code + "03")
         assert mock_socket.send.call_args_list[0] == call(expected)
+
+
+class TestBrightnessEdgeCases:
+    """Test light brightness edge cases for safe refactoring."""
+
+    def test_light_level_below_100_clamps_to_zero(self, mock_socket):
+        """Light level below 100 with light on should clamp brightness to 0."""
+        # 0x50 = 80, brightness = round(((80-100)/151)*255) = -34, clamped to 0
+        mock_socket.recv.return_value = _build_status_bytes(
+            light_level=0x50, status_bits="8004"  # light on
+        )
+        device = Mertik("192.168.1.100")
+        assert device.light_brightness == 0
+
+    def test_light_level_mid_range(self, mock_socket):
+        """Light level in mid range with light on."""
+        # 0xAF = 175, brightness = round(((175-100)/151)*255) = round(126.6) = 127
+        mock_socket.recv.return_value = _build_status_bytes(
+            light_level=0xAF, status_bits="8004"
+        )
+        device = Mertik("192.168.1.100")
+        assert device.light_brightness == 127
+
+
+class TestGuardFlame:
+    """Test the guard flame internal attribute."""
+
+    def test_guard_flame_on(self, mock_socket):
+        """Bit 8 -> _guard_flame_on. In 16-bit: 2^(15-8)=0x0080, base 0x8000."""
+        mock_socket.recv.return_value = _build_status_bytes(status_bits="8080")
+        device = Mertik("192.168.1.100")
+        assert device._guard_flame_on is True
+
+    def test_guard_flame_off(self, mock_socket):
+        mock_socket.recv.return_value = _build_status_bytes(status_bits="8000")
+        device = Mertik("192.168.1.100")
+        assert device._guard_flame_on is False
+
+
+class TestStateTransitions:
+    """Test that state updates correctly across multiple status responses."""
+
+    def test_off_to_on(self, mock_socket):
+        """State should transition from off to on."""
+        mock_socket.recv.return_value = _build_status_bytes(flame_height=0x00)
+        device = Mertik("192.168.1.100")
+        assert device.is_on is False
+
+        mock_socket.recv.return_value = _build_status_bytes(flame_height=0xC0)
+        device.refresh_status()
+        assert device.is_on is True
+        assert device.get_flame_height() == 7
+
+    def test_on_to_off(self, mock_socket):
+        """State should transition from on to off."""
+        mock_socket.recv.return_value = _build_status_bytes(flame_height=0xC0)
+        device = Mertik("192.168.1.100")
+        assert device.is_on is True
+
+        mock_socket.recv.return_value = _build_status_bytes(flame_height=0x00)
+        device.refresh_status()
+        assert device.is_on is False
+        assert device.get_flame_height() == 0
+
+    def test_temperature_updates(self, mock_socket):
+        """Temperature should update on each status response."""
+        mock_socket.recv.return_value = _build_status_bytes(ambient_temp=0xC8)
+        device = Mertik("192.168.1.100")
+        assert device.ambient_temperature == 20.0
+
+        mock_socket.recv.return_value = _build_status_bytes(ambient_temp=0xFA)
+        device.refresh_status()
+        assert device.ambient_temperature == 25.0
+
+    def test_all_properties_update_together(self, mock_socket):
+        """All parsed properties should update from a single status response."""
+        mock_socket.recv.return_value = _build_status_bytes(
+            flame_height=0xC0,
+            status_bits="801C",  # igniting + aux + light on
+            light_level=0xFB,
+            ambient_temp=0xE6,
+        )
+        device = Mertik("192.168.1.100")
+
+        assert device.is_on is True
+        assert device.get_flame_height() == 7
+        assert device.is_igniting is True
+        assert device.is_aux_on is True
+        assert device.is_light_on is True
+        assert device.light_brightness == 255
+        assert device.ambient_temperature == 23.0
+
+        # Now update everything at once
+        mock_socket.recv.return_value = _build_status_bytes(
+            flame_height=0x00,
+            status_bits="8000",  # all off
+            light_level=0x64,
+            ambient_temp=0xC8,
+        )
+        device.refresh_status()
+
+        assert device.is_on is False
+        assert device.get_flame_height() == 0
+        assert device.is_igniting is False
+        assert device.is_aux_on is False
+        assert device.is_light_on is False
+        assert device.light_brightness == 0
+        assert device.ambient_temperature == 20.0

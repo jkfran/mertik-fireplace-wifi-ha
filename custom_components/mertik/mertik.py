@@ -1,44 +1,81 @@
-import re
+"""Mertik Maxitrol WiFi fireplace controller."""
+
+import logging
 import socket
 
-"Mertik Wifi Fireplace controller"
+_LOGGER = logging.getLogger(__name__)
 
-__version__ = "0.1.0"
-__author__ = "Tobias Laursen <djerik@gmail.com>"
-__all__ = []
+# Protocol framing
+COMMAND_PREFIX = "0233303330333033303830"
+STATUS_PREFIXES = ("303030300003", "030300000003")
+TCP_PORT = 2000
+SOCKET_TIMEOUT = 3
+RECV_BUFFER = 1024
 
-send_command_prefix = "0233303330333033303830"
-process_status_prefixes = ("303030300003", "030300000003")
+# Command payloads (appended to COMMAND_PREFIX)
+CMD_STANDBY = "3136303003"
+CMD_IGNITE = "314103"
+CMD_GUARD_FLAME_OFF = "313003"
+CMD_REFRESH_STATUS = "303303"
+CMD_AUX_ON = "32303031030a"
+CMD_AUX_OFF = "32303030030a"
+CMD_LIGHT_ON = "3330303103"
+CMD_LIGHT_OFF = "3330303003"
+CMD_SET_ECO = "4233303103"
+CMD_SET_MANUAL = "423003"
+CMD_FLAME_PREFIX = "3136"
+CMD_FLAME_SUFFIX = "03"
+CMD_BRIGHTNESS_PREFIX = "33304645"
+CMD_BRIGHTNESS_SUFFIX = "03"
+
+# Brightness device codes for min/max
+BRIGHTNESS_CODE_MAX = "4642"
+BRIGHTNESS_CODE_MIN = "3633"
+
+# Flame height hex codes for steps 1-12
+FLAME_HEIGHT_STEPS = [
+    "3830", "3842", "3937", "4132", "4145", "4239",
+    "4335", "4430", "4443", "4537", "4633", "4646",
+]
+
+# Status response field offsets (indices into the parsed string after prefix)
+# The full string layout after stripping the leading byte:
+#   [0:12]   prefix
+#   [12:14]  padding
+#   [14:16]  flame height (2 hex chars)
+#   [16:20]  status bits (4 hex chars)
+#   [20:22]  light level (2 hex chars)
+#   [22:24]  padding
+#   [24:25]  mode
+#   [25:30]  padding
+#   [30:32]  ambient temperature (2 hex chars)
+STATUS_FLAME_HEIGHT = slice(14, 16)
+STATUS_BITS = slice(16, 20)
+STATUS_LIGHT_LEVEL = slice(20, 22)
+STATUS_AMBIENT_TEMP = slice(30, 32)
+
+# Status bit indices (within the binary representation of the 4-char hex status)
+BIT_SHUTTING_DOWN = 7
+BIT_GUARD_FLAME = 8
+BIT_IGNITING = 11
+BIT_AUX_ON = 12
+BIT_LIGHT_ON = 13
+
+# Flame height threshold: values at or below this mean the fireplace is off
+FLAME_OFF_THRESHOLD = 123
+
+# Light level range from the device
+DEVICE_LIGHT_MIN = 100
+DEVICE_LIGHT_MAX = 251
 
 
 class Mertik:
     def __init__(self, ip):
         self.ip = ip
-        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # Internet
-        self.client.settimeout(3)
-        self.client.connect((self.ip, 2000))
+        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.client.settimeout(SOCKET_TIMEOUT)
+        self.client.connect((self.ip, TCP_PORT))
         self.refresh_status()
-
-    def get_devices():
-        # Setup receiver
-        UDP_PORT = 30719
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # Internet  # UDP
-        sock.bind(("", UDP_PORT))
-
-        # Send broadcast
-        UDP_PORT = 30718
-        MESSAGE = "000100f6"
-        hexstring = bytearray.fromhex(MESSAGE)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        sock.sendto(hexstring, ("<broadcast>", 30718))
-
-        # Receive reply
-        data, addr = sock.recvfrom(1024)  # buffer size is 1024 bytes
-        mac = getmacbyip(addr)
-        device = dict()
-        device["address"] = addr
-        device["mac"] = mac
-        return device
 
     @property
     def is_on(self) -> bool:
@@ -69,188 +106,114 @@ class Mertik:
         return self._light_brightness
 
     def standBy(self):
-        msg = "3136303003"
-        self.__sendCommand(msg)
+        self._send_command(CMD_STANDBY)
 
     def aux_on(self):
-        # this.getDriver().triggerDualFlameToggle.trigger(this, {}, {});
-        # this.getDriver().triggerDualFlameOn.trigger(this, {}, {});
-        msg = "32303031030a"
-        self.__sendCommand(msg)
+        self._send_command(CMD_AUX_ON)
 
     def aux_off(self):
-        # this.getDriver().triggerDualFlameToggle.trigger(this, {}, {});
-        # this.getDriver().triggerDualFlameOff.trigger(this, {}, {});
-        msg = "32303030030a"
-        self.__sendCommand(msg)
+        self._send_command(CMD_AUX_OFF)
 
     def ignite_fireplace(self):
-        msg = "314103"
-        self.__sendCommand(msg)
+        self._send_command(CMD_IGNITE)
 
     def refresh_status(self):
-        msg = "303303"
-        self.__sendCommand(msg)
+        self._send_command(CMD_REFRESH_STATUS)
 
     def guard_flame_off(self):
-        msg = "313003"
-        self.__sendCommand(msg)
+        self._send_command(CMD_GUARD_FLAME_OFF)
 
     def light_on(self):
-        msg = "3330303103"
-        self.__sendCommand(msg)
+        self._send_command(CMD_LIGHT_ON)
 
     def light_off(self):
-        msg = "3330303003"
-        self.__sendCommand(msg)
+        self._send_command(CMD_LIGHT_OFF)
 
     def set_light_brightness(self, brightness) -> None:
-        # Normalizing brightness from Home Assistant's scale (1-255) to 0-100 scale for easier calculation.
-        normalized_brightness = (brightness - 1) / 254 * 100
-        
-        # Mapping the normalized brightness to the device's scale.
-        # Assuming the device's scale somewhat linearly correlates with the normalized percentage.
-        if normalized_brightness == 100:
-            # Maximum brightness.
-            device_code = "4642"
-        elif normalized_brightness == 0:
-            # Minimum brightness.
-            device_code = "3633"
-        else:
-            # Intermediate brightness - trying to mimic the original programmer's logic.
-            # Calculate an adjusted value based on the percentage.
-            l = 36 + round(normalized_brightness / 100 * 8)
-            
-            # Duplicating the adjusted value as done in the previous code.
-            # This step might need adjustment based on further understanding of the device's protocol.
-            if l >= 40:
-                l += 1  # Skipping 40
-            
-            # Ensuring the adjusted value is encoded as expected by the device.
-            device_code = f"{l:02d}{l:02d}"
+        normalized = (brightness - 1) / 254 * 100
 
-        # Construct the command with the device's code.
-        msg = f"33304645{device_code}03"
-        
-        # Send the command to the device.
-        self.__sendCommand(msg)
+        if normalized == 100:
+            device_code = BRIGHTNESS_CODE_MAX
+        elif normalized == 0:
+            device_code = BRIGHTNESS_CODE_MIN
+        else:
+            level = 36 + round(normalized / 100 * 8)
+            if level >= 40:
+                level += 1  # Device skips code 40
+            device_code = f"{level:02d}{level:02d}"
+
+        self._send_command(f"{CMD_BRIGHTNESS_PREFIX}{device_code}{CMD_BRIGHTNESS_SUFFIX}")
 
     def set_eco(self):
-        msg = "4233303103"
-        self.__sendCommand(msg)
+        self._send_command(CMD_SET_ECO)
 
     def set_manual(self):
-        msg = "423003"
-        self.__sendCommand(msg)
+        self._send_command(CMD_SET_MANUAL)
 
     def get_flame_height(self) -> int:
         return self.flameHeight
 
     def set_flame_height(self, flame_height) -> None:
-        steps = [
-            "3830",
-            "3842",
-            "3937",
-            "4132",
-            "4145",
-            "4239",
-            "4335",
-            "4430",
-            "4443",
-            "4537",
-            "4633",
-            "4646",
-        ]
-        l = steps[flame_height - 1]
-        msg = "3136" + l + "03"
-
-        self.__sendCommand(msg)
+        step_code = FLAME_HEIGHT_STEPS[flame_height - 1]
+        self._send_command(f"{CMD_FLAME_PREFIX}{step_code}{CMD_FLAME_SUFFIX}")
         self.refresh_status()
 
-    def __hex2bin(self, hex):
-        return format(int(hex, 16), "b").zfill(8)
+    def _hex_to_bin(self, hex_str):
+        return format(int(hex_str, 16), "b").zfill(8)
 
-    def __fromBitStatus(self, hex, index):
-        return self.__hex2bin(hex)[index : index + 1] == "1"
+    def _bit_at(self, hex_str, index):
+        return self._hex_to_bin(hex_str)[index : index + 1] == "1"
 
-    def __sendCommand(self, msg):
+    def _reconnect(self):
+        """Create a fresh socket connection to the device."""
+        _LOGGER.debug("Reconnecting to %s:%s", self.ip, TCP_PORT)
+        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.client.settimeout(SOCKET_TIMEOUT)
+        self.client.connect((self.ip, TCP_PORT))
+
+    def _send_command(self, msg):
+        payload = bytearray.fromhex(COMMAND_PREFIX + msg)
+
         try:
-            self.client.send(bytearray.fromhex(send_command_prefix + msg))
+            self.client.send(payload)
         except socket.error:
-            self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.client.connect((self.ip, 2000))
-            self.client.send(bytearray.fromhex(send_command_prefix + msg))
+            _LOGGER.warning("Send failed, reconnecting to %s", self.ip)
+            self._reconnect()
+            self.client.send(payload)
 
-        data = self.client.recv(1024)
+        data = self.client.recv(RECV_BUFFER)
         if len(data) == 0:
-            self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.client.connect((self.ip, 2000))
-            self.client.send(bytearray.fromhex(send_command_prefix + msg))
-            data = self.client.recv(1024)
+            _LOGGER.warning("Empty response, reconnecting to %s", self.ip)
+            self._reconnect()
+            self.client.send(payload)
+            data = self.client.recv(RECV_BUFFER)
 
-        tempData = str(data, "ascii")
-        tempData = tempData[1:]
-        tempData = re.sub("/\r/g", ";", tempData)
-        if tempData.startswith(process_status_prefixes):
-            self.__processStatus(tempData)
+        response = data.decode("ascii")[1:]
+        if response.startswith(STATUS_PREFIXES):
+            self._process_status(response)
 
-    def __processStatus(self, statusStr):
-        tempSub = statusStr[14:16]
-        tempSub = "0x" + tempSub
-        flameHeight = int(tempSub, 0)
+    def _process_status(self, status_str):
+        raw_flame = int(status_str[STATUS_FLAME_HEIGHT], 16)
 
-        if flameHeight <= 123:
+        if raw_flame <= FLAME_OFF_THRESHOLD:
             self.flameHeight = 0
             self.on = False
         else:
-            self.flameHeight = round(((flameHeight - 128) / 128) * 12) + 1
+            self.flameHeight = round(((raw_flame - 128) / 128) * 12) + 1
             self.on = True
 
-        mode = statusStr[24:25]
-        statusBits = statusStr[16:20]
-        self._shutting_down = self.__fromBitStatus(statusBits, 7)
-        self._guard_flame_on = self.__fromBitStatus(statusBits, 8)
-        self._igniting = self.__fromBitStatus(statusBits, 11)
-        self._aux_on = self.__fromBitStatus(statusBits, 12)
-        self._light_on = self.__fromBitStatus(statusBits, 13)
+        status_bits = status_str[STATUS_BITS]
+        self._shutting_down = self._bit_at(status_bits, BIT_SHUTTING_DOWN)
+        self._guard_flame_on = self._bit_at(status_bits, BIT_GUARD_FLAME)
+        self._igniting = self._bit_at(status_bits, BIT_IGNITING)
+        self._aux_on = self._bit_at(status_bits, BIT_AUX_ON)
+        self._light_on = self._bit_at(status_bits, BIT_LIGHT_ON)
 
-        # Convert the range 100 -> 251 to 0 -> 255
-        self._light_brightness = round(((int("0x" + statusStr[20:22], 0) - 100) / 151) * 255)
-        
+        raw_light = int(status_str[STATUS_LIGHT_LEVEL], 16)
+        self._light_brightness = round(
+            ((raw_light - DEVICE_LIGHT_MIN) / (DEVICE_LIGHT_MAX - DEVICE_LIGHT_MIN)) * 255
+        )
         if self._light_brightness < 0 or not self._light_on:
             self._light_brightness = 0
 
-        self._ambient_temperature = int("0x" + statusStr[30:32], 0) / 10
-
-        # print("Status update!!")
-        # print("Fireplace on: " + str(self.on))
-        # print("Flame height: " + str(flameHeight))
-        # print("Guard flame on: " + str(guardFlameOn))
-        # print("Igniting: " + str(igniting))
-        # print("Shutting down: " + str(shuttingDown))
-        # print("Aux on: " + str(self.auxOn))
-        # print("Light on: " + str(self._light_on))
-        # print("Dim level: " + str(self._dim_level))
-        #        console.log("Ambient temp: " + ambientTemp)
-
-        # opMode = "on"
-
-
-""""
-        if self.on == False and igniting == False:
-            if guardFlameOn and shuttingDown == False:
-                opMode = "stand_by"
-            else:
-                opMode = "off"
-        else:
-            if mode == "2":
-                self.offToEco = False
-                opMode = "eco"
-            else:
-                if self.offToEco:
-                    self.setEco()
-                    opMode = "eco"
-
-        print("Fire control mode: " + mode)
-        print("Operation mode: " + opMode)
-"""
+        self._ambient_temperature = int(status_str[STATUS_AMBIENT_TEMP], 16) / 10
