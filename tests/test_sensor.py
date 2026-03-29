@@ -20,7 +20,7 @@ class TestTemperatureSensor:
     @pytest.fixture
     def sensor(self, hass, mock_coordinator):
         entity = MertikAmbientTemperatureSensorEntity(
-            hass, mock_coordinator, "test_entry", "My Fireplace"
+            mock_coordinator, "test_entry", "My Fireplace"
         )
         entity.hass = hass
         return entity
@@ -29,7 +29,10 @@ class TestTemperatureSensor:
         assert sensor.unique_id == "test_entry-AmbientTemperature"
 
     def test_name(self, sensor):
-        assert sensor.name == "My Fireplace Ambient Temperature"
+        assert sensor.name == "Ambient Temperature"
+
+    def test_has_entity_name(self, sensor):
+        assert sensor.has_entity_name is True
 
     def test_device_class(self, sensor):
         assert sensor.device_class == SensorDeviceClass.TEMPERATURE

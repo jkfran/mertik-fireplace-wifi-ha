@@ -11,29 +11,24 @@ from .const import DOMAIN
 async def async_setup_entry(hass, entry, async_add_entities):
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
-    entities = []
-
-    entities.append(
-        MertikAmbientTemperatureSensorEntity(
-            hass, dataservice, entry.entry_id, entry.data["name"]
-        )
-    )
-
-    async_add_entities(entities)
-
+    async_add_entities([
+        MertikAmbientTemperatureSensorEntity(dataservice, entry.entry_id, entry.data["name"]),
+    ])
 
 
 class MertikAmbientTemperatureSensorEntity(CoordinatorEntity, SensorEntity):
-    def __init__(self, hass, dataservice, entry_id, name):
+    _attr_has_entity_name = True
+    _attr_name = "Ambient Temperature"
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+
+    def __init__(self, dataservice, entry_id, device_name):
         super().__init__(dataservice)
         self._dataservice = dataservice
-        self._attr_name = name + " Ambient Temperature"
-        self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_unique_id = entry_id + "-AmbientTemperature"
-        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry_id)},
-            name=name,
+            name=device_name,
             manufacturer="Mertik Maxitrol",
         )
 

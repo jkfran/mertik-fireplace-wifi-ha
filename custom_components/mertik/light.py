@@ -9,55 +9,45 @@ from .const import DOMAIN
 async def async_setup_entry(hass, entry, async_add_entities):
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
-    entities = []
-
-    entities.append(
-        MertikLightEntity(hass, dataservice, entry.entry_id, entry.data["name"])
-    )
-
-    async_add_entities(entities)
+    async_add_entities([
+        MertikLightEntity(dataservice, entry.entry_id, entry.data["name"]),
+    ])
 
 
 class MertikLightEntity(CoordinatorEntity, LightEntity):
-    def __init__(self, hass, dataservice, entry_id, name):
+    _attr_has_entity_name = True
+    _attr_name = "Light"
+    _attr_color_mode = ColorMode.BRIGHTNESS
+    _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
+
+    def __init__(self, dataservice, entry_id, device_name):
         super().__init__(dataservice)
         self._dataservice = dataservice
-        self._attr_name = name + " Light"
         self._attr_unique_id = entry_id + "-Light"
-        self._attr_color_mode = ColorMode.BRIGHTNESS
-        self._attr_supported_color_modes = {ColorMode.BRIGHTNESS}
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry_id)},
-            name=name,
+            name=device_name,
             manufacturer="Mertik Maxitrol",
         )
 
     @property
     def is_on(self):
-        """Return true if the device is on."""
         return self._dataservice.is_light_on
 
     @property
     def brightness(self):
-        """Return the brightness of the light."""
         return self._dataservice.light_brightness
 
     async def async_turn_on(self, **kwargs):
-        """Turn the entity on. Adjust brightness if provided."""
-        # Check if brightness adjustment is requested.
         if ATTR_BRIGHTNESS in kwargs:
-            brightness = kwargs[ATTR_BRIGHTNESS]
             await self.hass.async_add_executor_job(
-                self._dataservice.set_light_brightness, brightness
+                self._dataservice.set_light_brightness, kwargs[ATTR_BRIGHTNESS]
             )
         elif not self.is_on:
-            # If no brightness adjustment is requested and the light is off, just turn it on.
             await self.hass.async_add_executor_job(self._dataservice.light_on)
 
-        # Notify Home Assistant that the data has been updated.
         self._dataservice.async_set_updated_data(None)
 
     async def async_turn_off(self, **kwargs):
-        """Turn the entity off."""
         await self.hass.async_add_executor_job(self._dataservice.light_off)
         self._dataservice.async_set_updated_data(None)

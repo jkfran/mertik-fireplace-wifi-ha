@@ -17,9 +17,7 @@ class TestOnOffSwitch:
 
     @pytest.fixture
     def switch(self, hass, mock_coordinator):
-        entity = MertikOnOffSwitchEntity(
-            hass, mock_coordinator, "test_entry", "My Fireplace"
-        )
+        entity = MertikOnOffSwitchEntity(mock_coordinator, "test_entry", "My Fireplace")
         entity.hass = hass
         return entity
 
@@ -27,7 +25,11 @@ class TestOnOffSwitch:
         assert switch.unique_id == "test_entry-OnOff"
 
     def test_name(self, switch):
-        assert switch.name == "My Fireplace"
+        """Primary entity has name=None (uses device name)."""
+        assert switch.name is None
+
+    def test_has_entity_name(self, switch):
+        assert switch.has_entity_name is True
 
     def test_icon(self, switch):
         assert switch.icon == "mdi:fireplace"
@@ -65,8 +67,7 @@ class TestAuxSwitch:
     @pytest.fixture
     def switch(self, hass, mock_coordinator):
         entity = MertikAuxOnOffSwitchEntity(
-            hass, mock_coordinator, "test_entry", "My Fireplace Aux",
-            device_name="My Fireplace",
+            mock_coordinator, "test_entry", "My Fireplace"
         )
         entity.hass = hass
         return entity
@@ -75,7 +76,10 @@ class TestAuxSwitch:
         assert switch.unique_id == "test_entry-AuxOnOff"
 
     def test_name(self, switch):
-        assert switch.name == "My Fireplace Aux"
+        assert switch.name == "Aux"
+
+    def test_has_entity_name(self, switch):
+        assert switch.has_entity_name is True
 
     def test_icon(self, switch):
         assert switch.icon == "mdi:light"
@@ -111,9 +115,8 @@ class TestSwitchPlatformSetup:
     async def test_creates_two_entities(self, hass, mock_coordinator, mock_config_entry):
         hass.data[DOMAIN] = {mock_config_entry.entry_id: mock_coordinator}
         added = []
-        async_add_entities = lambda entities: added.extend(entities)
 
-        await async_setup_entry(hass, mock_config_entry, async_add_entities)
+        await async_setup_entry(hass, mock_config_entry, lambda e: added.extend(e))
 
         assert len(added) == 2
         assert isinstance(added[0], MertikOnOffSwitchEntity)
@@ -124,11 +127,10 @@ class TestSwitchPlatformSetup:
         added = []
         await async_setup_entry(hass, mock_config_entry, lambda e: added.extend(e))
 
-        assert added[0].name == "My Fireplace"
-        assert added[1].name == "My Fireplace Aux"
+        assert added[0].name is None
+        assert added[1].name == "Aux"
 
     async def test_all_entities_share_device(self, hass, mock_coordinator, mock_config_entry):
-        """Both switches should belong to the same device."""
         hass.data[DOMAIN] = {mock_config_entry.entry_id: mock_coordinator}
         added = []
         await async_setup_entry(hass, mock_config_entry, lambda e: added.extend(e))

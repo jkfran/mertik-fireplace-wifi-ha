@@ -16,9 +16,7 @@ class TestFlameHeightEntity:
 
     @pytest.fixture
     def number(self, hass, mock_coordinator):
-        entity = MertikFlameHeightEntity(
-            hass, mock_coordinator, "test_entry", "My Fireplace"
-        )
+        entity = MertikFlameHeightEntity(mock_coordinator, "test_entry", "My Fireplace")
         entity.hass = hass
         return entity
 
@@ -26,7 +24,10 @@ class TestFlameHeightEntity:
         assert number.unique_id == "test_entry-FlameHeight"
 
     def test_name(self, number):
-        assert number.name == "My Fireplace Flame Height"
+        assert number.name == "Flame Height"
+
+    def test_has_entity_name(self, number):
+        assert number.has_entity_name is True
 
     def test_icon(self, number):
         assert number.icon == "mdi:fire"
@@ -57,7 +58,6 @@ class TestFlameHeightEntity:
         mock_coordinator.async_set_updated_data.assert_called_once_with(None)
 
     async def test_set_value_rounds_float(self, number, mock_coordinator):
-        """Float values should be cast to int."""
         await number.async_set_native_value(8.7)
         mock_coordinator.set_flame_height.assert_called_once_with(8)
 

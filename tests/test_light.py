@@ -18,9 +18,7 @@ class TestLightEntity:
 
     @pytest.fixture
     def light(self, hass, mock_coordinator):
-        entity = MertikLightEntity(
-            hass, mock_coordinator, "test_entry", "My Fireplace"
-        )
+        entity = MertikLightEntity(mock_coordinator, "test_entry", "My Fireplace")
         entity.hass = hass
         return entity
 
@@ -28,7 +26,10 @@ class TestLightEntity:
         assert light.unique_id == "test_entry-Light"
 
     def test_name(self, light):
-        assert light.name == "My Fireplace Light"
+        assert light.name == "Light"
+
+    def test_has_entity_name(self, light):
+        assert light.has_entity_name is True
 
     def test_color_mode(self, light):
         assert light.color_mode == ColorMode.BRIGHTNESS
@@ -55,7 +56,6 @@ class TestLightEntity:
         assert light.brightness == 128
 
     async def test_turn_on_no_brightness(self, light, mock_coordinator):
-        """Turn on without brightness should call light_on."""
         mock_coordinator.is_light_on = False
         await light.async_turn_on()
         mock_coordinator.light_on.assert_called_once()
@@ -63,14 +63,12 @@ class TestLightEntity:
         mock_coordinator.async_set_updated_data.assert_called_once_with(None)
 
     async def test_turn_on_with_brightness(self, light, mock_coordinator):
-        """Turn on with brightness should call set_light_brightness."""
         await light.async_turn_on(**{ATTR_BRIGHTNESS: 200})
         mock_coordinator.set_light_brightness.assert_called_once_with(200)
         mock_coordinator.light_on.assert_not_called()
         mock_coordinator.async_set_updated_data.assert_called_once_with(None)
 
     async def test_turn_on_already_on_no_brightness(self, light, mock_coordinator):
-        """Turn on when already on with no brightness should not call light_on."""
         mock_coordinator.is_light_on = True
         await light.async_turn_on()
         mock_coordinator.light_on.assert_not_called()
@@ -93,4 +91,4 @@ class TestLightPlatformSetup:
 
         assert len(added) == 1
         assert isinstance(added[0], MertikLightEntity)
-        assert added[0].name == "My Fireplace Light"
+        assert added[0].name == "Light"
