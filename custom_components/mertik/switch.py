@@ -1,3 +1,4 @@
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from homeassistant.components.switch import SwitchEntity
@@ -16,7 +17,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     entities.append(
         MertikAuxOnOffSwitchEntity(
-            hass, dataservice, entry.entry_id, entry.data["name"] + " Aux"
+            hass, dataservice, entry.entry_id, entry.data["name"] + " Aux",
+            device_name=entry.data["name"],
         )
     )
 
@@ -30,6 +32,11 @@ class MertikOnOffSwitchEntity(CoordinatorEntity, SwitchEntity):
         self._dataservice = dataservice
         self._attr_name = name
         self._attr_unique_id = entry_id + "-OnOff"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry_id)},
+            name=name,
+            manufacturer="Mertik Maxitrol",
+        )
 
     @property
     def is_on(self):
@@ -53,11 +60,16 @@ class MertikOnOffSwitchEntity(CoordinatorEntity, SwitchEntity):
 
 
 class MertikAuxOnOffSwitchEntity(CoordinatorEntity, SwitchEntity):
-    def __init__(self, hass, dataservice, entry_id, name):
+    def __init__(self, hass, dataservice, entry_id, name, device_name):
         super().__init__(dataservice)
         self._dataservice = dataservice
         self._attr_name = name
         self._attr_unique_id = entry_id + "-AuxOnOff"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry_id)},
+            name=device_name,
+            manufacturer="Mertik Maxitrol",
+        )
 
     @property
     def is_on(self):

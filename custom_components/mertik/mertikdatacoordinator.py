@@ -1,7 +1,8 @@
 from datetime import timedelta
 import logging
 
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
 from .mertik import Mertik
@@ -99,4 +100,7 @@ class MertikDataCoordinator(DataUpdateCoordinator):
         return self.mertik.light_brightness
 
     async def _async_update_data(self):
-        self.mertik.refresh_status()
+        try:
+            await self.hass.async_add_executor_job(self.mertik.refresh_status)
+        except Exception as err:
+            raise UpdateFailed(f"Error communicating with fireplace: {err}") from err

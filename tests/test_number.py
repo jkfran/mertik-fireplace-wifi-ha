@@ -31,6 +31,12 @@ class TestFlameHeightEntity:
     def test_icon(self, number):
         assert number.icon == "mdi:fire"
 
+    def test_device_info(self, number):
+        info = number.device_info
+        assert info["identifiers"] == {(DOMAIN, "test_entry")}
+        assert info["name"] == "My Fireplace"
+        assert info["manufacturer"] == "Mertik Maxitrol"
+
     def test_min_value(self, number):
         assert number.native_min_value == 1
 

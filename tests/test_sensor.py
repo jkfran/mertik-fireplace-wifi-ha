@@ -37,6 +37,12 @@ class TestTemperatureSensor:
     def test_unit(self, sensor):
         assert sensor.native_unit_of_measurement == UnitOfTemperature.CELSIUS
 
+    def test_device_info(self, sensor):
+        info = sensor.device_info
+        assert info["identifiers"] == {(DOMAIN, "test_entry")}
+        assert info["name"] == "My Fireplace"
+        assert info["manufacturer"] == "Mertik Maxitrol"
+
     def test_native_value(self, sensor, mock_coordinator):
         mock_coordinator.ambient_temperature = 21.5
         assert sensor.native_value == 21.5

@@ -6,6 +6,7 @@ import pytest
 
 from homeassistant.core import HomeAssistant
 from homeassistant.const import CONF_HOST
+from homeassistant.exceptions import ConfigEntryNotReady
 
 from custom_components.mertik import async_setup_entry, async_unload_entry, async_setup
 from custom_components.mertik.const import DOMAIN
@@ -88,6 +89,43 @@ class TestAsyncSetupEntry:
 
         assert mock_config_entry_ha.entry_id in hass.data[DOMAIN]
         assert entry2.entry_id in hass.data[DOMAIN]
+
+
+class TestAsyncSetupEntryConnectionFailure:
+    """Test async_setup_entry when the fireplace is unreachable."""
+
+    @pytest.fixture(autouse=True)
+    def mock_mertik_class(self):
+        with patch("custom_components.mertik.Mertik") as mock_cls:
+            mock_cls.side_effect = OSError("Connection refused")
+            self.mock_mertik_cls = mock_cls
+            yield
+
+    @pytest.fixture(autouse=True)
+    def mock_forward_setups(self):
+        with patch(
+            "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
+            new_callable=AsyncMock,
+        ) as mock_forward:
+            self.mock_forward = mock_forward
+            yield
+
+    async def test_raises_config_entry_not_ready(self, hass, mock_config_entry_ha):
+        """Should raise ConfigEntryNotReady when connection fails."""
+        with pytest.raises(ConfigEntryNotReady):
+            await async_setup_entry(hass, mock_config_entry_ha)
+
+    async def test_does_not_store_data_on_failure(self, hass, mock_config_entry_ha):
+        """Should not leave stale data in hass.data on failure."""
+        with pytest.raises(ConfigEntryNotReady):
+            await async_setup_entry(hass, mock_config_entry_ha)
+        assert mock_config_entry_ha.entry_id not in hass.data.get(DOMAIN, {})
+
+    async def test_does_not_forward_platforms_on_failure(self, hass, mock_config_entry_ha):
+        """Should not attempt to set up platforms if connection failed."""
+        with pytest.raises(ConfigEntryNotReady):
+            await async_setup_entry(hass, mock_config_entry_ha)
+        self.mock_forward.assert_not_called()
 
 
 class TestAsyncUnloadEntry:

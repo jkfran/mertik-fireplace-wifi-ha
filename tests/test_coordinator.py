@@ -174,7 +174,7 @@ class TestAsyncUpdateData:
     """Test the coordinator's _async_update_data method."""
 
     async def test_calls_refresh_status(self, coordinator, mock_mertik):
-        """_async_update_data should call mertik.refresh_status."""
+        """_async_update_data should call mertik.refresh_status via executor."""
         await coordinator._async_update_data()
         mock_mertik.refresh_status.assert_called_once()
 
@@ -183,3 +183,11 @@ class TestAsyncUpdateData:
         from datetime import timedelta
 
         assert coordinator.update_interval == timedelta(seconds=10)
+
+    async def test_raises_update_failed_on_error(self, coordinator, mock_mertik):
+        """Should raise UpdateFailed when refresh_status raises."""
+        from homeassistant.helpers.update_coordinator import UpdateFailed
+
+        mock_mertik.refresh_status.side_effect = Exception("Connection lost")
+        with pytest.raises(UpdateFailed):
+            await coordinator._async_update_data()

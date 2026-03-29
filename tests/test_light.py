@@ -36,6 +36,12 @@ class TestLightEntity:
     def test_supported_color_modes(self, light):
         assert light.supported_color_modes == {ColorMode.BRIGHTNESS}
 
+    def test_device_info(self, light):
+        info = light.device_info
+        assert info["identifiers"] == {(DOMAIN, "test_entry")}
+        assert info["name"] == "My Fireplace"
+        assert info["manufacturer"] == "Mertik Maxitrol"
+
     def test_is_on_false(self, light, mock_coordinator):
         mock_coordinator.is_light_on = False
         assert light.is_on is False

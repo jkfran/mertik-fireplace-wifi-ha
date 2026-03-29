@@ -32,6 +32,12 @@ class TestOnOffSwitch:
     def test_icon(self, switch):
         assert switch.icon == "mdi:fireplace"
 
+    def test_device_info(self, switch):
+        info = switch.device_info
+        assert info["identifiers"] == {(DOMAIN, "test_entry")}
+        assert info["name"] == "My Fireplace"
+        assert info["manufacturer"] == "Mertik Maxitrol"
+
     def test_is_on_false(self, switch, mock_coordinator):
         mock_coordinator.is_on = False
         assert switch.is_on is False
@@ -59,7 +65,8 @@ class TestAuxSwitch:
     @pytest.fixture
     def switch(self, hass, mock_coordinator):
         entity = MertikAuxOnOffSwitchEntity(
-            hass, mock_coordinator, "test_entry", "My Fireplace Aux"
+            hass, mock_coordinator, "test_entry", "My Fireplace Aux",
+            device_name="My Fireplace",
         )
         entity.hass = hass
         return entity
@@ -72,6 +79,12 @@ class TestAuxSwitch:
 
     def test_icon(self, switch):
         assert switch.icon == "mdi:light"
+
+    def test_device_info(self, switch):
+        info = switch.device_info
+        assert info["identifiers"] == {(DOMAIN, "test_entry")}
+        assert info["name"] == "My Fireplace"
+        assert info["manufacturer"] == "Mertik Maxitrol"
 
     def test_is_on_false(self, switch, mock_coordinator):
         mock_coordinator.is_aux_on = False
@@ -113,3 +126,11 @@ class TestSwitchPlatformSetup:
 
         assert added[0].name == "My Fireplace"
         assert added[1].name == "My Fireplace Aux"
+
+    async def test_all_entities_share_device(self, hass, mock_coordinator, mock_config_entry):
+        """Both switches should belong to the same device."""
+        hass.data[DOMAIN] = {mock_config_entry.entry_id: mock_coordinator}
+        added = []
+        await async_setup_entry(hass, mock_config_entry, lambda e: added.extend(e))
+
+        assert added[0].device_info["identifiers"] == added[1].device_info["identifiers"]
