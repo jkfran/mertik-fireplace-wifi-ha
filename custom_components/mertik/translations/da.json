@@ -9,6 +9,12 @@
         "description": "Opsætning",
         "title": "Enheder"
       }
+    },
+    "error": {
+      "cannot_connect": "Kan ikke oprette forbindelse til pejsen. Kontrollér IP-adressen, og sørg for, at enheden er tændt."
+    },
+    "abort": {
+      "already_configured": "Denne pejs er allerede konfigureret."
     }
   }
 }

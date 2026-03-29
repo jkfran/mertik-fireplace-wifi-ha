@@ -9,6 +9,12 @@
         "description": "Choose device.",
         "title": "Devices"
       }
+    },
+    "error": {
+      "cannot_connect": "Unable to connect to the fireplace. Please check the IP address and ensure the device is powered on."
+    },
+    "abort": {
+      "already_configured": "This fireplace is already configured."
     }
   }
 }

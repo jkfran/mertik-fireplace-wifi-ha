@@ -9,6 +9,12 @@
         "description": "Choisir un appareil.",
         "title": "Appareil"
       }
+    },
+    "error": {
+      "cannot_connect": "Impossible de se connecter au foyer. Veuillez vérifier l'adresse IP et vous assurer que l'appareil est allumé."
+    },
+    "abort": {
+      "already_configured": "Ce foyer est déjà configuré."
     }
   }
 }
