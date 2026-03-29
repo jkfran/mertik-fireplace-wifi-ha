@@ -269,11 +269,56 @@ class TestLightBrightness:
         mock_socket.send.assert_called_with(expected)
 
     def test_brightness_mid(self, mertik_device, mock_socket):
-        """Mid-range brightness should produce intermediate device code."""
+        """brightness=128 -> normalized=50 -> l=40 -> l+=1=41 -> code '4141'."""
         mock_socket.send.reset_mock()
         mertik_device.set_light_brightness(128)
-        # Just verify it sends a command without error
-        assert mock_socket.send.called
+        expected = bytearray.fromhex(send_command_prefix + "33304645414103")
+        mock_socket.send.assert_called_with(expected)
+
+    def test_brightness_skip_40(self, mertik_device, mock_socket):
+        """When l reaches 40, it skips to 41 (the skip-40 quirk)."""
+        # brightness where normalized=50 -> l=36+round(4.0)=40 -> 40>=40 -> l=41
+        mock_socket.send.reset_mock()
+        mertik_device.set_light_brightness(128)
+        cmd_bytes = mock_socket.send.call_args[0][0]
+        cmd_hex = cmd_bytes.hex()
+        # The device code is after "33304645" prefix, extract it
+        payload = cmd_hex[len(send_command_prefix):]
+        # payload = "33304645XXYY03", device_code = payload[8:12]
+        device_code = payload[8:12]
+        assert device_code == "4141"  # 41 (skipped 40)
+
+    def test_brightness_just_below_skip(self, mertik_device, mock_socket):
+        """Brightness where l=39 (below skip threshold)."""
+        # normalized = (b-1)/254*100, l = 36 + round(normalized/100*8)
+        # l=39 -> round(normalized/100*8)=3 -> normalized=37.5 -> b=1+37.5*254/100=96.25
+        # b=96: normalized=(95/254)*100=37.40, l=36+round(2.99)=36+3=39
+        mock_socket.send.reset_mock()
+        mertik_device.set_light_brightness(96)
+        cmd_bytes = mock_socket.send.call_args[0][0]
+        payload = cmd_bytes.hex()[len(send_command_prefix):]
+        device_code = payload[8:12]
+        assert device_code == "3939"  # 39 (no skip applied)
+
+    def test_brightness_near_max(self, mertik_device, mock_socket):
+        """Brightness 254 (just below max)."""
+        # normalized=(253/254)*100=99.6, l=36+round(7.97)=36+8=44, >=40 so l=45
+        mock_socket.send.reset_mock()
+        mertik_device.set_light_brightness(254)
+        cmd_bytes = mock_socket.send.call_args[0][0]
+        payload = cmd_bytes.hex()[len(send_command_prefix):]
+        device_code = payload[8:12]
+        assert device_code == "4545"  # 45
+
+    def test_brightness_low(self, mertik_device, mock_socket):
+        """Brightness 2 -> very low normalized value."""
+        # normalized=(1/254)*100=0.394, l=36+round(0.031)=36+0=36
+        mock_socket.send.reset_mock()
+        mertik_device.set_light_brightness(2)
+        cmd_bytes = mock_socket.send.call_args[0][0]
+        payload = cmd_bytes.hex()[len(send_command_prefix):]
+        device_code = payload[8:12]
+        assert device_code == "3636"  # 36 (no skip)
 
 
 class TestSocketReconnection:
@@ -344,3 +389,64 @@ class TestHelperMethods:
         assert mertik_device._Mertik__fromBitStatus("00", 0) is False
         assert mertik_device._Mertik__fromBitStatus("80", 0) is True
         assert mertik_device._Mertik__fromBitStatus("80", 1) is False
+
+
+class TestNonStatusResponses:
+    """Test that non-status responses don't alter device state."""
+
+    def test_non_matching_prefix_ignored(self, mock_socket):
+        """Response with unknown prefix should not update state."""
+        # First init with known-good status (off)
+        mock_socket.recv.return_value = _build_status_bytes(flame_height=0x00)
+        device = Mertik("192.168.1.100")
+        assert device.is_on is False
+
+        # Now send a command that returns a non-status response
+        mock_socket.recv.return_value = b"\x02XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+        device.refresh_status()
+
+        # State should remain unchanged
+        assert device.is_on is False
+        assert device.get_flame_height() == 0
+
+    def test_short_response_no_crash(self, mock_socket):
+        """A short response that doesn't match prefix should not crash."""
+        mock_socket.recv.return_value = _build_status_bytes()
+        device = Mertik("192.168.1.100")
+
+        # Short response - won't match any prefix
+        mock_socket.recv.return_value = b"\x02OK"
+        device.refresh_status()  # Should not raise
+
+    def test_state_preserved_across_non_status(self, mock_socket):
+        """State from a valid status should survive non-status responses."""
+        # Set up with fireplace on, flame=7
+        mock_socket.recv.return_value = _build_status_bytes(flame_height=0xC0)
+        device = Mertik("192.168.1.100")
+        assert device.is_on is True
+        assert device.get_flame_height() == 7
+
+        # Non-status response
+        mock_socket.recv.return_value = b"\x02ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"
+        device.refresh_status()
+
+        # Previous state preserved
+        assert device.is_on is True
+        assert device.get_flame_height() == 7
+
+
+class TestAllFlameHeightSteps:
+    """Test every flame height step sends the correct hex code."""
+
+    EXPECTED_STEPS = [
+        (1, "3830"), (2, "3842"), (3, "3937"), (4, "4132"),
+        (5, "4145"), (6, "4239"), (7, "4335"), (8, "4430"),
+        (9, "4443"), (10, "4537"), (11, "4633"), (12, "4646"),
+    ]
+
+    @pytest.mark.parametrize("step,hex_code", EXPECTED_STEPS)
+    def test_flame_step(self, mertik_device, mock_socket, step, hex_code):
+        mock_socket.send.reset_mock()
+        mertik_device.set_flame_height(step)
+        expected = bytearray.fromhex(send_command_prefix + "3136" + hex_code + "03")
+        assert mock_socket.send.call_args_list[0] == call(expected)

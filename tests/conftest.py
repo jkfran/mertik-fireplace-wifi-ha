@@ -2,9 +2,46 @@
 
 import pytest
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, AsyncMock, patch, PropertyMock
 
 from custom_components.mertik.mertik import Mertik
+from custom_components.mertik.const import DOMAIN
+
+
+@pytest.fixture
+def mock_coordinator():
+    """Return a mock MertikDataCoordinator for entity tests."""
+    coordinator = MagicMock()
+    coordinator.is_on = False
+    coordinator.is_aux_on = False
+    coordinator.is_light_on = False
+    coordinator.light_brightness = 0
+    coordinator.ambient_temperature = 21.5
+    coordinator.get_flame_height.return_value = 0
+    coordinator.async_set_updated_data = MagicMock()
+    coordinator.mark_optimistic_on = MagicMock()
+    coordinator.mark_optimistic_off = MagicMock()
+    coordinator.ignite_fireplace = MagicMock()
+    coordinator.guard_flame_off = MagicMock()
+    coordinator.aux_on = MagicMock()
+    coordinator.aux_off = MagicMock()
+    coordinator.light_on = MagicMock()
+    coordinator.light_off = MagicMock()
+    coordinator.set_light_brightness = MagicMock()
+    coordinator.set_flame_height = MagicMock()
+    # DataUpdateCoordinator attributes needed by CoordinatorEntity
+    coordinator.async_add_listener = MagicMock(return_value=MagicMock())
+    coordinator.data = None
+    return coordinator
+
+
+@pytest.fixture
+def mock_config_entry():
+    """Return a mock config entry."""
+    entry = MagicMock()
+    entry.entry_id = "test_entry_123"
+    entry.data = {"name": "My Fireplace", "host": "192.168.1.100"}
+    return entry
 
 
 @pytest.fixture

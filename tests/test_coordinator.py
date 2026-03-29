@@ -168,3 +168,18 @@ class TestCoordinatorDelegation:
     def test_is_light_on(self, coordinator, mock_mertik):
         mock_mertik.is_light_on = True
         assert coordinator.is_light_on is True
+
+
+class TestAsyncUpdateData:
+    """Test the coordinator's _async_update_data method."""
+
+    async def test_calls_refresh_status(self, coordinator, mock_mertik):
+        """_async_update_data should call mertik.refresh_status."""
+        await coordinator._async_update_data()
+        mock_mertik.refresh_status.assert_called_once()
+
+    async def test_update_interval(self, coordinator):
+        """Update interval should be 10 seconds."""
+        from datetime import timedelta
+
+        assert coordinator.update_interval == timedelta(seconds=10)
