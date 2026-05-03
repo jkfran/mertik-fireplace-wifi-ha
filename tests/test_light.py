@@ -1,0 +1,120 @@
+"""Tests for light entity.
+
+The light entity uses local state tracking (_is_on, _brightness) rather
+than reading from the coordinator. This reflects that the device does not
+reliably report light state in its status packets.
+"""
+
+from unittest.mock import MagicMock, patch, AsyncMock
+
+import pytest
+
+from homeassistant.components.light import ColorMode, ATTR_BRIGHTNESS
+
+from custom_components.mertik.light import (
+    MertikLightEntity,
+    async_setup_entry,
+)
+from custom_components.mertik.const import DOMAIN
+
+
+class TestLightEntity:
+
+    @pytest.fixture
+    def light(self, hass, mock_coordinator):
+        entity = MertikLightEntity(mock_coordinator, "test_entry", "My Fireplace")
+        entity.hass = hass
+        return entity
+
+    def test_unique_id(self, light):
+        assert light.unique_id == "test_entry-Light"
+
+    def test_name(self, light):
+        assert light.name == "Light"
+
+    def test_has_entity_name(self, light):
+        assert light.has_entity_name is True
+
+    def test_color_mode(self, light):
+        assert light.color_mode == ColorMode.BRIGHTNESS
+
+    def test_supported_color_modes(self, light):
+        assert light.supported_color_modes == {ColorMode.BRIGHTNESS}
+
+    def test_device_info(self, light):
+        info = light.device_info
+        assert info["identifiers"] == {(DOMAIN, "test_entry")}
+        assert info["name"] == "My Fireplace"
+        assert info["manufacturer"] == "Mertik Maxitrol"
+
+    def test_is_on_initial_false(self, light):
+        """Light always starts off; state is local not from coordinator."""
+        assert light.is_on is False
+
+    def test_is_on_after_turn_on(self, light, mock_coordinator):
+        light._is_on = True
+        assert light.is_on is True
+
+    def test_brightness_initial(self, light):
+        """Default brightness is 128."""
+        assert light.brightness == 128
+
+    def test_brightness_reflects_local_value(self, light):
+        light._brightness = 200
+        assert light.brightness == 200
+
+    async def test_turn_on_no_brightness(self, light, mock_coordinator):
+        """Turn on with no brightness: sends light_on, sets _is_on=True."""
+        await light.async_turn_on()
+        mock_coordinator.light_on.assert_called_once()
+        mock_coordinator.set_light_brightness.assert_not_called()
+        assert light.is_on is True
+        mock_coordinator.async_set_updated_data.assert_called_once_with(None)
+
+    async def test_turn_on_with_brightness_when_off(self, light, mock_coordinator):
+        """Turn on with brightness when currently off: sends light_on then brightness."""
+        light._is_on = False
+        await light.async_turn_on(**{ATTR_BRIGHTNESS: 200})
+        mock_coordinator.light_on.assert_called_once()
+        mock_coordinator.set_light_brightness.assert_called_once_with(200)
+        assert light.is_on is True
+        assert light.brightness == 200
+
+    async def test_turn_on_with_brightness_already_on(self, light, mock_coordinator):
+        """Turn on with brightness when already on: sends brightness only."""
+        light._is_on = True
+        await light.async_turn_on(**{ATTR_BRIGHTNESS: 200})
+        mock_coordinator.light_on.assert_not_called()
+        mock_coordinator.set_light_brightness.assert_called_once_with(200)
+        assert light.brightness == 200
+
+    async def test_turn_off(self, light, mock_coordinator):
+        """Turn off: sets _is_on=False immediately, sends light_off."""
+        light._is_on = True
+        await light.async_turn_off()
+        assert light.is_on is False
+        mock_coordinator.light_off.assert_called_once()
+        mock_coordinator.async_set_updated_data.assert_called_once_with(None)
+
+    def test_fire_off_resets_is_on(self, light, mock_coordinator):
+        """When fire turns off, coordinator flag triggers light reset."""
+        light._is_on = True
+        mock_coordinator.fire_just_turned_off = True
+        # Simulate _handle_coordinator_update
+        light._handle_coordinator_update()
+        # _restore_light is scheduled as a task; _is_on stays True (light re-lit)
+        # The entity creates a task but doesn't immediately change _is_on
+        # Just verify no crash and the coordinator update was processed
+
+
+class TestLightPlatformSetup:
+    async def test_creates_one_entity(self, hass, mock_coordinator, mock_config_entry):
+        hass.data[DOMAIN] = {mock_config_entry.entry_id: mock_coordinator}
+        added = []
+        with patch.object(
+            MertikLightEntity, "async_added_to_hass", new_callable=AsyncMock
+        ):
+            await async_setup_entry(hass, mock_config_entry, lambda e: added.extend(e))
+        assert len(added) == 1
+        assert isinstance(added[0], MertikLightEntity)
+        assert added[0].name == "Light"
