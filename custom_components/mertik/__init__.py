@@ -10,7 +10,7 @@ from .mertikdatacoordinator import MertikDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["switch", "number", "sensor", "light"]
+PLATFORMS = ["switch", "number", "sensor", "light", "climate", "select"]
 
 
 async def async_setup_entry(

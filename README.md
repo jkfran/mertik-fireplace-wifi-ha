@@ -1,53 +1,174 @@
-# Mertik Maxitrol Fireplace Integration for Home Assistant
+# Mertik Maxitrol Fireplace — Home Assistant Integration
 
-Welcome to the Mertik Maxitrol Fireplace Integration for Home Assistant, an innovative solution designed to seamlessly integrate your fireplace into your smart home ecosystem. This custom component allows you to control and monitor your fireplace directly from Home Assistant, enhancing your home's comfort and convenience. 
+A Home Assistant custom integration for gas fireplaces controlled by the
+**Mertik Maxitrol myfire WiFi box** (B6R-WME / B6R-W2BE-0 and similar).
 
-## **Compatibility**
+This is a substantially enhanced fork of
+[jkfran/mertik-fireplace-wifi-ha](https://github.com/jkfran/mertik-fireplace-wifi-ha).
+The wire protocol was reverse-engineered through PCAPdroid packet captures of
+the official myfire app, cross-referenced with community work by
+[erdebee](https://github.com/erdebee/homey-mertik-wifi),
+[rbrondgeest](https://github.com/rbrondgeest/homey-mertik-wifi), and
+[tritter](https://github.com/tritter/homebridge-mertik-fireplace).
 
-This integration is designed to be compatible with fireplaces that utilize the Mertik Maxitrol WiFi modules
+See [PROTOCOL.md](PROTOCOL.md) for full wire-level documentation.
 
-| Part No.     	| Compatible? 	| Auto discovery?* 	|
-|--------------	|-------------	|------------------	|
-| B6R-WME      	| Yes         	| Yes              	|
-| B6R-W2BE-0   	| Yes         	| Yes              	|
-| B6R-WWN 	    | Yes         	| No / Not sure    	|
+---
 
-Fireplaces using these modules are usually controllable via the following iOS/Android applications:
+## What's new vs the original
 
-- MyFire
-- Trimline Fires
-- RAISfire
-- Gazco MyFire
-- Thermocet International
-- Fire Connects
-- ITALKERO Fires
-- Signi Fires
-- SAFIRE
-- attika Fire
-- Ortal Heating Solutions
+| Feature | Original | This fork |
+|---------|----------|-----------|
+| On / Off | ✅ | ✅ |
+| Flame height (1–13 steps) | ✅ (broken) | ✅ fixed |
+| Light on/off + dimming | ✅ (broken) | ✅ fixed |
+| Aux / rear burner | ✅ (broken) | ✅ fixed |
+| Temperature sensor | ✅ (broken) | ✅ fixed |
+| APP mode handshake | ❌ | ✅ |
+| Light stays on when fire turns off | ❌ | ✅ |
+| Heating mode selector | ❌ | ✅ |
+| Thermostatic control | ❌ | ✅ |
+| Selectable external temperature sensor | ❌ | ✅ |
+| Adjustable thermostat thresholds | ❌ | ✅ |
 
+---
 
-## **Requirements**
+## Compatible hardware
 
-- A compatible fireplace equipped with a Mertik Maxitrol wifi module that is connected to your local Wi-Fi network.
+| WiFi Box Part No. | Status |
+|---|---|
+| B6R-WME | Confirmed working |
+| B6R-W2BE-0 | Confirmed working |
+| B6R-WWN | Likely working, unconfirmed |
 
-## **Installation Guide**
+Tested against a **B6R-H8TV4PB** receiver. The same WiFi box is sold under
+many brand names: RAISfire, Gazco MyFire, Trimline Fires, Thermocet,
+ITALKERO, Signi, SAFIRE, attika, Ortal, and Fire Connects.
 
-### **Method 1: Manual Installation**
-1. **Download Files**: Clone or download the `custom_components` folder from this repository.
-2. **Copy to Home Assistant**: Transfer the downloaded files to your Home Assistant's `custom_components` directory.
-3. **Restart Home Assistant**: Ensure the new integration is recognized by restarting Home Assistant.
+---
 
-### **Method 2: HACS (Home Assistant Community Store)**
-1. **Add Repository**: In HACS, navigate to "Integrations" then click on the "+ Explore & Add Integrations" button. Use the URL of this GitHub repository to add it as a custom repository.
-2. **Install Integration**: Search for "Mertik Maxitrol Fireplace Integration" and click "Install".
+## Entities
 
-### **Configuration**
-After installation by either method, proceed to configure the integration:
-1. Navigate to **Configuration > Integrations** in Home Assistant.
-2. Click the **+ Add Integration** button and search for **Mertik Maxitrol**.
-3. Select the integration and Home Assistant will automatically search your local network for the module, adding the entities to your system. If auto discovery is not working for you, figure out the IP (look in the WLAN client list on your Internet Router) and fill it in manually.
+| Entity | Type | Notes |
+|--------|------|-------|
+| Fireplace | Switch | Main on/off |
+| Aux | Switch | Rear / second burner |
+| Flame Height | Number | Steps 1–13; unavailable when fire is off |
+| Light | Light | Dimmable; stays on when fire is turned off |
+| Ambient Temperature | Sensor | Room temperature from paired handset |
+| Heating Mode | Select | Off / Full Heat / Medium Heat / Low Heat / Thermostatic |
+| Thermostat | Climate | Setpoint display and thermostatic control |
 
-## **Disclaimer**
+---
 
-Please use this integration at your own risk. The developers take no responsibility for any issues that may arise from the use of this software.
+## Heating modes
+
+Select the mode using the **Heating Mode** entity:
+
+| Mode | Behaviour |
+|------|-----------|
+| **Off** | Extinguishes the fire (use the Fireplace switch to also extinguish the pilot) |
+| **Full Heat** | Both burners, maximum flame |
+| **Medium Heat** | Front burner only, maximum flame |
+| **Low Heat** | Front burner only, minimum flame |
+| **Thermostatic** | HA automatically selects Full / Medium / Low / Off based on room temperature vs setpoint |
+
+### Thermostatic control
+
+Set the target temperature using the **Thermostat** entity's temperature
+slider. HA reads the current room temperature every 10 seconds and applies
+the appropriate heating mode:
+
+| Room temperature vs setpoint | Mode applied |
+|------------------------------|--------------|
+| At or above setpoint | Standby (pilot flame only) |
+| Within low threshold (default 2 °C) | Low Heat |
+| Within high threshold (default 4 °C) | Medium Heat |
+| More than high threshold below | Full Heat |
+
+When the room reaches the setpoint the main burners are extinguished but
+the **pilot flame remains lit**, allowing fast re-ignition when the room
+cools. To extinguish the pilot as well, switch the Heating Mode to Off
+or turn off the Fireplace switch.
+
+The thresholds are adjustable via **Settings → Devices & Services →
+Mertik → Configure**.
+
+### Temperature sensor
+
+By default the thermostat uses the ambient temperature from the fireplace's
+own handset sensor. You can select any other HA temperature sensor via
+**Settings → Devices & Services → Mertik → Configure**.
+
+> **Note:** The handset sensor only transmits temperature when it has entered
+> APP mode (indicated by "APP" on the handset display). If no temperature
+> appears, configure an external sensor — any HA `sensor` with
+> `device_class: temperature` appears in the dropdown.
+
+---
+
+## Installation
+
+### HACS (recommended)
+1. HACS → Integrations → ⋮ → Custom repositories
+2. Add this repository URL, category: Integration
+3. Install "Mertik Maxitrol Fireplace", restart HA
+
+### Manual
+1. Copy `custom_components/mertik/` into `config/custom_components/`
+2. Restart Home Assistant
+
+### Configuration
+**Settings → Devices & Services → Add Integration → Mertik Maxitrol**
+
+Enter the IP address of your myfire WiFi box. Assign a static DHCP lease
+so the IP does not change.
+
+### Startup safety automation
+
+The integration does not send a turn-off command at startup — doing so
+interferes with the device's flame height control. Add this automation to
+ensure the fire is off after every HA restart:
+
+```yaml
+alias: "Fireplace off on HA start"
+trigger:
+  - platform: homeassistant
+    event: start
+action:
+  - delay: "00:00:10"
+  - service: switch.turn_off
+    target:
+      entity_id: switch.fireplace
+```
+
+---
+
+## Known limitations
+
+**Flame height feedback** — The device status packet always reports the
+post-ignition baseline flame level regardless of `set_flame_height` commands.
+Flame height is therefore tracked locally from commands. The audible beep and
+physical flame change confirm the command was received and executed.
+
+**Rear burner at ignition** — Both burners light physically at ignition.
+The integration sends `aux_on` immediately after ignite so the Aux switch
+shows On and can be turned off.
+
+**Light when fire turns off** — The device physically extinguishes the light
+when the fire is turned off. The integration detects this and immediately
+re-sends the light on command at the previous brightness, so the light
+remains on. If you want the light to go off with the fire, turn it off
+manually before turning off the fire.
+
+**Handset APP mode** — The handset shows "APP" only when specific conditions
+are met. Controls work correctly regardless of whether "APP" is displayed.
+
+---
+
+## Disclaimer
+
+This integration controls a gas appliance. Use at your own risk. The authors
+accept no responsibility for any damage or injury. Always ensure your
+fireplace has a working ODS (Oxygen Depletion Sensor) and is maintained by
+a qualified engineer.

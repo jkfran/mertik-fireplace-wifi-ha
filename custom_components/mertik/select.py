@@ -1,0 +1,67 @@
+"""Heating mode selector for Mertik Maxitrol fireplace."""
+from homeassistant.components.select import SelectEntity
+from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.restore_state import RestoreEntity
+
+from .const import DOMAIN, HEATING_MODES, MODE_OFF
+
+ICON_MAP = {
+    "Off":          "mdi:fireplace-off",
+    "Full Heat":    "mdi:fire",
+    "Medium Heat":  "mdi:fire-circle",
+    "Low Heat":     "mdi:flame",
+    "Thermostatic": "mdi:thermostat",
+}
+
+
+async def async_setup_entry(hass, entry, async_add_entities):
+    dataservice = hass.data[DOMAIN].get(entry.entry_id)
+    async_add_entities([
+        MertikHeatingModeSelect(dataservice, entry.entry_id, entry.data["name"]),
+    ])
+
+
+class MertikHeatingModeSelect(CoordinatorEntity, SelectEntity, RestoreEntity):
+
+    _attr_has_entity_name = True
+    _attr_name = "Heating Mode"
+    _attr_options = HEATING_MODES
+
+    def __init__(self, dataservice, entry_id, device_name):
+        super().__init__(dataservice)
+        self._dataservice = dataservice
+        self._attr_unique_id = entry_id + "-HeatingMode"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry_id)},
+            name=device_name,
+            manufacturer="Mertik Maxitrol",
+        )
+        self._current_mode = MODE_OFF
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state in HEATING_MODES:
+            self._current_mode = last_state.state
+
+    @property
+    def current_option(self) -> str:
+        return self._current_mode
+
+    @property
+    def icon(self) -> str:
+        return ICON_MAP.get(self._current_mode, "mdi:fire")
+
+    async def async_select_option(self, option: str) -> None:
+        self._current_mode = option
+        if option == MODE_OFF:
+            await self.hass.async_add_executor_job(self._dataservice.guard_flame_off)
+            self._dataservice.mark_optimistic_off()
+        elif option != "Thermostatic":
+            await self.hass.async_add_executor_job(
+                self._dataservice.apply_heating_mode, option
+            )
+        # Thermostatic: climate entity drives hardware on next poll
+        self.async_write_ha_state()
+        self._dataservice.async_set_updated_data(None)

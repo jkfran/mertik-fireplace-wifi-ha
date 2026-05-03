@@ -1,50 +1,141 @@
+"""Config flow and options flow for Mertik Maxitrol fireplace."""
 import logging
 import socket
-
 from typing import Any, Dict, Optional
 
+import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_NAME, CONF_HOST
-import voluptuous as vol
+from homeassistant.helpers import entity_registry as er
+from homeassistant.components.sensor import SensorDeviceClass
 
-from .const import DOMAIN
+from .const import (
+    DOMAIN,
+    CONF_LOW_THRESHOLD,
+    CONF_HIGH_THRESHOLD,
+    CONF_TEMP_SENSOR,
+    DEFAULT_LOW_THRESHOLD,
+    DEFAULT_HIGH_THRESHOLD,
+    DEFAULT_TEMP_SENSOR,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
-DEVICE_SCHEMA = vol.Schema(
-    {vol.Required(CONF_NAME): str, vol.Required(CONF_HOST): str}
-)
+
+def _temp_sensor_options(hass) -> dict:
+    """Return {entity_id: friendly_name} for all temperature sensors."""
+    registry = er.async_get(hass)
+    options = {"": "Mertik handset (built-in)"}
+    for entry in registry.entities.values():
+        state = hass.states.get(entry.entity_id)
+        if state is None:
+            continue
+        if state.attributes.get("device_class") == SensorDeviceClass.TEMPERATURE:
+            # Skip the Mertik's own sensor to avoid it appearing twice
+            if entry.domain == "sensor" and entry.platform == DOMAIN:
+                continue
+            friendly = state.attributes.get("friendly_name", entry.entity_id)
+            options[entry.entity_id] = f"{friendly} ({entry.entity_id})"
+    return options
 
 
 class MertikConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Mertik config flow."""
+    """Initial setup: name, host, thresholds."""
 
-    async def async_step_user(self, device_input: Optional[Dict[str, Any]] = None):
-        """Invoked when a user initiates a flow via the user interface."""
+    async def async_step_user(self, user_input: Optional[Dict[str, Any]] = None):
         errors: Dict[str, str] = {}
-        if device_input is not None:
-            host = device_input[CONF_HOST]
+        if user_input is not None:
+            host = user_input[CONF_HOST]
+            low  = user_input.get(CONF_LOW_THRESHOLD,  DEFAULT_LOW_THRESHOLD)
+            high = user_input.get(CONF_HIGH_THRESHOLD, DEFAULT_HIGH_THRESHOLD)
 
-            await self.async_set_unique_id(host)
-            self._abort_if_unique_id_configured()
-
-            can_connect = await self.hass.async_add_executor_job(
-                _test_connection, host
-            )
-            if not can_connect:
-                errors["base"] = "cannot_connect"
+            if low <= 0 or high <= 0 or low >= high:
+                errors["base"] = "invalid_thresholds"
             else:
-                return self.async_create_entry(
-                    title="Mertik Maxitrol", data=device_input
+                await self.async_set_unique_id(host)
+                self._abort_if_unique_id_configured()
+                can_connect = await self.hass.async_add_executor_job(
+                    _test_connection, host
                 )
+                if not can_connect:
+                    errors["base"] = "cannot_connect"
+                else:
+                    return self.async_create_entry(
+                        title="Mertik Maxitrol", data=user_input
+                    )
 
+        schema = vol.Schema({
+            vol.Required(CONF_NAME): str,
+            vol.Required(CONF_HOST): str,
+            vol.Optional(CONF_LOW_THRESHOLD,  default=DEFAULT_LOW_THRESHOLD):  vol.Coerce(float),
+            vol.Optional(CONF_HIGH_THRESHOLD, default=DEFAULT_HIGH_THRESHOLD): vol.Coerce(float),
+        })
+        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+
+    @staticmethod
+    def async_get_options_flow(config_entry):
+        return MertikOptionsFlow(config_entry)
+
+
+class MertikOptionsFlow(config_entries.OptionsFlow):
+    """Options flow: adjust thresholds and temperature sensor selection.
+
+    Accessible via Settings -> Devices & Services -> Mertik -> Configure.
+    Changes take effect immediately without restarting HA.
+    """
+
+    def __init__(self, config_entry):
+        self._entry = config_entry
+
+    async def async_step_init(self, user_input: Optional[Dict[str, Any]] = None):
+        errors: Dict[str, str] = {}
+
+        # Current values (prefer options over data for previously set values)
+        current_low  = self._entry.options.get(
+            CONF_LOW_THRESHOLD,
+            self._entry.data.get(CONF_LOW_THRESHOLD, DEFAULT_LOW_THRESHOLD)
+        )
+        current_high = self._entry.options.get(
+            CONF_HIGH_THRESHOLD,
+            self._entry.data.get(CONF_HIGH_THRESHOLD, DEFAULT_HIGH_THRESHOLD)
+        )
+        current_sensor = self._entry.options.get(
+            CONF_TEMP_SENSOR,
+            self._entry.data.get(CONF_TEMP_SENSOR, DEFAULT_TEMP_SENSOR)
+        )
+
+        if user_input is not None:
+            low  = user_input.get(CONF_LOW_THRESHOLD,  current_low)
+            high = user_input.get(CONF_HIGH_THRESHOLD, current_high)
+            if low <= 0 or high <= 0 or low >= high:
+                errors["base"] = "invalid_thresholds"
+            else:
+                return self.async_create_entry(title="", data=user_input)
+
+        # Build sensor selector list dynamically from entities on the system
+        sensor_options = _temp_sensor_options(self.hass)
+        # If previously selected sensor no longer exists, fall back gracefully
+        if current_sensor not in sensor_options:
+            current_sensor = DEFAULT_TEMP_SENSOR
+
+        schema = vol.Schema({
+            vol.Optional(CONF_TEMP_SENSOR, default=current_sensor):
+                vol.In(sensor_options),
+            vol.Optional(CONF_LOW_THRESHOLD,  default=current_low):  vol.Coerce(float),
+            vol.Optional(CONF_HIGH_THRESHOLD, default=current_high): vol.Coerce(float),
+        })
         return self.async_show_form(
-            step_id="user", data_schema=DEVICE_SCHEMA, errors=errors
+            step_id="init",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={
+                "low_desc":  "Degrees C below setpoint to switch to Low Heat",
+                "high_desc": "Degrees C below setpoint to switch to Full Heat (must be > Low threshold)",
+            },
         )
 
 
 def _test_connection(host: str) -> bool:
-    """Test if the fireplace is reachable on TCP port 2000."""
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(5)

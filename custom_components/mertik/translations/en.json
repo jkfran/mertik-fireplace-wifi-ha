@@ -2,19 +2,38 @@
   "config": {
     "step": {
       "user": {
+        "title": "Mertik Maxitrol Fireplace",
+        "description": "Enter the IP address of your myfire WiFi box and thermostatic control thresholds.",
         "data": {
-          "name": "Assign name to the fireplace",
-          "host": "IP address of the fireplace controller"
-        },
-        "description": "Choose device.",
-        "title": "Devices"
+          "name": "Fireplace name",
+          "host": "IP address of the WiFi box",
+          "low_threshold": "Low heat threshold (degrees C below setpoint)",
+          "high_threshold": "Full heat threshold (degrees C below setpoint, must be greater than Low)"
+        }
       }
     },
     "error": {
-      "cannot_connect": "Unable to connect to the fireplace. Please check the IP address and ensure the device is powered on."
+      "cannot_connect": "Unable to connect to the fireplace WiFi box. Check the IP address and that the device is powered on and connected to your network.",
+      "invalid_thresholds": "Thresholds must be positive numbers, and the Low threshold must be less than the Full threshold."
     },
     "abort": {
       "already_configured": "This fireplace is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Fireplace Options",
+        "description": "Choose the temperature sensor used for thermostatic control and adjust the heating thresholds.",
+        "data": {
+          "temperature_sensor": "Temperature sensor (leave blank to use the fireplace handset)",
+          "low_threshold": "Low heat threshold (degrees C below setpoint)",
+          "high_threshold": "Full heat threshold (degrees C below setpoint, must be greater than Low)"
+        }
+      }
+    },
+    "error": {
+      "invalid_thresholds": "Thresholds must be positive numbers, and the Low threshold must be less than the Full threshold."
     }
   }
 }

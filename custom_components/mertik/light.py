@@ -1,24 +1,41 @@
+"""Light entity for Mertik Maxitrol fireplace.
+
+Light on/off and brightness are tracked locally (fully optimistic).
+The status packet is unreliable for light state.
+
+On HA startup: always initialises to Off and sends light_off() to device.
+Brightness level is restored from the previous session via RestoreEntity.
+
+When the fire is extinguished, the device physically turns the light off.
+The entity detects this via the coordinator's fire_just_turned_off flag
+and resets _is_on accordingly, but retains the brightness level so the
+light can be turned back on at the same level.
+"""
+from homeassistant.components.light import LightEntity, ColorMode, ATTR_BRIGHTNESS
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-
-from homeassistant.components.light import LightEntity, ColorMode, ATTR_BRIGHTNESS
+from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.core import callback
 
 from .const import DOMAIN
+
+DEFAULT_BRIGHTNESS = 128
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
-
     async_add_entities([
         MertikLightEntity(dataservice, entry.entry_id, entry.data["name"]),
     ])
 
 
-class MertikLightEntity(CoordinatorEntity, LightEntity):
+class MertikLightEntity(CoordinatorEntity, LightEntity, RestoreEntity):
+
     _attr_has_entity_name = True
     _attr_name = "Light"
     _attr_color_mode = ColorMode.BRIGHTNESS
     _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
+    _attr_assumed_state = True
 
     def __init__(self, dataservice, entry_id, device_name):
         super().__init__(dataservice)
@@ -29,25 +46,63 @@ class MertikLightEntity(CoordinatorEntity, LightEntity):
             name=device_name,
             manufacturer="Mertik Maxitrol",
         )
+        self._is_on = False
+        self._brightness = DEFAULT_BRIGHTNESS
+
+    async def async_added_to_hass(self):
+        """Restore brightness only; always start with light off."""
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state is not None:
+            if last_state.attributes.get(ATTR_BRIGHTNESS) is not None:
+                self._brightness = last_state.attributes[ATTR_BRIGHTNESS]
+        self._is_on = False
+        await self.hass.async_add_executor_job(self._dataservice.light_off)
+
+    async def _restore_light(self):
+        """Re-send light on after the device auto-killed it when fire turned off."""
+        await self.hass.async_add_executor_job(self._dataservice.light_on)
+        await self.hass.async_add_executor_job(
+            self._dataservice.set_light_brightness, self._brightness
+        )
+        # _is_on stays True; brightness unchanged
+        self.async_write_ha_state()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Called on every coordinator poll.
+        If the fire just turned off, the device also turned the light off.
+        We immediately re-send the light on command at the saved brightness
+        so the light stays on independently of the fire state.
+        """
+        if self._dataservice.fire_just_turned_off and self._is_on:
+            self.hass.async_create_task(self._restore_light())
+        super()._handle_coordinator_update()
 
     @property
     def is_on(self):
-        return self._dataservice.is_light_on
+        return self._is_on
 
     @property
     def brightness(self):
-        return self._dataservice.light_brightness
+        return self._brightness
 
     async def async_turn_on(self, **kwargs):
         if ATTR_BRIGHTNESS in kwargs:
+            self._brightness = kwargs[ATTR_BRIGHTNESS]
+            if not self._is_on:
+                await self.hass.async_add_executor_job(self._dataservice.light_on)
             await self.hass.async_add_executor_job(
-                self._dataservice.set_light_brightness, kwargs[ATTR_BRIGHTNESS]
+                self._dataservice.set_light_brightness, self._brightness
             )
-        elif not self.is_on:
+        else:
             await self.hass.async_add_executor_job(self._dataservice.light_on)
-
+        self._is_on = True
+        self.async_write_ha_state()
         self._dataservice.async_set_updated_data(None)
 
     async def async_turn_off(self, **kwargs):
+        self._is_on = False
+        self.async_write_ha_state()
         await self.hass.async_add_executor_job(self._dataservice.light_off)
         self._dataservice.async_set_updated_data(None)
