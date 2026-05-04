@@ -144,6 +144,12 @@ class MertikClimateEntity(CoordinatorEntity, ClimateEntity, RestoreEntity):
         return registry.async_get_entity_id("select", DOMAIN, uid)
 
     def _run_thermostatic_logic(self) -> None:
+        # If we are waiting for an ignition to complete, let the
+        # coordinator handle it this cycle and skip the temperature
+        # comparison -- flame height commands are ignored during ignition.
+        if self._dataservice.check_pending_mode():
+            return
+
         entity_id = self._select_entity_id()
         if entity_id is None:
             return
@@ -188,15 +194,15 @@ class MertikClimateEntity(CoordinatorEntity, ClimateEntity, RestoreEntity):
                 # Use standby (pilot flame) not guard_flame_off so:
                 # 1. Re-ignition is fast when heat is needed again
                 # 2. The light is NOT killed by the device
-                self.hass.async_create_task(
-                    self.hass.async_add_executor_job(self._dataservice.standby)
-                )
+                async def _do_standby():
+                    await self.hass.async_add_executor_job(self._dataservice.standby)
+                self.hass.async_create_task(_do_standby())
                 self._dataservice.mark_optimistic_off()
         else:
             _LOGGER.info("Thermostatic: applying %s (diff=%.1fC, sensor=%s)",
                          target_mode, diff, sensor_id)
-            self.hass.async_create_task(
-                self.hass.async_add_executor_job(
-                    self._dataservice.apply_heating_mode, target_mode
+            async def _do_apply(mode=target_mode):
+                await self.hass.async_add_executor_job(
+                    self._dataservice.apply_heating_mode, mode
                 )
-            )
+            self.hass.async_create_task(_do_apply())

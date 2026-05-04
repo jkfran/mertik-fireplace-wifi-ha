@@ -22,7 +22,9 @@ class MertikDataCoordinator(DataUpdateCoordinator):
         self._optimistic_off_until = None
         self._prev_is_on = False
         self.fire_just_turned_off = False  # set True for one cycle when fire turns off
-        self._in_standby = False  # True when thermostatic standby is active
+        self._in_standby = False       # True when thermostatic standby is active
+        self._pending_mode = None      # mode to apply once ignition completes
+        self._was_igniting = False     # tracks igniting falling edge
 
     # ---- On/off state ----------------------------------------------------
     # Use flame_on (flame byte > threshold) as the primary "is fire running"
@@ -112,33 +114,64 @@ class MertikDataCoordinator(DataUpdateCoordinator):
     def apply_heating_mode(self, mode: str) -> None:
         """Apply a named heating mode to the physical fireplace.
 
-        If the fire is in thermostatic standby (pilot lit), we skip
-        ignite_fireplace() and go straight to set_flame_height -- the pilot
-        lights the main burners immediately, giving fast re-ignition.
-        If fully off, ignite_fireplace() is sent first.
+        If the fire is in standby (pilot lit), we skip ignite and go
+        straight to set_flame_height -- fast re-ignition.
+
+        If fully off, we send ignite_fireplace() then store the target
+        mode in _pending_mode. The thermostatic loop detects the igniting
+        bit falling False and calls apply_heating_mode again to set the
+        correct flame height and aux state once the burner is confirmed lit.
+        Sending flame height commands during ignition is ignored by the
+        device, so we must wait.
         """
         from .const import MODE_FULL, MODE_MEDIUM, MODE_LOW
         needs_ignite = not self.is_on and not self._in_standby
         self._in_standby = False  # leaving standby regardless
 
+        if needs_ignite:
+            # Fire is fully off -- ignite and defer the rest until lit
+            self.mertik.ignite_fireplace()
+            self.mark_optimistic_on()
+            self._pending_mode = mode
+            _LOGGER.info("Igniting for mode %s -- will apply once burner is lit", mode)
+            return
+
+        # Fire is already on (or coming from standby) -- apply mode now
+        self._pending_mode = None
         if mode == MODE_FULL:
-            if needs_ignite:
-                self.mertik.ignite_fireplace()
-                self.mark_optimistic_on()
             self.mertik.set_flame_height(FLAME_MAX)
             self.mertik.aux_on()
         elif mode == MODE_MEDIUM:
-            if needs_ignite:
-                self.mertik.ignite_fireplace()
-                self.mark_optimistic_on()
             self.mertik.aux_off()
             self.mertik.set_flame_height(FLAME_MAX)
         elif mode == MODE_LOW:
-            if needs_ignite:
-                self.mertik.ignite_fireplace()
-                self.mark_optimistic_on()
             self.mertik.aux_off()
             self.mertik.set_flame_height(FLAME_MIN)
+
+    def check_pending_mode(self) -> bool:
+        """Called by the thermostatic loop each poll cycle.
+
+        Returns True if a pending mode was applied (so the caller knows
+        to skip its normal mode calculation this cycle).
+        """
+        if not self._pending_mode:
+            return False
+        # Still igniting -- wait
+        if self.mertik.is_igniting:
+            _LOGGER.debug("Waiting for ignition to complete before applying %s",
+                          self._pending_mode)
+            return True
+        # Igniting bit just dropped False -- flame_on may lag by one poll cycle.
+        # Keep _pending_mode alive and wait one more cycle before applying.
+        if not self.mertik.is_flame_on:
+            _LOGGER.debug("Igniting cleared but flame_on not yet set -- waiting")
+            return True
+        # Burner is lit -- apply the deferred mode
+        _LOGGER.info("Ignition complete, applying deferred mode %s", self._pending_mode)
+        mode = self._pending_mode
+        self._pending_mode = None
+        self.apply_heating_mode(mode)
+        return True
 
     async def _async_update_data(self):
         try:
