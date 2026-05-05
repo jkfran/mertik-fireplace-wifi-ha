@@ -3,3 +3,7 @@ __pycache__/
 *.pyc
 .coverage
 CLAUDE.md
+venv/
+.venv/
+env/
+ENV/
