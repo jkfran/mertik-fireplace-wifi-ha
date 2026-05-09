@@ -1,11 +1,16 @@
 """Fixtures for Mertik tests."""
 
+import os
 import pytest
 
 from unittest.mock import MagicMock, AsyncMock, patch, PropertyMock
+from pathlib import Path
 
 from custom_components.mertik.mertik import Mertik
 from custom_components.mertik.const import DOMAIN
+
+# Load Home Assistant pytest plugin for async test support
+pytest_plugins = "pytest_homeassistant_custom_component"
 
 
 @pytest.fixture
@@ -92,9 +97,9 @@ def _build_status_bytes(
     """
     prefix = "303030300003"
     config = "C6"
-    status_bits = f"{status_hi}{flame_byte:02X}"   # 4 chars, [16:20]
+    status_bits = f"{status_hi}{flame_byte:02X}"  # 4 chars, [16:20]
     light = f"{light_level:02X}"
-    filler = "04000000"                             # [22:30], 8 chars
+    filler = "04000000"  # [22:30], 8 chars
     temp = f"{ambient_temp:02X}"
     room = "DC" + "4C6976696E6720526F6F6D20" + "FF" * 20 + "043001"
 
