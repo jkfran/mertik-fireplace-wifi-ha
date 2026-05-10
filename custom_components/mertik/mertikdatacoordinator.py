@@ -25,6 +25,8 @@ class MertikDataCoordinator(DataUpdateCoordinator):
         self._in_standby = False       # True when thermostatic standby is active
         self._pending_mode = None      # mode to apply once ignition completes
         self._was_igniting = False     # tracks igniting falling edge
+        self._flame_on_since = None    # timestamp when flame first lit after ignite
+        self._settle_seconds = 35      # seconds to wait after flame_on before aux_off
 
     # ---- On/off state ----------------------------------------------------
     # Use flame_on (flame byte > threshold) as the primary "is fire running"
@@ -153,6 +155,12 @@ class MertikDataCoordinator(DataUpdateCoordinator):
 
         Returns True if a pending mode was applied (so the caller knows
         to skip its normal mode calculation this cycle).
+
+        After the burner lights, we wait _settle_seconds before sending
+        aux_off / set_flame_height. The device firmware ignores these
+        commands if sent too soon after ignition (ACK is received but
+        the physical state does not change). 35 seconds is conservative
+        but reliable based on observed device behaviour.
         """
         if not self._pending_mode:
             return False
@@ -160,16 +168,36 @@ class MertikDataCoordinator(DataUpdateCoordinator):
         if self.mertik.is_igniting:
             _LOGGER.debug("Waiting for ignition to complete before applying %s",
                           self._pending_mode)
+            self._flame_on_since = None
             return True
         # Igniting bit just dropped False -- flame_on may lag by one poll cycle.
-        # Keep _pending_mode alive and wait one more cycle before applying.
         if not self.mertik.is_flame_on:
             _LOGGER.debug("Igniting cleared but flame_on not yet set -- waiting")
             return True
-        # Burner is lit -- apply the deferred mode
-        _LOGGER.info("Ignition complete, applying deferred mode %s", self._pending_mode)
+        # Burner is lit -- start the settle timer if not already started
+        if self._flame_on_since is None:
+            self._flame_on_since = dt_util.utcnow()
+            _LOGGER.info(
+                "Burner lit, waiting %ds before applying %s",
+                self._settle_seconds, self._pending_mode
+            )
+            return True
+        # Check if enough time has passed since the burner lit
+        elapsed = (dt_util.utcnow() - self._flame_on_since).total_seconds()
+        if elapsed < self._settle_seconds:
+            _LOGGER.debug(
+                "Settling: %.0fs / %ds before applying %s",
+                elapsed, self._settle_seconds, self._pending_mode
+            )
+            return True
+        # Settle period complete -- apply the deferred mode
+        _LOGGER.info(
+            "Settled (%.0fs), applying deferred mode %s",
+            elapsed, self._pending_mode
+        )
         mode = self._pending_mode
         self._pending_mode = None
+        self._flame_on_since = None
         self.apply_heating_mode(mode)
         return True
 

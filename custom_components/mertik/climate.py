@@ -13,7 +13,7 @@ from .const import (
     DOMAIN,
     CONF_LOW_THRESHOLD, CONF_HIGH_THRESHOLD, CONF_TEMP_SENSOR,
     DEFAULT_LOW_THRESHOLD, DEFAULT_HIGH_THRESHOLD, DEFAULT_TEMP_SENSOR,
-    MODE_OFF, MODE_FULL, MODE_MEDIUM, MODE_LOW, MODE_THERMO,
+    MODE_FULL, MODE_MEDIUM, MODE_LOW, MODE_THERMO,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -167,7 +167,7 @@ class MertikClimateEntity(CoordinatorEntity, ClimateEntity, RestoreEntity):
         sensor_id = self._temp_sensor_entity_id or "Mertik handset"
 
         if diff <= 0:
-            target_mode = MODE_OFF
+            target_mode = None  # room at/above setpoint -> standby
         elif diff < self._low_thresh:
             target_mode = MODE_LOW
         elif diff < self._high_thresh:
@@ -187,13 +187,10 @@ class MertikClimateEntity(CoordinatorEntity, ClimateEntity, RestoreEntity):
 
         self._last_applied_mode = target_mode
 
-        if target_mode == MODE_OFF:
+        if target_mode is None:
             if self._dataservice.is_on:
                 _LOGGER.info("Thermostatic: standby (%.1fC >= %.1fC setpoint)",
                              current, self._target_temp)
-                # Use standby (pilot flame) not guard_flame_off so:
-                # 1. Re-ignition is fast when heat is needed again
-                # 2. The light is NOT killed by the device
                 async def _do_standby():
                     await self.hass.async_add_executor_job(self._dataservice.standby)
                 self.hass.async_create_task(_do_standby())

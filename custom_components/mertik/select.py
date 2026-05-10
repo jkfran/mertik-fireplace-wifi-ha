@@ -4,10 +4,9 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import DOMAIN, HEATING_MODES, MODE_OFF
+from .const import DOMAIN, HEATING_MODES, MODE_FULL
 
 ICON_MAP = {
-    "Off":          "mdi:fireplace-off",
     "Full Heat":    "mdi:fire",
     "Medium Heat":  "mdi:fire-circle",
     "Low Heat":     "mdi:flame",
@@ -37,7 +36,7 @@ class MertikHeatingModeSelect(CoordinatorEntity, SelectEntity, RestoreEntity):
             name=device_name,
             manufacturer="Mertik Maxitrol",
         )
-        self._current_mode = MODE_OFF
+        self._current_mode = MODE_FULL
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
@@ -55,10 +54,7 @@ class MertikHeatingModeSelect(CoordinatorEntity, SelectEntity, RestoreEntity):
 
     async def async_select_option(self, option: str) -> None:
         self._current_mode = option
-        if option == MODE_OFF:
-            await self.hass.async_add_executor_job(self._dataservice.guard_flame_off)
-            self._dataservice.mark_optimistic_off()
-        elif option != "Thermostatic":
+        if option != "Thermostatic":
             await self.hass.async_add_executor_job(
                 self._dataservice.apply_heating_mode, option
             )
