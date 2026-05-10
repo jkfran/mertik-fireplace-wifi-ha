@@ -73,8 +73,9 @@ class TestStatusParsing:
         assert device.is_shutting_down is True
 
     def test_status_bits_igniting(self, mock_socket):
-        """Bit 11 -> igniting. 0x0010 in 16-bit -> high byte has bit 4 set = 0x10."""
-        mock_socket.recv.return_value = _build_status_bytes(status_hi="90", flame_byte=0x00)
+        """Bit 11 -> igniting. 0x0010 in 16-bit value: carried in flame_byte=0x10."""
+        # 16-bit field = (0x80 << 8) | 0x10 = 0x8010; bit[11] = 1
+        mock_socket.recv.return_value = _build_status_bytes(status_hi="80", flame_byte=0x10)
         device = Mertik("192.168.1.100")
         assert device.is_igniting is True
 
@@ -313,6 +314,16 @@ class TestSocketReconnection:
             device = Mertik.__new__(Mertik)
             device.ip = "192.168.1.100"
             device.client = mock_socket
+            # Initialise all attributes that _process_status needs
+            device.on = False
+            device.flame_on = False
+            device._prev_flame_on = False
+            device._local_aux = False
+            device.flameHeight = 0
+            device._shutting_down = False
+            device._guard_flame_on = False
+            device._igniting = False
+            device._ambient_temperature = 0.0
             device.refresh_status()
 
             new_sock.connect.assert_called_with(("192.168.1.100", 2000))
@@ -338,6 +349,16 @@ class TestSocketReconnection:
             device = Mertik.__new__(Mertik)
             device.ip = "192.168.1.100"
             device.client = mock_socket
+            # Initialise all attributes that _process_status needs
+            device.on = False
+            device.flame_on = False
+            device._prev_flame_on = False
+            device._local_aux = False
+            device.flameHeight = 0
+            device._shutting_down = False
+            device._guard_flame_on = False
+            device._igniting = False
+            device._ambient_temperature = 0.0
             device.refresh_status()
 
             new_sock.connect.assert_called_with(("192.168.1.100", 2000))

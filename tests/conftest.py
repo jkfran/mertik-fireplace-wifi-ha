@@ -1,8 +1,7 @@
 """Fixtures for Mertik tests."""
 
 import pytest
-
-from unittest.mock import MagicMock, AsyncMock, patch, PropertyMock
+from unittest.mock import MagicMock, AsyncMock, patch
 
 from custom_components.mertik.mertik import Mertik
 from custom_components.mertik.const import DOMAIN
@@ -28,7 +27,6 @@ def mock_coordinator():
     coordinator.set_light_brightness = MagicMock()
     coordinator.set_flame_height = MagicMock()
     coordinator.fire_just_turned_off = False
-    # DataUpdateCoordinator attributes needed by CoordinatorEntity
     coordinator.async_add_listener = MagicMock(return_value=MagicMock())
     coordinator.data = None
     return coordinator
@@ -71,35 +69,40 @@ def _build_status_bytes(
         [16:20]  status bits (4 hex chars); [18:20] is the flame byte
         [20:22]  light level
         [22:30]  filler
-        [30:32]  ambient temperature (raw/10 = °C)
+        [30:32]  ambient temperature (raw/10 = degrees C)
 
-    Confirmed bit positions within status_bits [16:20]:
-        bit 7  = shutting down  -> 0x0100
-        bit 8  = guard flame    -> 0x0080
-        bit 9  = aux on         -> 0x0040
-        bit 11 = igniting       -> 0x0010
+    Confirmed bit positions within the 16-bit status field [16:20]:
+        bit 7  = shutting down  -> set status_hi to include 0x01
+        bit 8  = guard flame    -> set status_hi to include 0x80 (default)
+        bit 9  = aux on         -> set status_hi to include 0x40
+        bit 11 = igniting       -> set flame_byte to 0x10
 
-    flame_byte at [18:20] is the low byte of status_bits.
-    Set status_hi="80" for the normal "burner on, no special flags" case.
-    To set individual flags use: status_hi = f"{0x80 | flag_value:02X}".
+    flame_byte is the low byte of the 4-char status field [18:20].
+    The 16-bit value is: (int(status_hi, 16) << 8) | flame_byte.
+
+    Examples:
+        Normal on:    status_hi="80", flame_byte=0x8F  -> bits=0x808F
+        Igniting:     status_hi="80", flame_byte=0x10  -> bits=0x8010, bit11=1
+        Shutting down:status_hi="81", flame_byte=0x00  -> bits=0x8100, bit7=1
+        Aux on:       status_hi="C0", flame_byte=0x8F  -> bits=0xC08F, bit9=1
 
     Args:
         on_flag:     "FF" when fire is on, "00" when off.
         flame_byte:  Raw flame level. >0x7B means burner running.
-        status_hi:   High byte of 4-char status field (bits 0-7), e.g. "80".
+                     Also carries igniting flag (0x10) and other low bits.
+        status_hi:   High byte of 4-char status field, e.g. "80".
         light_level: Raw light level byte (not parsed by current code).
-        ambient_temp: Raw temperature byte; value/10 = °C.
+        ambient_temp: Raw temperature byte; value/10 = degrees C.
     """
     prefix = "303030300003"
     config = "C6"
-    status_bits = f"{status_hi}{flame_byte:02X}"   # 4 chars, [16:20]
+    status_bits = f"{status_hi}{flame_byte:02X}"
     light = f"{light_level:02X}"
-    filler = "04000000"                             # [22:30], 8 chars
+    filler = "04000000"
     temp = f"{ambient_temp:02X}"
     room = "DC" + "4C6976696E6720526F6F6D20" + "FF" * 20 + "043001"
 
     body = config + on_flag + status_bits + light + filler + temp + room
-    # Prepend dummy STX byte; _send_command strips byte 0 before parsing
     raw = "\x02" + prefix + body
     return raw.encode("ascii")
 
