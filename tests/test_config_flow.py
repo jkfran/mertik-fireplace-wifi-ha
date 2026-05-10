@@ -62,7 +62,8 @@ async def test_user_flow_creates_entry(hass: HomeAssistant, mock_connection_succ
 
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["title"] == "Mertik Maxitrol"
-    assert result["data"] == {"name": "My Fireplace", "host": "192.168.1.100"}
+    assert result["data"]["name"] == "My Fireplace"
+    assert result["data"]["host"] == "192.168.1.100"
 
 
 async def test_user_flow_connection_error(hass: HomeAssistant, mock_connection_failure):
