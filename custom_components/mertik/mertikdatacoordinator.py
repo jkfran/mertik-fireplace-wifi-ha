@@ -131,11 +131,12 @@ class MertikDataCoordinator(DataUpdateCoordinator):
         self._in_standby = False  # leaving standby regardless
 
         if needs_ignite:
-            # Fire is fully off -- ignite and defer the rest until lit
-            self.mertik.ignite_fireplace()
-            self.mark_optimistic_on()
-            self._pending_mode = mode
-            _LOGGER.info("Igniting for mode %s -- will apply once burner is lit", mode)
+            # Do NOT ignite if the user explicitly switched the fire off.
+            # _in_standby=False AND is_on=False means the user used the
+            # Fireplace switch -- that takes precedence over thermostatic control.
+            _LOGGER.debug(
+                "apply_heating_mode: fire is off by user, not igniting for %s", mode
+            )
             return
 
         # Fire is already on (or coming from standby) -- apply mode now

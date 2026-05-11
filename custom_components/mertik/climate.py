@@ -196,18 +196,11 @@ class MertikClimateEntity(CoordinatorEntity, ClimateEntity, RestoreEntity):
                 self.hass.async_create_task(_do_standby())
                 self._dataservice.mark_optimistic_off()
         else:
-            # Do NOT ignite if the Fireplace switch is explicitly off.
-            # The user switching off takes precedence over thermostatic control.
-            # _in_standby means the thermostat itself put it in pilot mode --
-            # that IS allowed to re-ignite. But if the user used the Fireplace
-            # switch, _in_standby is False and is_on is False, so we block.
+            # apply_heating_mode() itself checks whether the Fireplace
+            # switch is off and refuses to ignite if so. Reset _last_applied_mode
+            # when fire is off so we re-evaluate as soon as it comes back on.
             if not self._dataservice.is_on and not self._dataservice._in_standby:
-                _LOGGER.debug(
-                    "Thermostatic: Fireplace is off -- not igniting for %s",
-                    target_mode
-                )
-                self._last_applied_mode = None  # allow re-evaluation if turned back on
-                return
+                self._last_applied_mode = None
             _LOGGER.info("Thermostatic: applying %s (diff=%.1fC, sensor=%s)",
                          target_mode, diff, sensor_id)
             async def _do_apply(mode=target_mode):
