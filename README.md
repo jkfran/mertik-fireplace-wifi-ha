@@ -53,10 +53,10 @@ ITALKERO, Signi, SAFIRE, attika, Ortal, and Fire Connects.
 |--------|------|-------|
 | Fireplace | Switch | Main on/off |
 | Aux | Switch | Rear / second burner |
-| Flame Height | Number | Steps 1–13; unavailable when fire is off |
+| Flame Height | Number | Steps 1–13; shows 0 when fire is off |
 | Light | Light | Dimmable; stays on when fire is turned off |
 | Ambient Temperature | Sensor | Room temperature from paired handset |
-| Heating Mode | Select | Off / Full Heat / Medium Heat / Low Heat / Thermostatic |
+| Heating Mode | Select | Full Heat / Medium Heat / Low Heat / Thermostatic |
 | Thermostat | Climate | Setpoint display and thermostatic control |
 
 ---
@@ -67,11 +67,13 @@ Select the mode using the **Heating Mode** entity:
 
 | Mode | Behaviour |
 |------|-----------|
-| **Off** | Extinguishes the fire (use the Fireplace switch to also extinguish the pilot) |
 | **Full Heat** | Both burners, maximum flame |
 | **Medium Heat** | Front burner only, maximum flame |
 | **Low Heat** | Front burner only, minimum flame |
-| **Thermostatic** | HA automatically selects Full / Medium / Low / Off based on room temperature vs setpoint |
+| **Thermostatic** | HA automatically controls the heating mode based on room temperature vs setpoint |
+
+To turn the fire off, use the **Fireplace** switch. This extinguishes both
+the main burners and the pilot flame.
 
 ### Thermostatic control
 
@@ -93,6 +95,12 @@ or turn off the Fireplace switch.
 
 The thresholds are adjustable via **Settings → Devices & Services →
 Mertik → Configure**.
+
+**Cold start behaviour** — when the thermostat calls for heat from fully off,
+the fire ignites at full heat (both burners). After the burner is confirmed
+lit and a 35-second settle period, the correct mode (Low / Medium / Full) is
+applied automatically. This delay is required because the device ignores
+flame height and aux commands in the seconds immediately after ignition.
 
 ### Temperature sensor
 
@@ -150,6 +158,11 @@ action:
 post-ignition baseline flame level regardless of `set_flame_height` commands.
 Flame height is therefore tracked locally from commands. The audible beep and
 physical flame change confirm the command was received and executed.
+
+**Fireplace switch takes precedence over thermostatic control** — turning the
+fire off via the Fireplace switch prevents the thermostat from re-igniting it,
+even if the room temperature drops below the setpoint. To resume thermostatic
+control, turn the Fireplace switch back on.
 
 **Rear burner at ignition** — Both burners light physically at ignition.
 The integration sends `aux_on` immediately after ignite so the Aux switch

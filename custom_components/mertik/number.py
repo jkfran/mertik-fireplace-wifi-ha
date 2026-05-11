@@ -16,7 +16,7 @@ class MertikFlameHeightEntity(CoordinatorEntity, NumberEntity):
     """Flame height control (1-13 steps).
 
     Step 13 is the maximum (raw 0xFF), matching the device's own reporting.
-    The entity is unavailable when the fire is off because the device ignores
+    Flame height is shown as 0 when the fire is off (device ignores
     flame height commands when not running.
     """
     _attr_has_entity_name = True
@@ -36,10 +36,8 @@ class MertikFlameHeightEntity(CoordinatorEntity, NumberEntity):
             manufacturer="Mertik Maxitrol",
         )
 
-    @property
-    def available(self) -> bool:
-        """Only available when the fire is running."""
-        return super().available and self._dataservice.is_on
+    # Always available -- shows 0 when fire is off rather than an
+    # alarm/unavailable icon, which is more informative and less alarming.
 
     @property
     def native_value(self) -> float:

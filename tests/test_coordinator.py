@@ -152,3 +152,72 @@ class TestAsyncUpdateData:
         mock_mertik.refresh_status.side_effect = Exception("Connection lost")
         with pytest.raises(UpdateFailed):
             await coordinator._async_update_data()
+
+
+class TestThermostaticIgnitionGuard:
+    """Thermostatic control must not ignite when the Fireplace switch is off.
+
+    The user explicitly turning the fire off via the Fireplace switch must
+    take precedence over the thermostatic schedule at all times.
+    """
+
+    @pytest.fixture
+    def coordinator_off(self, hass, mock_mertik):
+        """Coordinator with fire off and not in standby (user switched off)."""
+        coord = MertikDataCoordinator(hass, mock_mertik)
+        mock_mertik.is_flame_on = False
+        mock_mertik.is_igniting = False
+        coord._in_standby = False   # user switched off -- not thermostatic standby
+        return coord
+
+    @pytest.fixture
+    def coordinator_standby(self, hass, mock_mertik):
+        """Coordinator in thermostatic standby (pilot lit, thermostat controls it)."""
+        coord = MertikDataCoordinator(hass, mock_mertik)
+        mock_mertik.is_flame_on = True   # pilot counts as flame_on
+        mock_mertik.is_igniting = False
+        coord._in_standby = True
+        return coord
+
+    def test_apply_heating_mode_blocked_when_user_switched_off(
+        self, coordinator_off, mock_mertik
+    ):
+        """apply_heating_mode must not ignite when fire is off and not in standby."""
+        coordinator_off.apply_heating_mode("Full Heat")
+        # ignite_fireplace must NOT have been called
+        mock_mertik.ignite_fireplace.assert_not_called()
+
+    def test_apply_heating_mode_blocked_for_all_modes_when_off(
+        self, coordinator_off, mock_mertik
+    ):
+        """Guard applies to all heat modes, not just Full Heat."""
+        from custom_components.mertik.const import MODE_LOW, MODE_MEDIUM, MODE_FULL
+        for mode in (MODE_FULL, MODE_MEDIUM, MODE_LOW):
+            mock_mertik.reset_mock()
+            coordinator_off.apply_heating_mode(mode)
+            mock_mertik.ignite_fireplace.assert_not_called(), (
+                f"ignite_fireplace should not be called for {mode} when fire is off"
+            )
+
+    def test_apply_heating_mode_allowed_from_standby(
+        self, coordinator_standby, mock_mertik
+    ):
+        """Thermostatic standby -> apply mode without re-igniting (pilot already lit)."""
+        coordinator_standby.apply_heating_mode("Low Heat")
+        # ignite_fireplace must NOT be called -- fire goes from pilot to Low Heat
+        mock_mertik.ignite_fireplace.assert_not_called()
+        # But flame height and aux commands ARE sent
+        mock_mertik.aux_off.assert_called_once()
+        mock_mertik.set_flame_height.assert_called_once()
+
+    def test_guard_flame_off_clears_standby_flag(self, coordinator_standby):
+        """Turning the fire off via the switch must clear _in_standby."""
+        assert coordinator_standby._in_standby is True
+        coordinator_standby.guard_flame_off()
+        assert coordinator_standby._in_standby is False
+
+    def test_standby_sets_in_standby_flag(self, coordinator_off):
+        """standby() must set _in_standby so thermostat can re-ignite."""
+        assert coordinator_off._in_standby is False
+        coordinator_off.standby()
+        assert coordinator_off._in_standby is True
