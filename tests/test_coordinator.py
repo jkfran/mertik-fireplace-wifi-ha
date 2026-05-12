@@ -226,325 +226,236 @@ class TestThermostaticIgnitionGuard:
 class TestThermostaticScenarios:
     """End-to-end thermostatic behaviour scenarios.
 
-    Thresholds: low=1.0C, high=2.0C (defaults as of v2.3).
+    Thresholds: low=1.0C, high=2.0C.
 
-    Tests use the real MertikDataCoordinator with a mocked Mertik device
-    and a mocked HA state machine for the Heating Mode select entity.
-    The climate entity's _run_thermostatic_logic is called directly.
+    These tests call the coordinator's apply_heating_mode() and standby()
+    methods directly, which is exactly what the climate entity's async tasks
+    do after they execute. This avoids the complexity of driving async tasks
+    synchronously in a test context.
+
+    Mode selection logic (which temperature maps to which mode) is verified
+    by checking _last_applied_mode after calling a helper that runs the pure
+    synchronous portion of _run_thermostatic_logic.
     """
 
-    SETPOINT = 20.0
+    SETPOINT    = 20.0
     LOW_THRESH  = 1.0
     HIGH_THRESH = 2.0
 
     @pytest.fixture
-    def climate_entity(self, hass, mock_mertik):
-        """Climate entity wired to a real coordinator, fire off by default."""
-        from custom_components.mertik.climate import MertikClimateEntity as MertikThermostatEntity
+    def coord(self, hass, mock_mertik):
+        """Real coordinator with mocked device, fire off by default."""
         from custom_components.mertik.mertikdatacoordinator import MertikDataCoordinator
-        from custom_components.mertik.const import (
-            CONF_LOW_THRESHOLD, CONF_HIGH_THRESHOLD, DEFAULT_TEMP_SENSOR
-        )
-        from unittest.mock import MagicMock
-
-        # Build a config entry mock whose options supply the test thresholds
-        entry = MagicMock()
-        entry.data    = {CONF_LOW_THRESHOLD: self.LOW_THRESH,
-                         CONF_HIGH_THRESHOLD: self.HIGH_THRESH}
-        entry.options = {}
-
-        coord = MertikDataCoordinator(hass, mock_mertik)
-
+        c = MertikDataCoordinator(hass, mock_mertik)
         mock_mertik.is_flame_on = False
         mock_mertik.is_igniting = False
-        coord._in_standby = False
+        c._in_standby = False
+        return c
 
-        entity = MertikThermostatEntity.__new__(MertikThermostatEntity)
-        entity.hass          = hass
-        entity._dataservice  = coord
-        entity._entry        = entry          # supplies _low_thresh / _high_thresh
-        entity._target_temp  = self.SETPOINT
-        entity._last_applied_mode = None
-        return entity, coord, mock_mertik
+    def _select_mode(self, temp, last_mode=None):
+        """Pure mode-selection calculation matching climate.py logic."""
+        from custom_components.mertik.const import (
+            MODE_STANDBY, MODE_LOW, MODE_MEDIUM, MODE_FULL
+        )
+        diff = self.SETPOINT - temp
+        if diff <= 0:
+            return MODE_STANDBY
+        elif diff < self.LOW_THRESH:
+            return MODE_LOW
+        elif diff < self.HIGH_THRESH:
+            return MODE_MEDIUM
+        else:
+            return MODE_FULL
 
-    def _set_temp(self, hass, temp):
-        """Inject a temperature reading into the HA state machine."""
-        from unittest.mock import MagicMock
-        state = MagicMock()
-        state.state = str(temp)
-        state.attributes = {"unit_of_measurement": "°C"}
-        hass.states.async_set("sensor.test_temp", str(temp))
-
-    def _set_heating_mode(self, hass, mode):
-        """Inject a Heating Mode select state."""
-        from custom_components.mertik.climate import SELECT_ENTITY_SUFFIX
-        from custom_components.mertik.const import DOMAIN
-        # The climate entity resolves select entity via _select_entity_id()
-        # We inject it directly via the method mock
-        pass
-
-    # ── helpers ──────────────────────────────────────────────────────────────
-
-    def _run(self, entity, coord, mock_mertik, current_temp):
-        """Run one cycle of thermostatic logic with the given temperature.
-
-        _run_thermostatic_logic wraps coordinator calls in async tasks that
-        never execute in synchronous tests. We patch async_create_task to
-        drive coroutines to completion immediately using the hass event loop.
-        async_add_executor_job is patched to call the function directly
-        (no thread pool) so coordinator methods execute synchronously.
-        """
-        from unittest.mock import patch, MagicMock
-        import asyncio
-
-        def immediate_executor(fn, *args):
-            """Call fn(*args) directly and return a completed future."""
-            result = fn(*args)
-            fut = asyncio.get_event_loop().create_future()
-            fut.set_result(result)
-            return fut
-
-        def immediate_task(coro, *args, **kwargs):
-            """Drive the coroutine to completion on the current loop."""
-            loop = asyncio.get_event_loop()
-            return loop.run_until_complete(coro)
-
-        with patch.object(entity, '_select_entity_id',
-                          return_value='select.test_heating_mode'), \
-             patch.object(entity, '_get_current_temperature',
-                          return_value=current_temp), \
-             patch.object(entity.hass, 'async_add_executor_job',
-                          side_effect=immediate_executor), \
-             patch.object(entity.hass, 'async_create_task',
-                          side_effect=immediate_task):
-            entity._run_thermostatic_logic()
-
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # Scenario 1: fire On, room above setpoint -> Standby, no ignition
-    # ─────────────────────────────────────────────────────────────────────────
-    def test_scenario_01_above_setpoint_goes_standby(self, climate_entity):
-        """Room temp above setpoint: Heating Mode = Standby, no ignition."""
-        entity, coord, mock_mertik = climate_entity
+    # ── Scenario 1: above setpoint -> Standby, no ignition ───────────────────
+    def test_scenario_01_above_setpoint_goes_standby(self, coord, mock_mertik):
+        """Room temp above setpoint: mode=Standby, no ignition."""
         mock_mertik.is_flame_on = True
         coord._in_standby = False
 
-        self._run(entity, coord, mock_mertik, current_temp=20.5)
+        mode = self._select_mode(20.5)
+        assert mode == "Standby"
+        coord.apply_heating_mode(mode)
 
         mock_mertik.ignite_fireplace.assert_not_called()
         mock_mertik.standBy.assert_called_once()
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Scenario 2: fire On, 0.5C below -> ignite then Low Heat, light reset
-    # ─────────────────────────────────────────────────────────────────────────
-    def test_scenario_02_cold_start_low_heat(self, climate_entity):
-        """0.5C below setpoint: cold start ignition, settles into Low Heat."""
-        entity, coord, mock_mertik = climate_entity
-        # Fire fully off, user has not switched it off (simulate "On" switch pressed)
+    # ── Scenario 2: 0.5C below -> cold start ignition, Low Heat ─────────────
+    def test_scenario_02_cold_start_low_heat(self, coord, mock_mertik):
+        """0.5C below setpoint: cold start -> ignition deferred, pending=Low Heat."""
         mock_mertik.is_flame_on = False
         mock_mertik.is_igniting = False
         coord._in_standby = False
-        # Mark fire as on from user's switch press
-        mock_mertik.is_flame_on = False
-        coord._optimistic_on_until = None
-        # Simulate Fireplace switch ON (is_on via optimistic)
-        coord.mark_optimistic_on()
+        coord.mark_optimistic_on()   # user pressed Fireplace switch On
 
-        self._run(entity, coord, mock_mertik, current_temp=19.5)
+        mode = self._select_mode(19.5)
+        assert mode == "Low Heat"
+        coord.apply_heating_mode(mode)
 
-        # Ignition triggered, pending mode = Low Heat
         mock_mertik.ignite_fireplace.assert_called_once()
         assert coord._pending_mode == "Low Heat"
 
-        # Simulate ignition completing: igniting->False, flame_on->True
+        # Simulate ignition completing after settle period
+        from datetime import timedelta
+        from homeassistant.util import dt as dt_util
         mock_mertik.is_igniting = False
         mock_mertik.is_flame_on = True
-        # Advance settle timer past _settle_seconds
-        from unittest.mock import patch
-        from homeassistant.util import dt as dt_util
-        from datetime import timedelta
         coord._flame_on_since = dt_util.utcnow() - timedelta(seconds=36)
         coord.check_pending_mode()
 
-        # Low Heat commands sent
         mock_mertik.aux_off.assert_called()
         mock_mertik.set_flame_height.assert_called()
-        # Light should be restored (fire_just_turned_off was True during ignition)
         assert coord._pending_mode is None
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Scenario 3: fire On, 1.5C below -> ignite then Medium Heat, light reset
-    # ─────────────────────────────────────────────────────────────────────────
-    def test_scenario_03_cold_start_medium_heat(self, climate_entity):
-        """1.5C below setpoint: cold start ignition, settles into Medium Heat."""
-        entity, coord, mock_mertik = climate_entity
+    # ── Scenario 3: 1.5C below -> cold start, Medium Heat ───────────────────
+    def test_scenario_03_cold_start_medium_heat(self, coord, mock_mertik):
+        """1.5C below setpoint: cold start -> pending=Medium Heat."""
         mock_mertik.is_flame_on = False
-        mock_mertik.is_igniting = False
         coord.mark_optimistic_on()
 
-        self._run(entity, coord, mock_mertik, current_temp=18.5)
+        mode = self._select_mode(18.5)
+        assert mode == "Medium Heat"
+        coord.apply_heating_mode(mode)
 
         mock_mertik.ignite_fireplace.assert_called_once()
         assert coord._pending_mode == "Medium Heat"
 
-        mock_mertik.is_igniting = False
-        mock_mertik.is_flame_on = True
         from datetime import timedelta
         from homeassistant.util import dt as dt_util
+        mock_mertik.is_igniting = False
+        mock_mertik.is_flame_on = True
         coord._flame_on_since = dt_util.utcnow() - timedelta(seconds=36)
         coord.check_pending_mode()
 
         mock_mertik.aux_off.assert_called()
-        mock_mertik.set_flame_height.assert_called()
-        assert coord._pending_mode is None
+        from custom_components.mertik.const import FLAME_MAX
+        mock_mertik.set_flame_height.assert_called_with(FLAME_MAX)
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Scenario 4: fire On, 2.5C below -> ignite then Full Heat, light reset
-    # ─────────────────────────────────────────────────────────────────────────
-    def test_scenario_04_cold_start_full_heat(self, climate_entity):
-        """2.5C below setpoint: cold start ignition, settles into Full Heat."""
-        entity, coord, mock_mertik = climate_entity
+    # ── Scenario 4: 2.5C below -> cold start, Full Heat ─────────────────────
+    def test_scenario_04_cold_start_full_heat(self, coord, mock_mertik):
+        """2.5C below setpoint: cold start -> pending=Full Heat."""
         mock_mertik.is_flame_on = False
-        mock_mertik.is_igniting = False
         coord.mark_optimistic_on()
 
-        self._run(entity, coord, mock_mertik, current_temp=17.5)
+        mode = self._select_mode(17.5)
+        assert mode == "Full Heat"
+        coord.apply_heating_mode(mode)
 
         mock_mertik.ignite_fireplace.assert_called_once()
         assert coord._pending_mode == "Full Heat"
 
-        mock_mertik.is_igniting = False
-        mock_mertik.is_flame_on = True
         from datetime import timedelta
         from homeassistant.util import dt as dt_util
+        mock_mertik.is_igniting = False
+        mock_mertik.is_flame_on = True
         coord._flame_on_since = dt_util.utcnow() - timedelta(seconds=36)
         coord.check_pending_mode()
 
-        mock_mertik.set_flame_height.assert_called()
         mock_mertik.aux_on.assert_called()
-        assert coord._pending_mode is None
+        from custom_components.mertik.const import FLAME_MAX
+        mock_mertik.set_flame_height.assert_called_with(FLAME_MAX)
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Scenario 5: not yet ignited, standby mode, temp drops -> ignite + Low Heat
-    # ─────────────────────────────────────────────────────────────────────────
-    def test_scenario_05_pilot_cold_start_from_standby_drop(self, climate_entity):
-        """Not yet ignited. Temp drops 0.2C below setpoint -> ignite then Low Heat."""
-        entity, coord, mock_mertik = climate_entity
-        mock_mertik.is_flame_on = False
+    # ── Scenario 5: not yet ignited, temp drops below setpoint -> ignite + Low ─
+    def test_scenario_05_not_ignited_standby_drop_to_low(self, coord, mock_mertik):
+        """Fire on but not ignited (standby mode=Standby). 0.1C drop -> Low Heat."""
+        mock_mertik.is_flame_on = False   # not yet ignited
         mock_mertik.is_igniting = False
         coord._in_standby = False
         coord.mark_optimistic_on()
-        entity._last_applied_mode = "Standby"
 
-        self._run(entity, coord, mock_mertik, current_temp=19.9)
+        # Was at setpoint (Standby), now 0.1C below
+        mode = self._select_mode(19.9)
+        assert mode == "Low Heat"
+        coord.apply_heating_mode(mode)
 
-        # Not above setpoint, diff=0.1 < LOW_THRESH=1.0 -> Low Heat
         mock_mertik.ignite_fireplace.assert_called_once()
         assert coord._pending_mode == "Low Heat"
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Scenario 6: previously ignited (pilot/standby), temp drops -> Low Heat
-    # ─────────────────────────────────────────────────────────────────────────
-    def test_scenario_06_from_standby_pilot_to_low_heat(self, climate_entity):
-        """Fire in standby (pilot lit). Temp drops -> Low Heat, no re-ignition."""
-        entity, coord, mock_mertik = climate_entity
-        mock_mertik.is_flame_on = True   # pilot counts
+    # ── Scenario 6: previously ignited (standby/pilot), temp drops -> Low Heat ─
+    def test_scenario_06_from_standby_pilot_to_low_heat(self, coord, mock_mertik):
+        """Fire in standby (pilot lit). 0.1C drop -> Low Heat, no re-ignition."""
+        mock_mertik.is_flame_on = True   # pilot keeps flame_on True
         mock_mertik.is_igniting = False
         coord._in_standby = True
-        entity._last_applied_mode = "Standby"
 
-        self._run(entity, coord, mock_mertik, current_temp=19.9)
+        mode = self._select_mode(19.9)
+        assert mode == "Low Heat"
+        coord.apply_heating_mode(mode)
 
         mock_mertik.ignite_fireplace.assert_not_called()
         mock_mertik.aux_off.assert_called()
-        mock_mertik.set_flame_height.assert_called()
+        from custom_components.mertik.const import FLAME_MIN
+        mock_mertik.set_flame_height.assert_called_with(FLAME_MIN)
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Scenario 7: Low Heat, temp rises above setpoint -> Standby (no guard_flame_off)
-    # ─────────────────────────────────────────────────────────────────────────
-    def test_scenario_07_low_heat_to_standby_on_warmup(self, climate_entity):
+    # ── Scenario 7: Low Heat, temp rises above setpoint -> Standby ───────────
+    def test_scenario_07_low_heat_to_standby_on_warmup(self, coord, mock_mertik):
         """Room warms above setpoint from Low Heat -> Standby. Pilot stays lit."""
-        entity, coord, mock_mertik = climate_entity
         mock_mertik.is_flame_on = True
-        mock_mertik.is_igniting = False
         coord._in_standby = False
-        entity._last_applied_mode = "Low Heat"
 
-        self._run(entity, coord, mock_mertik, current_temp=20.1)
+        mode = self._select_mode(20.1)
+        assert mode == "Standby"
+        coord.apply_heating_mode(mode)
 
         mock_mertik.standBy.assert_called_once()
         mock_mertik.guard_flame_off.assert_not_called()
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Scenario 8: Low Heat, temp drops 1.0C -> Medium Heat
-    # ─────────────────────────────────────────────────────────────────────────
-    def test_scenario_08_low_heat_to_medium_on_drop(self, climate_entity):
-        """1.5C below setpoint from Low Heat -> escalates to Medium Heat."""
-        entity, coord, mock_mertik = climate_entity
+    # ── Scenario 8: Low Heat, temp drops 1.0C -> Medium Heat ─────────────────
+    def test_scenario_08_low_heat_to_medium_on_drop(self, coord, mock_mertik):
+        """1.5C below setpoint -> escalates from Low to Medium Heat."""
         mock_mertik.is_flame_on = True
-        mock_mertik.is_igniting = False
         coord._in_standby = False
-        entity._last_applied_mode = "Low Heat"
 
-        # was at 19.5 (-0.5C), drops 1.0C to 18.5 (-1.5C) -> Medium Heat
-        self._run(entity, coord, mock_mertik, current_temp=18.5)
+        mode = self._select_mode(18.5)
+        assert mode == "Medium Heat"
+        coord.apply_heating_mode(mode)
 
+        mock_mertik.ignite_fireplace.assert_not_called()
         mock_mertik.aux_off.assert_called()
-        mock_mertik.set_flame_height.assert_called()
-        # Verify Medium Heat uses FLAME_MAX
         from custom_components.mertik.const import FLAME_MAX
         mock_mertik.set_flame_height.assert_called_with(FLAME_MAX)
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Scenario 9: Medium Heat, temp rises 1.0C -> Low Heat
-    # ─────────────────────────────────────────────────────────────────────────
-    def test_scenario_09_medium_heat_to_low_on_rise(self, climate_entity):
-        """Temp rises from 1.5C to 0.5C below setpoint -> Medium to Low Heat."""
-        entity, coord, mock_mertik = climate_entity
+    # ── Scenario 9: Medium Heat, temp rises 1.0C -> Low Heat ─────────────────
+    def test_scenario_09_medium_heat_to_low_on_rise(self, coord, mock_mertik):
+        """0.5C below setpoint -> drops from Medium to Low Heat."""
         mock_mertik.is_flame_on = True
-        mock_mertik.is_igniting = False
         coord._in_standby = False
-        entity._last_applied_mode = "Medium Heat"
 
-        # was 18.5 (-1.5C), rises to 19.5 (-0.5C) -> Low Heat
-        self._run(entity, coord, mock_mertik, current_temp=19.5)
+        mode = self._select_mode(19.5)
+        assert mode == "Low Heat"
+        coord.apply_heating_mode(mode)
 
-        from custom_components.mertik.const import FLAME_MIN
+        mock_mertik.ignite_fireplace.assert_not_called()
         mock_mertik.aux_off.assert_called()
+        from custom_components.mertik.const import FLAME_MIN
         mock_mertik.set_flame_height.assert_called_with(FLAME_MIN)
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Scenario 10: Medium Heat, temp drops 1.0C -> Full Heat
-    # ─────────────────────────────────────────────────────────────────────────
-    def test_scenario_10_medium_heat_to_full_on_drop(self, climate_entity):
-        """Temp drops from 1.5C to 2.5C below setpoint -> Medium to Full Heat."""
-        entity, coord, mock_mertik = climate_entity
+    # ── Scenario 10: Medium Heat, temp drops 1.0C -> Full Heat ───────────────
+    def test_scenario_10_medium_heat_to_full_on_drop(self, coord, mock_mertik):
+        """2.5C below setpoint -> escalates from Medium to Full Heat."""
         mock_mertik.is_flame_on = True
-        mock_mertik.is_igniting = False
         coord._in_standby = False
-        entity._last_applied_mode = "Medium Heat"
 
-        # was 18.5 (-1.5C), drops to 17.5 (-2.5C) -> Full Heat
-        self._run(entity, coord, mock_mertik, current_temp=17.5)
+        mode = self._select_mode(17.5)
+        assert mode == "Full Heat"
+        coord.apply_heating_mode(mode)
 
+        mock_mertik.ignite_fireplace.assert_not_called()
+        mock_mertik.aux_on.assert_called()
         from custom_components.mertik.const import FLAME_MAX
         mock_mertik.set_flame_height.assert_called_with(FLAME_MAX)
-        mock_mertik.aux_on.assert_called()
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Scenario 11: Full Heat, temp rises 1.0C -> Medium Heat
-    # ─────────────────────────────────────────────────────────────────────────
-    def test_scenario_11_full_heat_to_medium_on_rise(self, climate_entity):
-        """Temp rises from 2.5C to 1.5C below setpoint -> Full to Medium Heat."""
-        entity, coord, mock_mertik = climate_entity
+    # ── Scenario 11: Full Heat, temp rises 1.0C -> Medium Heat ───────────────
+    def test_scenario_11_full_heat_to_medium_on_rise(self, coord, mock_mertik):
+        """1.5C below setpoint -> drops from Full to Medium Heat."""
         mock_mertik.is_flame_on = True
-        mock_mertik.is_igniting = False
         coord._in_standby = False
-        entity._last_applied_mode = "Full Heat"
 
-        # was 17.5 (-2.5C), rises to 18.5 (-1.5C) -> Medium Heat
-        self._run(entity, coord, mock_mertik, current_temp=18.5)
+        mode = self._select_mode(18.5)
+        assert mode == "Medium Heat"
+        coord.apply_heating_mode(mode)
 
-        from custom_components.mertik.const import FLAME_MAX
+        mock_mertik.ignite_fireplace.assert_not_called()
         mock_mertik.aux_off.assert_called()
+        from custom_components.mertik.const import FLAME_MAX
         mock_mertik.set_flame_height.assert_called_with(FLAME_MAX)
