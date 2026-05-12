@@ -116,7 +116,10 @@ class MertikDataCoordinator(DataUpdateCoordinator):
     def apply_heating_mode(self, mode: str) -> None:
         """Apply a named heating mode to the physical fireplace.
 
-        Three cases:
+        Standby is handled first -- it must never trigger ignition regardless
+        of the current fire state.
+
+        For heat modes, three cases:
         1. User switched fire OFF (is_on=False, _in_standby=False): block, do nothing.
         2. Fire physically off but optimistically on (user just pressed On, device not
            yet confirmed): call ignite_fireplace() and store mode in _pending_mode.
@@ -124,6 +127,12 @@ class MertikDataCoordinator(DataUpdateCoordinator):
         3. Fire physically on or in thermostatic standby: apply mode immediately.
         """
         from .const import MODE_STANDBY, MODE_FULL, MODE_MEDIUM, MODE_LOW
+
+        # Standby never ignites -- handle it unconditionally before ignition logic.
+        if mode == MODE_STANDBY:
+            self._pending_mode = None
+            self.standby()
+            return
 
         # Case 1: user explicitly switched off -- thermostatic control must not ignite.
         if not self.is_on and not self._in_standby:
@@ -143,9 +152,6 @@ class MertikDataCoordinator(DataUpdateCoordinator):
         # Case 3: fire is physically on or coming from thermostatic standby.
         self._in_standby = False
         self._pending_mode = None
-        if mode == MODE_STANDBY:
-            self.standby()
-            return
         if mode == MODE_FULL:
             self.mertik.set_flame_height(FLAME_MAX)
             self.mertik.aux_on()
