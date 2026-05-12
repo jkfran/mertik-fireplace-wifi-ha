@@ -126,7 +126,7 @@ class MertikDataCoordinator(DataUpdateCoordinator):
         Sending flame height commands during ignition is ignored by the
         device, so we must wait.
         """
-        from .const import MODE_FULL, MODE_MEDIUM, MODE_LOW
+        from .const import MODE_STANDBY, MODE_FULL, MODE_MEDIUM, MODE_LOW
         needs_ignite = not self.is_on and not self._in_standby
         self._in_standby = False  # leaving standby regardless
 
@@ -141,6 +141,9 @@ class MertikDataCoordinator(DataUpdateCoordinator):
 
         # Fire is already on (or coming from standby) -- apply mode now
         self._pending_mode = None
+        if mode == MODE_STANDBY:
+            self.standby()
+            return
         if mode == MODE_FULL:
             self.mertik.set_flame_height(FLAME_MAX)
             self.mertik.aux_on()

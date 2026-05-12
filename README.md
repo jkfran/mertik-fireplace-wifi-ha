@@ -56,7 +56,7 @@ ITALKERO, Signi, SAFIRE, attika, Ortal, and Fire Connects.
 | Flame Height | Number | Steps 1–13; shows 0 when fire is off |
 | Light | Light | Dimmable; stays on when fire is turned off |
 | Ambient Temperature | Sensor | Room temperature from paired handset |
-| Heating Mode | Select | Full Heat / Medium Heat / Low Heat / Thermostatic |
+| Heating Mode | Select | Standby / Full Heat / Medium Heat / Low Heat / Thermostatic |
 | Thermostat | Climate | Setpoint display and thermostatic control |
 
 ---
@@ -67,6 +67,7 @@ Select the mode using the **Heating Mode** entity:
 
 | Mode | Behaviour |
 |------|-----------|
+| **Standby** | Pilot flame only; main burners off but instant re-ignition |
 | **Full Heat** | Both burners, maximum flame |
 | **Medium Heat** | Front burner only, maximum flame |
 | **Low Heat** | Front burner only, minimum flame |
@@ -84,8 +85,8 @@ the appropriate heating mode:
 | Room temperature vs setpoint | Mode applied |
 |------------------------------|--------------|
 | At or above setpoint | Standby (pilot flame only) |
-| Within low threshold (default 2 °C) | Low Heat |
-| Within high threshold (default 4 °C) | Medium Heat |
+| Within low threshold (default 1 °C) | Low Heat |
+| Within high threshold (default 2 °C) | Medium Heat |
 | More than high threshold below | Full Heat |
 
 When the room reaches the setpoint the main burners are extinguished but
@@ -93,8 +94,8 @@ the **pilot flame remains lit**, allowing fast re-ignition when the room
 cools. To extinguish the pilot as well, switch the Heating Mode to Off
 or turn off the Fireplace switch.
 
-The thresholds are adjustable via **Settings → Devices & Services →
-Mertik → Configure**.
+The default thresholds are 1 °C (Low) and 2 °C (High) and are adjustable via
+**Settings → Devices & Services → Mertik → Configure**.
 
 **Cold start behaviour** — when the thermostat calls for heat from fully off,
 the fire ignites at full heat (both burners). After the burner is confirmed

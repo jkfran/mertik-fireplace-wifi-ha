@@ -8,17 +8,18 @@ CONF_HIGH_THRESHOLD = "high_threshold"
 CONF_TEMP_SENSOR    = "temperature_sensor"
 
 # Default thermostatic thresholds (degrees C below setpoint)
-DEFAULT_LOW_THRESHOLD  = 2.0   # within 2C -> Low Heat
-DEFAULT_HIGH_THRESHOLD = 4.0   # more than 4C below -> Full Heat
+DEFAULT_LOW_THRESHOLD  = 1.0   # within 1C below setpoint -> Low Heat
+DEFAULT_HIGH_THRESHOLD = 2.0   # more than 2C below setpoint -> Full Heat
 DEFAULT_TEMP_SENSOR    = ""    # empty = use fireplace handset sensor
 
 # Heating mode select options
-MODE_OFF    = "Off"
-MODE_FULL   = "Full Heat"
-MODE_MEDIUM = "Medium Heat"
-MODE_LOW    = "Low Heat"
-MODE_THERMO = "Thermostatic"
-HEATING_MODES = [MODE_FULL, MODE_MEDIUM, MODE_LOW, MODE_THERMO]
+MODE_OFF     = "Off"       # kept for compatibility, not shown in UI
+MODE_STANDBY = "Standby"   # pilot only; shown by thermostat when room is warm
+MODE_FULL    = "Full Heat"
+MODE_MEDIUM  = "Medium Heat"
+MODE_LOW     = "Low Heat"
+MODE_THERMO  = "Thermostatic"
+HEATING_MODES = [MODE_STANDBY, MODE_FULL, MODE_MEDIUM, MODE_LOW, MODE_THERMO]
 
 # Flame height step range
 FLAME_MIN = 1

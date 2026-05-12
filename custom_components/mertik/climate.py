@@ -13,7 +13,7 @@ from .const import (
     DOMAIN,
     CONF_LOW_THRESHOLD, CONF_HIGH_THRESHOLD, CONF_TEMP_SENSOR,
     DEFAULT_LOW_THRESHOLD, DEFAULT_HIGH_THRESHOLD, DEFAULT_TEMP_SENSOR,
-    MODE_FULL, MODE_MEDIUM, MODE_LOW, MODE_THERMO,
+    MODE_STANDBY, MODE_FULL, MODE_MEDIUM, MODE_LOW, MODE_THERMO,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -167,7 +167,7 @@ class MertikClimateEntity(CoordinatorEntity, ClimateEntity, RestoreEntity):
         sensor_id = self._temp_sensor_entity_id or "Mertik handset"
 
         if diff <= 0:
-            target_mode = None  # room at/above setpoint -> standby
+            target_mode = MODE_STANDBY  # room at/above setpoint -> standby
         elif diff < self._low_thresh:
             target_mode = MODE_LOW
         elif diff < self._high_thresh:
@@ -177,7 +177,8 @@ class MertikClimateEntity(CoordinatorEntity, ClimateEntity, RestoreEntity):
 
         _LOGGER.debug(
             "Thermostatic: sensor=%s current=%.1fC setpoint=%.1fC diff=%.1fC -> %s",
-            sensor_id, current, self._target_temp, diff, target_mode,
+            sensor_id, current, self._target_temp, diff,
+            target_mode if target_mode else "Standby",
         )
 
         # Only act if the required mode has changed -- prevents sending the
@@ -187,7 +188,7 @@ class MertikClimateEntity(CoordinatorEntity, ClimateEntity, RestoreEntity):
 
         self._last_applied_mode = target_mode
 
-        if target_mode is None:
+        if target_mode == MODE_STANDBY:
             if self._dataservice.is_on:
                 _LOGGER.info("Thermostatic: standby (%.1fC >= %.1fC setpoint)",
                              current, self._target_temp)
@@ -200,7 +201,7 @@ class MertikClimateEntity(CoordinatorEntity, ClimateEntity, RestoreEntity):
             # switch is off and refuses to ignite if so. Reset _last_applied_mode
             # when fire is off so we re-evaluate as soon as it comes back on.
             if not self._dataservice.is_on and not self._dataservice._in_standby:
-                self._last_applied_mode = None
+                self._last_applied_mode = MODE_STANDBY
             _LOGGER.info("Thermostatic: applying %s (diff=%.1fC, sensor=%s)",
                          target_mode, diff, sensor_id)
             async def _do_apply(mode=target_mode):
