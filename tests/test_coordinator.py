@@ -268,9 +268,9 @@ class TestThermostaticScenarios:
             return MODE_FULL
 
     # ── Scenario 1: above setpoint -> Standby, no ignition ───────────────────
-    def test_scenario_01_above_setpoint_goes_standby(self, coord, mock_mertik):
+    def test_scenario_01_above_setpoint_goes_standby_no_ignition(self, coord, mock_mertik):
         """Room temp above setpoint: mode=Standby, no ignition."""
-        mock_mertik.is_flame_on = True
+        mock_mertik.is_flame_on = False
         coord._in_standby = False
 
         mode = self._select_mode(20.5)
