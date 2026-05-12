@@ -286,14 +286,39 @@ class TestThermostaticScenarios:
     # ── helpers ──────────────────────────────────────────────────────────────
 
     def _run(self, entity, coord, mock_mertik, current_temp):
-        """Run one cycle of thermostatic logic with the given temperature."""
+        """Run one cycle of thermostatic logic with the given temperature.
+
+        _run_thermostatic_logic wraps coordinator calls in async tasks that
+        never execute in synchronous tests. We patch async_create_task to
+        drive coroutines to completion immediately using the hass event loop.
+        async_add_executor_job is patched to call the function directly
+        (no thread pool) so coordinator methods execute synchronously.
+        """
         from unittest.mock import patch, MagicMock
-        from custom_components.mertik.const import MODE_THERMO
-        state = MagicMock()
-        state.state = MODE_THERMO
-        with patch.object(entity, '_select_entity_id', return_value='select.test_heating_mode'), \
-             patch.object(entity, '_get_current_temperature', return_value=current_temp):
+        import asyncio
+
+        def immediate_executor(fn, *args):
+            """Call fn(*args) directly and return a completed future."""
+            result = fn(*args)
+            fut = asyncio.get_event_loop().create_future()
+            fut.set_result(result)
+            return fut
+
+        def immediate_task(coro, *args, **kwargs):
+            """Drive the coroutine to completion on the current loop."""
+            loop = asyncio.get_event_loop()
+            return loop.run_until_complete(coro)
+
+        with patch.object(entity, '_select_entity_id',
+                          return_value='select.test_heating_mode'), \
+             patch.object(entity, '_get_current_temperature',
+                          return_value=current_temp), \
+             patch.object(entity.hass, 'async_add_executor_job',
+                          side_effect=immediate_executor), \
+             patch.object(entity.hass, 'async_create_task',
+                          side_effect=immediate_task):
             entity._run_thermostatic_logic()
+
 
     # ─────────────────────────────────────────────────────────────────────────
     # Scenario 1: fire On, room above setpoint -> Standby, no ignition
