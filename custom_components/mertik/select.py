@@ -37,7 +37,7 @@ class MertikHeatingModeSelect(CoordinatorEntity, SelectEntity, RestoreEntity):
             name=device_name,
             manufacturer="Mertik Maxitrol",
         )
-        self._current_mode = MODE_STANDBY
+        self._current_mode = "Standby"
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
@@ -57,7 +57,7 @@ class MertikHeatingModeSelect(CoordinatorEntity, SelectEntity, RestoreEntity):
     async def async_select_option(self, option: str) -> None:
         self._current_mode = option
         self._dataservice.set_heating_mode(option)
-        if option == MODE_STANDBY:
+        if option == "Standby":
             await self.hass.async_add_executor_job(self._dataservice.standby)
             self._dataservice.mark_optimistic_off()
         elif option != "Thermostatic":
