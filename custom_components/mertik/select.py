@@ -4,12 +4,13 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import DOMAIN, HEATING_MODES, MODE_FULL, MODE_STANDBY
+from .const import DOMAIN, HEATING_MODES
 
 ICON_MAP = {
     "Full Heat":    "mdi:fire",
     "Medium Heat":  "mdi:fire-circle",
     "Low Heat":     "mdi:flame",
+    "Standby":      "mdi:fire-off",
     "Thermostatic": "mdi:thermostat",
 }
 
