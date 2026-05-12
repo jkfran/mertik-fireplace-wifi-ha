@@ -37,8 +37,13 @@ class MertikOnOffSwitchEntity(CoordinatorEntity, SwitchEntity):
         return bool(self._dataservice.is_on)
 
     async def async_turn_on(self, **kwargs):
-        await self.hass.async_add_executor_job(self._dataservice.ignite_fireplace)
+        from .const import MODE_THERMO
         self._dataservice.mark_optimistic_on()
+        # In thermostatic mode, defer ignition to the climate entity's next poll.
+        # Igniting here would light the fire even when the room is already above
+        # the setpoint (e.g. room=21C, setpoint=19C -> should stay unlit).
+        if self._dataservice.heating_mode != MODE_THERMO:
+            await self.hass.async_add_executor_job(self._dataservice.ignite_fireplace)
         self._dataservice.async_set_updated_data(None)
 
     async def async_turn_off(self, **kwargs):

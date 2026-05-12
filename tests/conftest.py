@@ -26,6 +26,7 @@ def mock_coordinator():
     coordinator.light_off = MagicMock()
     coordinator.set_light_brightness = MagicMock()
     coordinator.set_flame_height = MagicMock()
+    coordinator.heating_mode = None
     coordinator.fire_just_turned_off = False
     coordinator.async_add_listener = MagicMock(return_value=MagicMock())
     coordinator.data = None

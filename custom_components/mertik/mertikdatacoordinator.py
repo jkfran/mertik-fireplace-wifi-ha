@@ -4,7 +4,6 @@ import logging
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .mertik import Mertik
 from .const import FLAME_MIN, FLAME_MAX
 
 _LOGGER = logging.getLogger(__name__)
@@ -24,6 +23,7 @@ class MertikDataCoordinator(DataUpdateCoordinator):
         self.fire_just_turned_off = False  # set True for one cycle when fire turns off
         self._in_standby = False       # True when thermostatic standby is active
         self._pending_mode = None      # mode to apply once ignition completes
+        self._heating_mode = None      # current mode set by the Heating Mode select entity
         self._was_igniting = False     # tracks igniting falling edge
         self._flame_on_since = None    # timestamp when flame first lit after ignite
         self._settle_seconds = 35      # seconds to wait after flame_on before aux_off
@@ -52,6 +52,13 @@ class MertikDataCoordinator(DataUpdateCoordinator):
     def mark_optimistic_off(self):
         self._optimistic_on_until  = None
         self._optimistic_off_until = dt_util.utcnow() + timedelta(seconds=OPTIMISTIC_OFF_SECONDS)
+
+    @property
+    def heating_mode(self) -> str | None:
+        return self._heating_mode
+
+    def set_heating_mode(self, mode: str) -> None:
+        self._heating_mode = mode
 
     def ignite_fireplace(self):
         self.mertik.ignite_fireplace()

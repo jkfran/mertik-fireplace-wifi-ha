@@ -43,6 +43,7 @@ class MertikHeatingModeSelect(CoordinatorEntity, SelectEntity, RestoreEntity):
         last_state = await self.async_get_last_state()
         if last_state is not None and last_state.state in HEATING_MODES:
             self._current_mode = last_state.state
+            self._dataservice.set_heating_mode(last_state.state)
 
     @property
     def current_option(self) -> str:
@@ -54,6 +55,7 @@ class MertikHeatingModeSelect(CoordinatorEntity, SelectEntity, RestoreEntity):
 
     async def async_select_option(self, option: str) -> None:
         self._current_mode = option
+        self._dataservice.set_heating_mode(option)
         if option == MODE_STANDBY:
             await self.hass.async_add_executor_job(self._dataservice.standby)
             self._dataservice.mark_optimistic_off()
