@@ -242,10 +242,18 @@ class TestThermostaticScenarios:
         """Climate entity wired to a real coordinator, fire off by default."""
         from custom_components.mertik.climate import MertikClimateEntity as MertikThermostatEntity
         from custom_components.mertik.mertikdatacoordinator import MertikDataCoordinator
+        from custom_components.mertik.const import (
+            CONF_LOW_THRESHOLD, CONF_HIGH_THRESHOLD, DEFAULT_TEMP_SENSOR
+        )
+        from unittest.mock import MagicMock
+
+        # Build a config entry mock whose options supply the test thresholds
+        entry = MagicMock()
+        entry.data    = {CONF_LOW_THRESHOLD: self.LOW_THRESH,
+                         CONF_HIGH_THRESHOLD: self.HIGH_THRESH}
+        entry.options = {}
 
         coord = MertikDataCoordinator(hass, mock_mertik)
-        coord._low_thresh  = self.LOW_THRESH
-        coord._high_thresh = self.HIGH_THRESH
 
         mock_mertik.is_flame_on = False
         mock_mertik.is_igniting = False
@@ -254,11 +262,9 @@ class TestThermostaticScenarios:
         entity = MertikThermostatEntity.__new__(MertikThermostatEntity)
         entity.hass          = hass
         entity._dataservice  = coord
+        entity._entry        = entry          # supplies _low_thresh / _high_thresh
         entity._target_temp  = self.SETPOINT
-        entity._low_thresh   = self.LOW_THRESH
-        entity._high_thresh  = self.HIGH_THRESH
         entity._last_applied_mode = None
-        entity._temp_sensor_entity_id = "sensor.test_temp"
         return entity, coord, mock_mertik
 
     def _set_temp(self, hass, temp):
