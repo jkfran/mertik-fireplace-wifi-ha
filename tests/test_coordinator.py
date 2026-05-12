@@ -225,6 +225,29 @@ class TestThermostaticIgnitionGuard:
         mock_mertik.aux_off.assert_called_once()
         mock_mertik.set_flame_height.assert_called_once()
 
+    def test_apply_heating_mode_from_dead_standby_reignites(
+        self, coordinator_standby, mock_mertik
+    ):
+        """_in_standby=True but pilot died (is_flame_on=False): must re-ignite.
+
+        Real-life scenario: fire was in thermostatic standby (pilot lit), but the
+        pilot went out (safety shutoff, gas interruption, etc.). HA still has
+        _in_standby=True. When the thermostat demands heat, we must re-ignite
+        rather than blindly sending flame-height commands to an extinguished device.
+        Sending flame-height to a dead device clears _in_standby, making is_on False
+        -- which manifests as the fire appearing to turn itself off.
+        """
+        mock_mertik.is_flame_on = False   # pilot has gone out
+        mock_mertik.is_igniting = False
+
+        coordinator_standby.apply_heating_mode("Full Heat")
+
+        mock_mertik.ignite_fireplace.assert_called_once()
+        assert coordinator_standby._pending_mode == "Full Heat"
+        assert coordinator_standby._in_standby is False
+        mock_mertik.set_flame_height.assert_not_called()
+        mock_mertik.aux_on.assert_not_called()
+
     def test_guard_flame_off_clears_standby_flag(self, coordinator_standby):
         """Turning the fire off via the switch must clear _in_standby."""
         assert coordinator_standby._in_standby is True
@@ -401,6 +424,29 @@ class TestThermostaticScenarios:
         mock_mertik.aux_off.assert_called()
         from custom_components.mertik.const import FLAME_MIN
         mock_mertik.set_flame_height.assert_called_with(FLAME_MIN)
+
+    # ── Scenario 6b: standby with dead pilot -> re-ignite ────────────────────
+    def test_scenario_06b_standby_pilot_died_reignites(self, coord, mock_mertik):
+        """Standby mode but pilot has gone out: must re-ignite, not send flame commands.
+
+        is_flame_on=False while _in_standby=True means the device extinguished while
+        HA thought it was in thermostatic standby. The correct response is a full
+        ignition sequence so the fire actually lights, not a flame-height command
+        that the dead device will silently ignore (which clears _in_standby and
+        makes is_on go False -- the 'turns itself off' symptom).
+        """
+        mock_mertik.is_flame_on = False   # pilot went out
+        mock_mertik.is_igniting = False
+        coord._in_standby = True
+
+        mode = self._select_mode(19.9)   # 0.1 C below setpoint -> Low Heat
+        assert mode == "Low Heat"
+        coord.apply_heating_mode(mode)
+
+        mock_mertik.ignite_fireplace.assert_called_once()
+        assert coord._pending_mode == "Low Heat"
+        mock_mertik.set_flame_height.assert_not_called()
+        assert coord._in_standby is False
 
     # ── Scenario 7: Low Heat, temp rises above setpoint -> Standby ───────────
     def test_scenario_07_low_heat_to_standby_on_warmup(self, coord, mock_mertik):
