@@ -240,7 +240,7 @@ class TestThermostaticScenarios:
     @pytest.fixture
     def climate_entity(self, hass, mock_mertik):
         """Climate entity wired to a real coordinator, fire off by default."""
-        from custom_components.mertik.climate import MertikThermostatEntity
+        from custom_components.mertik.climate import MertikClimateEntity as MertikThermostatEntity
         from custom_components.mertik.mertikdatacoordinator import MertikDataCoordinator
 
         coord = MertikDataCoordinator(hass, mock_mertik)
