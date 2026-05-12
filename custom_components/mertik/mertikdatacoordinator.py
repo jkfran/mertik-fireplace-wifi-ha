@@ -35,7 +35,13 @@ class MertikDataCoordinator(DataUpdateCoordinator):
 
     @property
     def is_on(self) -> bool:
-        """Fire is running -- based on flame byte OR optimistic timer."""
+        """Fire is running -- based on flame byte, standby state, or optimistic timer.
+
+        _in_standby (pilot lit, thermostatic armed) takes priority over the
+        optimistic-off timer so the Fireplace switch stays on while in standby.
+        """
+        if self._in_standby:
+            return True
         now = dt_util.utcnow()
         if self._optimistic_off_until and now < self._optimistic_off_until:
             return False

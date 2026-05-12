@@ -195,7 +195,8 @@ class MertikClimateEntity(CoordinatorEntity, ClimateEntity, RestoreEntity):
                 async def _do_standby():
                     await self.hass.async_add_executor_job(self._dataservice.standby)
                 self.hass.async_create_task(_do_standby())
-                self._dataservice.mark_optimistic_off()
+                # Do NOT call mark_optimistic_off here -- _in_standby keeps is_on
+                # True so the Fireplace switch stays on while in thermostatic standby.
         else:
             # apply_heating_mode() itself checks whether the Fireplace
             # switch is off and refuses to ignite if so. Reset _last_applied_mode

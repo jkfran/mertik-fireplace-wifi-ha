@@ -55,19 +55,19 @@ class TestOnOffSwitch:
         mock_coordinator.mark_optimistic_on.assert_called_once()
         mock_coordinator.async_set_updated_data.assert_called_once_with(None)
 
-    async def test_turn_on_thermostatic_mode_does_not_ignite(self, switch, mock_coordinator):
-        """Fireplace switch On in Thermostatic mode must not ignite.
+    async def test_turn_on_thermostatic_mode_arms_standby(self, switch, mock_coordinator):
+        """Fireplace switch On in Thermostatic mode arms pilot, never ignites main burner.
 
         Real-life bug: room=21C, setpoint=19C, Thermostatic mode active.
-        Turning on the switch triggered a full ignition (both burners, flame=1).
-        The climate entity's next poll should decide whether to ignite based on
-        room temperature -- the switch must not pre-empt that decision.
+        Turning on the switch must light the pilot (standby) so the switch stays on
+        and the climate loop can decide when to ignite the main burner.
         """
         from custom_components.mertik.const import MODE_THERMO
         mock_coordinator.heating_mode = MODE_THERMO
         await switch.async_turn_on()
+        mock_coordinator.standby.assert_called_once()
         mock_coordinator.ignite_fireplace.assert_not_called()
-        mock_coordinator.mark_optimistic_on.assert_called_once()
+        mock_coordinator.mark_optimistic_on.assert_not_called()
         mock_coordinator.async_set_updated_data.assert_called_once_with(None)
 
     async def test_turn_on_non_thermostatic_ignites(self, switch, mock_coordinator):

@@ -35,6 +35,21 @@ class TestOptimisticState:
         mock_mertik.is_igniting = False
         assert coordinator.is_on is False
 
+    def test_is_on_true_when_in_standby(self, coordinator, mock_mertik):
+        """Thermostatic standby (pilot lit) counts as on -- switch must stay on."""
+        mock_mertik.is_flame_on = False
+        mock_mertik.is_igniting = False
+        coordinator._in_standby = True
+        assert coordinator.is_on is True
+
+    def test_is_on_standby_overrides_optimistic_off(self, coordinator, mock_mertik):
+        """_in_standby keeps is_on True even if mark_optimistic_off was called."""
+        mock_mertik.is_flame_on = False
+        mock_mertik.is_igniting = False
+        coordinator._in_standby = True
+        coordinator.mark_optimistic_off()
+        assert coordinator.is_on is True
+
     def test_is_on_true_when_flame_on(self, coordinator, mock_mertik):
         mock_mertik.is_flame_on = True
         assert coordinator.is_on is True
