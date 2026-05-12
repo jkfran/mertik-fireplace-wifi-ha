@@ -116,30 +116,32 @@ class MertikDataCoordinator(DataUpdateCoordinator):
     def apply_heating_mode(self, mode: str) -> None:
         """Apply a named heating mode to the physical fireplace.
 
-        If the fire is in standby (pilot lit), we skip ignite and go
-        straight to set_flame_height -- fast re-ignition.
-
-        If fully off, we send ignite_fireplace() then store the target
-        mode in _pending_mode. The thermostatic loop detects the igniting
-        bit falling False and calls apply_heating_mode again to set the
-        correct flame height and aux state once the burner is confirmed lit.
-        Sending flame height commands during ignition is ignored by the
-        device, so we must wait.
+        Three cases:
+        1. User switched fire OFF (is_on=False, _in_standby=False): block, do nothing.
+        2. Fire physically off but optimistically on (user just pressed On, device not
+           yet confirmed): call ignite_fireplace() and store mode in _pending_mode.
+           check_pending_mode() applies the deferred mode once the burner is settled.
+        3. Fire physically on or in thermostatic standby: apply mode immediately.
         """
         from .const import MODE_STANDBY, MODE_FULL, MODE_MEDIUM, MODE_LOW
-        needs_ignite = not self.is_on and not self._in_standby
-        self._in_standby = False  # leaving standby regardless
 
-        if needs_ignite:
-            # Do NOT ignite if the user explicitly switched the fire off.
-            # _in_standby=False AND is_on=False means the user used the
-            # Fireplace switch -- that takes precedence over thermostatic control.
+        # Case 1: user explicitly switched off -- thermostatic control must not ignite.
+        if not self.is_on and not self._in_standby:
             _LOGGER.debug(
                 "apply_heating_mode: fire is off by user, not igniting for %s", mode
             )
             return
 
-        # Fire is already on (or coming from standby) -- apply mode now
+        physically_on = self.mertik.is_flame_on or self.mertik.is_igniting
+
+        # Case 2: optimistically on (user pressed On) but fire not yet physically lit.
+        if not physically_on and not self._in_standby:
+            self._pending_mode = mode
+            self.mertik.ignite_fireplace()
+            return
+
+        # Case 3: fire is physically on or coming from thermostatic standby.
+        self._in_standby = False
         self._pending_mode = None
         if mode == MODE_STANDBY:
             self.standby()
