@@ -91,8 +91,7 @@ the appropriate heating mode:
 
 When the room reaches the setpoint the main burners are extinguished but
 the **pilot flame remains lit**, allowing fast re-ignition when the room
-cools. To extinguish the pilot as well, switch the Heating Mode to Off
-or turn off the Fireplace switch.
+cools. To extinguish the pilot as well, turn off the Fireplace switch.
 
 The default thresholds are 1 °C (Low) and 2 °C (High) and are adjustable via
 **Settings → Devices & Services → Mertik → Configure**.
