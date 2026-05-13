@@ -154,8 +154,12 @@ rules:
       grouping them under a single device per config entry.
 
   diagnostics:
-    status: todo
-    comment: No diagnostics.py module has been implemented.
+    status: done
+    comment: >
+      diagnostics.py implements async_get_config_entry_diagnostics. The host IP
+      address is redacted via async_redact_data. Coordinator runtime state
+      (is_on, heating_mode, ambient_temperature, pending_mode, etc.) is exposed
+      for debugging.
 
   discovery:
     status: exempt
