@@ -12,9 +12,13 @@ OPTIMISTIC_OFF_SECONDS = 20
 
 
 class MertikDataCoordinator(DataUpdateCoordinator):
-    def __init__(self, hass, mertik):
+    def __init__(self, hass, mertik, entry=None):
         super().__init__(
-            hass, _LOGGER, name="Mertik", update_interval=timedelta(seconds=10)
+            hass,
+            _LOGGER,
+            config_entry=entry,
+            name="Mertik",
+            update_interval=timedelta(seconds=10),
         )
         self.mertik = mertik
         self._optimistic_on_until = None

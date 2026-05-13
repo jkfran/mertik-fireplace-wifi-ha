@@ -78,7 +78,11 @@ rules:
 
   test_before_setup:
     status: done
-    comment: async_setup_entry raises ConfigEntryNotReady if the TCP connection fails.
+    comment: >
+      async_setup_entry raises ConfigEntryNotReady if the TCP connection fails
+      (Mertik constructor). It also calls coordinator.async_config_entry_first_refresh(),
+      which raises ConfigEntryNotReady if the first status poll fails, ensuring
+      the device is both reachable and responding before any platform is set up.
 
   unique_config_entry:
     status: done

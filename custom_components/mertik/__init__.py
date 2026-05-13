@@ -24,7 +24,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: MertikConfigEntry) -> bo
             f"Unable to connect to fireplace at {entry.data[CONF_HOST]}"
         ) from err
 
-    entry.runtime_data = MertikDataCoordinator(hass, mertik)
+    coordinator = MertikDataCoordinator(hass, mertik, entry)
+    await coordinator.async_config_entry_first_refresh()
+    entry.runtime_data = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 

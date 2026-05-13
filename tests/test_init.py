@@ -10,6 +10,11 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from custom_components.mertik import async_setup_entry, async_unload_entry, async_setup
 from custom_components.mertik.coordinator import MertikDataCoordinator
 
+_FIRST_REFRESH = (
+    "custom_components.mertik.coordinator."
+    "MertikDataCoordinator.async_config_entry_first_refresh"
+)
+
 PLATFORMS = ["switch", "number", "sensor", "light", "climate", "select"]
 
 
@@ -48,6 +53,12 @@ class TestAsyncSetupEntry:
             self.mock_forward = mock_forward
             yield
 
+    @pytest.fixture(autouse=True)
+    def mock_first_refresh(self):
+        with patch(_FIRST_REFRESH, new_callable=AsyncMock) as mock_refresh:
+            self.mock_first_refresh = mock_refresh
+            yield
+
     async def test_creates_mertik_with_host(self, hass, mock_config_entry_ha):
         await async_setup_entry(hass, mock_config_entry_ha)
         self.mock_mertik_cls.assert_called_once_with("192.168.1.55")
@@ -68,6 +79,10 @@ class TestAsyncSetupEntry:
         result = await async_setup_entry(hass, mock_config_entry_ha)
         assert result is True
 
+    async def test_calls_first_refresh(self, hass, mock_config_entry_ha):
+        await async_setup_entry(hass, mock_config_entry_ha)
+        self.mock_first_refresh.assert_called_once()
+
     async def test_multiple_entries(self, hass, mock_config_entry_ha):
         await async_setup_entry(hass, mock_config_entry_ha)
         entry2 = MagicMock()
@@ -77,6 +92,33 @@ class TestAsyncSetupEntry:
         await async_setup_entry(hass, entry2)
         assert isinstance(mock_config_entry_ha.runtime_data, MertikDataCoordinator)
         assert isinstance(entry2.runtime_data, MertikDataCoordinator)
+
+
+class TestAsyncSetupEntryFirstRefreshFailure:
+    @pytest.fixture(autouse=True)
+    def mock_mertik_class(self):
+        with patch("custom_components.mertik.Mertik") as mock_cls:
+            mock_cls.return_value = MagicMock()
+            yield
+
+    @pytest.fixture(autouse=True)
+    def mock_forward_setups(self):
+        with patch(
+            "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
+            new_callable=AsyncMock,
+        ):
+            yield
+
+    async def test_first_refresh_failure_raises_config_entry_not_ready(
+        self, hass, mock_config_entry_ha
+    ):
+        with patch(
+            _FIRST_REFRESH,
+            new_callable=AsyncMock,
+            side_effect=ConfigEntryNotReady("Device unavailable"),
+        ):
+            with pytest.raises(ConfigEntryNotReady):
+                await async_setup_entry(hass, mock_config_entry_ha)
 
 
 class TestAsyncSetupEntryConnectionFailure:
