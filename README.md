@@ -136,6 +136,23 @@ own handset sensor. You can select any other HA temperature sensor via
 Enter the IP address of your myfire WiFi box. Assign a static DHCP lease
 so the IP does not change.
 
+#### Initial setup parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| **Name** | Yes | Display name for the device in Home Assistant |
+| **Host** | Yes | IP address of the myfire WiFi box (e.g. `192.168.1.100`) |
+| **Low Heat threshold** | No | Degrees °C below the thermostat setpoint at which Low Heat is applied. Default: `1.0`. Must be greater than 0 and less than the Full Heat threshold. |
+| **Full Heat threshold** | No | Degrees °C below the thermostat setpoint at which Full Heat is applied. Default: `2.0`. Must be greater than the Low Heat threshold. |
+
+#### Options (Settings → Devices & Services → Mertik Maxitrol → Configure)
+
+| Parameter | Description |
+|-----------|-------------|
+| **Temperature sensor** | HA temperature sensor entity to use for thermostatic control. Leave empty to use the Mertik handset's built-in sensor. Any `sensor` entity with `device_class: temperature` appears in the dropdown. |
+| **Low Heat threshold** | See above. Can be adjusted without restarting HA. |
+| **Full Heat threshold** | See above. Can be adjusted without restarting HA. |
+
 ### Removing the integration
 
 1. **Settings → Devices & Services → Mertik Maxitrol → ⋮ → Delete**
