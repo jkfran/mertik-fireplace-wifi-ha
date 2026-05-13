@@ -37,8 +37,9 @@ class MertikFlameHeightEntity(MertikEntity, NumberEntity):
         super().__init__(dataservice, entry_id, device_name)
         self._attr_unique_id = entry_id + "-FlameHeight"
 
-    # Always available -- shows 0 when fire is off rather than an
-    # alarm/unavailable icon, which is more informative and less alarming.
+    # native_value returns 0 when the fire is off so the entity always shows
+    # a number rather than 'unknown'. CoordinatorEntity still marks it
+    # unavailable if the coordinator poll fails (connection lost).
 
     @property
     def native_value(self) -> float:
