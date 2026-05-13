@@ -1,4 +1,5 @@
 """Heating mode selector for Mertik Maxitrol fireplace."""
+
 from homeassistant.components.select import SelectEntity
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -7,23 +8,24 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from .const import DOMAIN, HEATING_MODES
 
 ICON_MAP = {
-    "Full Heat":    "mdi:fire",
-    "Medium Heat":  "mdi:fire-circle",
-    "Low Heat":     "mdi:flame",
-    "Standby":      "mdi:fire-off",
+    "Full Heat": "mdi:fire",
+    "Medium Heat": "mdi:fire-circle",
+    "Low Heat": "mdi:flame",
+    "Standby": "mdi:fire-off",
     "Thermostatic": "mdi:thermostat",
 }
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
-    async_add_entities([
-        MertikHeatingModeSelect(dataservice, entry.entry_id, entry.data["name"]),
-    ])
+    async_add_entities(
+        [
+            MertikHeatingModeSelect(dataservice, entry.entry_id, entry.data["name"]),
+        ]
+    )
 
 
 class MertikHeatingModeSelect(CoordinatorEntity, SelectEntity, RestoreEntity):
-
     _attr_has_entity_name = True
     _attr_name = "Heating Mode"
     _attr_options = HEATING_MODES

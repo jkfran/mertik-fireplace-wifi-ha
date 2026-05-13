@@ -11,9 +11,13 @@ from .const import DOMAIN
 async def async_setup_entry(hass, entry, async_add_entities):
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
-    async_add_entities([
-        MertikAmbientTemperatureSensorEntity(dataservice, entry.entry_id, entry.data["name"]),
-    ])
+    async_add_entities(
+        [
+            MertikAmbientTemperatureSensorEntity(
+                dataservice, entry.entry_id, entry.data["name"]
+            ),
+        ]
+    )
 
 
 class MertikAmbientTemperatureSensorEntity(CoordinatorEntity, SensorEntity):

@@ -1,9 +1,14 @@
 """Climate entity -- thermostat setpoint display and thermostatic control logic."""
+
 from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature, HVACMode
+from homeassistant.components.climate import (
+    ClimateEntity,
+    ClimateEntityFeature,
+    HVACMode,
+)
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -11,24 +16,34 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DOMAIN,
-    CONF_LOW_THRESHOLD, CONF_HIGH_THRESHOLD, CONF_TEMP_SENSOR,
-    DEFAULT_LOW_THRESHOLD, DEFAULT_HIGH_THRESHOLD, DEFAULT_TEMP_SENSOR,
-    MODE_STANDBY, MODE_FULL, MODE_MEDIUM, MODE_LOW, MODE_THERMO,
+    CONF_LOW_THRESHOLD,
+    CONF_HIGH_THRESHOLD,
+    CONF_TEMP_SENSOR,
+    DEFAULT_LOW_THRESHOLD,
+    DEFAULT_HIGH_THRESHOLD,
+    DEFAULT_TEMP_SENSOR,
+    MODE_STANDBY,
+    MODE_FULL,
+    MODE_MEDIUM,
+    MODE_LOW,
+    MODE_THERMO,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-MIN_TEMP   = 5.0
+MIN_TEMP = 5.0
 MAX_TEMP_C = 36.0
-TEMP_STEP  = 0.5
+TEMP_STEP = 0.5
 DEFAULT_TARGET = 20.0
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
-    async_add_entities([
-        MertikClimateEntity(dataservice, entry.entry_id, entry.data["name"], entry),
-    ])
+    async_add_entities(
+        [
+            MertikClimateEntity(dataservice, entry.entry_id, entry.data["name"], entry),
+        ]
+    )
 
 
 class MertikClimateEntity(CoordinatorEntity, ClimateEntity, RestoreEntity):
@@ -95,8 +110,9 @@ class MertikClimateEntity(CoordinatorEntity, ClimateEntity, RestoreEntity):
                 try:
                     return float(state.state)
                 except ValueError:
-                    _LOGGER.warning("Temp sensor %s: non-numeric value %s",
-                                    sensor_id, state.state)
+                    _LOGGER.warning(
+                        "Temp sensor %s: non-numeric value %s", sensor_id, state.state
+                    )
         t = self._dataservice.ambient_temperature
         return t if t else None
 
@@ -139,6 +155,9 @@ class MertikClimateEntity(CoordinatorEntity, ClimateEntity, RestoreEntity):
 
     def _select_entity_id(self) -> str | None:
         from homeassistant.helpers import entity_registry as er
+
+        if self.unique_id is None:
+            return None
         registry = er.async_get(self.hass)
         uid = self.unique_id.replace("-Thermostat", "-HeatingMode")
         return registry.async_get_entity_id("select", DOMAIN, uid)
@@ -177,7 +196,10 @@ class MertikClimateEntity(CoordinatorEntity, ClimateEntity, RestoreEntity):
 
         _LOGGER.debug(
             "Thermostatic: sensor=%s current=%.1fC setpoint=%.1fC diff=%.1fC -> %s",
-            sensor_id, current, self._target_temp, diff,
+            sensor_id,
+            current,
+            self._target_temp,
+            diff,
             target_mode if target_mode else "Standby",
         )
 
@@ -190,10 +212,15 @@ class MertikClimateEntity(CoordinatorEntity, ClimateEntity, RestoreEntity):
 
         if target_mode == MODE_STANDBY:
             if self._dataservice.is_on:
-                _LOGGER.info("Thermostatic: standby (%.1fC >= %.1fC setpoint)",
-                             current, self._target_temp)
+                _LOGGER.info(
+                    "Thermostatic: standby (%.1fC >= %.1fC setpoint)",
+                    current,
+                    self._target_temp,
+                )
+
                 async def _do_standby():
                     await self.hass.async_add_executor_job(self._dataservice.standby)
+
                 self.hass.async_create_task(_do_standby())
                 # Do NOT call mark_optimistic_off here -- _in_standby keeps is_on
                 # True so the Fireplace switch stays on while in thermostatic standby.
@@ -203,10 +230,16 @@ class MertikClimateEntity(CoordinatorEntity, ClimateEntity, RestoreEntity):
             # when fire is off so we re-evaluate as soon as it comes back on.
             if not self._dataservice.is_on and not self._dataservice._in_standby:
                 self._last_applied_mode = MODE_STANDBY
-            _LOGGER.info("Thermostatic: applying %s (diff=%.1fC, sensor=%s)",
-                         target_mode, diff, sensor_id)
+            _LOGGER.info(
+                "Thermostatic: applying %s (diff=%.1fC, sensor=%s)",
+                target_mode,
+                diff,
+                sensor_id,
+            )
+
             async def _do_apply(mode=target_mode):
                 await self.hass.async_add_executor_job(
                     self._dataservice.apply_heating_mode, mode
                 )
+
             self.hass.async_create_task(_do_apply())

@@ -38,6 +38,7 @@ class MertikOnOffSwitchEntity(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs):
         from .const import MODE_THERMO
+
         if self._dataservice.heating_mode == MODE_THERMO:
             # Arm thermostatic control: light pilot only so the switch stays on
             # and the climate loop can ignite the main burner when heat is needed.

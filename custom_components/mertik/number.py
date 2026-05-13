@@ -7,9 +7,11 @@ from .const import DOMAIN
 
 async def async_setup_entry(hass, entry, async_add_entities):
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
-    async_add_entities([
-        MertikFlameHeightEntity(dataservice, entry.entry_id, entry.data["name"]),
-    ])
+    async_add_entities(
+        [
+            MertikFlameHeightEntity(dataservice, entry.entry_id, entry.data["name"]),
+        ]
+    )
 
 
 class MertikFlameHeightEntity(CoordinatorEntity, NumberEntity):
@@ -19,6 +21,7 @@ class MertikFlameHeightEntity(CoordinatorEntity, NumberEntity):
     Flame height is shown as 0 when the fire is off (device ignores
     flame height commands when not running.
     """
+
     _attr_has_entity_name = True
     _attr_name = "Flame Height"
     _attr_icon = "mdi:fire"

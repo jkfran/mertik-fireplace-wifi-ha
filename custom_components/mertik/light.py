@@ -11,6 +11,7 @@ The entity detects this via the coordinator's fire_just_turned_off flag
 and resets _is_on accordingly, but retains the brightness level so the
 light can be turned back on at the same level.
 """
+
 from homeassistant.components.light import LightEntity, ColorMode, ATTR_BRIGHTNESS
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -24,13 +25,14 @@ DEFAULT_BRIGHTNESS = 128
 
 async def async_setup_entry(hass, entry, async_add_entities):
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
-    async_add_entities([
-        MertikLightEntity(dataservice, entry.entry_id, entry.data["name"]),
-    ])
+    async_add_entities(
+        [
+            MertikLightEntity(dataservice, entry.entry_id, entry.data["name"]),
+        ]
+    )
 
 
 class MertikLightEntity(CoordinatorEntity, LightEntity, RestoreEntity):
-
     _attr_has_entity_name = True
     _attr_name = "Light"
     _attr_color_mode = ColorMode.BRIGHTNESS
