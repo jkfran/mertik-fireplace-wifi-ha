@@ -20,6 +20,8 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from . import MertikConfigEntry
 from .entity import MertikEntity
 
+PARALLEL_UPDATES = 1
+
 DEFAULT_BRIGHTNESS = 128
 
 

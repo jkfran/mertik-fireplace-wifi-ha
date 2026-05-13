@@ -128,11 +128,11 @@ rules:
       and once when they recover, satisfying the log-once requirement.
 
   parallel_updates:
-    status: todo
+    status: done
     comment: >
-      No PARALLEL_UPDATES constant is defined in any platform module.
-      Each platform file must declare PARALLEL_UPDATES (typically 1, or 0
-      for read-only coordinator-driven platforms).
+      PARALLEL_UPDATES = 1 in switch, number, light, select, and climate
+      (all send commands to the device). PARALLEL_UPDATES = 0 in sensor
+      (read-only coordinator-driven platform).
 
   reauthentication_flow:
     status: exempt

@@ -6,6 +6,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from . import MertikConfigEntry
 from .entity import MertikEntity
 
+PARALLEL_UPDATES = 0  # read-only coordinator-driven platform
+
 
 async def async_setup_entry(
     hass: HomeAssistant,

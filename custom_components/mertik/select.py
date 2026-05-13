@@ -9,6 +9,8 @@ from . import MertikConfigEntry
 from .const import HEATING_MODES
 from .entity import MertikEntity
 
+PARALLEL_UPDATES = 1
+
 ICON_MAP = {
     "Full Heat": "mdi:fire",
     "Medium Heat": "mdi:fire-circle",

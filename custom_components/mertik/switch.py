@@ -6,6 +6,8 @@ from . import MertikConfigEntry
 from .const import MODE_THERMO
 from .entity import MertikEntity
 
+PARALLEL_UPDATES = 1
+
 
 async def async_setup_entry(
     hass: HomeAssistant,

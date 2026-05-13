@@ -31,6 +31,8 @@ from .const import (
 )
 from .entity import MertikEntity
 
+PARALLEL_UPDATES = 1
+
 _LOGGER = logging.getLogger(__name__)
 
 MIN_TEMP = 5.0
