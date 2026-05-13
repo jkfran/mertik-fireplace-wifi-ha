@@ -1,9 +1,12 @@
+from typing import Any
+
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import MertikConfigEntry
 from .const import MODE_THERMO
+from .coordinator import MertikDataCoordinator
 from .entity import MertikEntity
 
 PARALLEL_UPDATES = 1
@@ -27,15 +30,15 @@ class MertikOnOffSwitchEntity(MertikEntity, SwitchEntity):
     _attr_name = None
     _attr_icon = "mdi:fireplace"
 
-    def __init__(self, dataservice, entry_id, device_name):
+    def __init__(self, dataservice: MertikDataCoordinator, entry_id: str, device_name: str) -> None:
         super().__init__(dataservice, entry_id, device_name)
         self._attr_unique_id = entry_id + "-OnOff"
 
     @property
-    def is_on(self):
+    def is_on(self) -> bool:
         return bool(self._dataservice.is_on)
 
-    async def async_turn_on(self, **kwargs):
+    async def async_turn_on(self, **kwargs: Any) -> None:
         if self._dataservice.heating_mode == MODE_THERMO:
             # Arm thermostatic control: light pilot only so the switch stays on
             # and the climate loop can ignite the main burner when heat is needed.
@@ -46,7 +49,7 @@ class MertikOnOffSwitchEntity(MertikEntity, SwitchEntity):
             await self._dataservice.ignite_fireplace()
         self._dataservice.async_set_updated_data(None)
 
-    async def async_turn_off(self, **kwargs):
+    async def async_turn_off(self, **kwargs: Any) -> None:
         await self._dataservice.guard_flame_off()
         self._dataservice.mark_optimistic_off()
         self._dataservice.async_set_updated_data(None)
@@ -55,18 +58,18 @@ class MertikOnOffSwitchEntity(MertikEntity, SwitchEntity):
 class MertikAuxOnOffSwitchEntity(MertikEntity, SwitchEntity):
     _attr_translation_key = "aux"
 
-    def __init__(self, dataservice, entry_id, device_name):
+    def __init__(self, dataservice: MertikDataCoordinator, entry_id: str, device_name: str) -> None:
         super().__init__(dataservice, entry_id, device_name)
         self._attr_unique_id = entry_id + "-AuxOnOff"
 
     @property
-    def is_on(self):
+    def is_on(self) -> bool:
         return bool(self._dataservice.is_aux_on)
 
-    async def async_turn_on(self, **kwargs):
+    async def async_turn_on(self, **kwargs: Any) -> None:
         await self._dataservice.aux_on()
         self._dataservice.async_set_updated_data(None)
 
-    async def async_turn_off(self, **kwargs):
+    async def async_turn_off(self, **kwargs: Any) -> None:
         await self._dataservice.aux_off()
         self._dataservice.async_set_updated_data(None)

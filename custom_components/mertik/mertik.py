@@ -69,7 +69,7 @@ BIT_AUX_ON = 9
 
 
 class Mertik:
-    def __init__(self, ip):
+    def __init__(self, ip: str) -> None:
         self.ip = ip
         self._ambient_temperature = 0.0
 
@@ -91,8 +91,8 @@ class Mertik:
         self._prev_flame_on = False
         self._fault_code = 0  # 0 = no fault; F-code number when active
 
-        self._reader = None
-        self._writer = None
+        self._reader: asyncio.StreamReader | None = None
+        self._writer: asyncio.StreamWriter | None = None
 
     @classmethod
     async def async_connect(cls, ip: str) -> "Mertik":
@@ -106,7 +106,7 @@ class Mertik:
         self._reader, self._writer = await asyncio.open_connection(self.ip, TCP_PORT)
         await self._startup_sequence()
 
-    async def _startup_sequence(self):
+    async def _startup_sequence(self) -> None:
         """APP mode startup sequence.
 
         CMD_GUARD_FLAME_OFF is NOT sent at startup. When it was included,
@@ -153,20 +153,20 @@ class Mertik:
     def ambient_temperature(self) -> float:
         return self._ambient_temperature
 
-    async def standBy(self):
+    async def standBy(self) -> None:
         await self._send_command(CMD_STANDBY)
         self._local_aux = False
         self.flameHeight = 0
 
-    async def aux_on(self):
+    async def aux_on(self) -> None:
         await self._send_command(CMD_AUX_ON)
         self._local_aux = True
 
-    async def aux_off(self):
+    async def aux_off(self) -> None:
         await self._send_command(CMD_AUX_OFF)
         self._local_aux = False
 
-    async def ignite_fireplace(self):
+    async def ignite_fireplace(self) -> None:
         """Ignite and immediately send aux_on.
 
         Both burners light physically at ignition. We send aux_on straight
@@ -179,10 +179,10 @@ class Mertik:
         await self._send_command(CMD_AUX_ON)
         self.flameHeight = 1  # reset flame to step 1 at ignition
 
-    async def refresh_status(self):
+    async def refresh_status(self) -> None:
         await self._send_command(CMD_STATUS)
 
-    async def close(self):
+    async def close(self) -> None:
         if self._writer is not None:
             try:
                 self._writer.close()
@@ -190,18 +190,18 @@ class Mertik:
             except OSError:
                 pass
 
-    async def guard_flame_off(self):
+    async def guard_flame_off(self) -> None:
         await self._send_command(CMD_GUARD_FLAME_OFF)
         self._local_aux = False
         self.flameHeight = 0
 
-    async def light_on(self):
+    async def light_on(self) -> None:
         await self._send_command(CMD_LIGHT_ON)
 
-    async def light_off(self):
+    async def light_off(self) -> None:
         await self._send_command(CMD_LIGHT_OFF)
 
-    async def set_light_brightness(self, brightness) -> None:
+    async def set_light_brightness(self, brightness: int) -> None:
         normalized = (brightness - 1) / 254 * 100
         if normalized == 100:
             device_code = BRIGHTNESS_CODE_MAX
@@ -216,10 +216,10 @@ class Mertik:
             f"{CMD_BRIGHTNESS_PREFIX}{device_code}{CMD_BRIGHTNESS_SUFFIX}"
         )
 
-    async def set_eco(self):
+    async def set_eco(self) -> None:
         await self._send_command(CMD_SET_ECO)
 
-    async def set_manual(self):
+    async def set_manual(self) -> None:
         await self._send_command(CMD_SET_MANUAL)
 
     async def set_thermostat(self, temp_celsius: float) -> None:
@@ -241,7 +241,7 @@ class Mertik:
         """
         return self.flameHeight
 
-    async def set_flame_height(self, flame_height) -> None:
+    async def set_flame_height(self, flame_height: int) -> None:
         """Set flame to step 1-13. Updates local tracker on ACK."""
         idx = max(0, min(11, int(flame_height) - 1))
         step_code = FLAME_HEIGHT_STEPS[idx]
@@ -250,13 +250,13 @@ class Mertik:
         self.flameHeight = int(flame_height)
         await self.refresh_status()
 
-    def _hex_to_bin(self, hex_str):
+    def _hex_to_bin(self, hex_str: str) -> str:
         return format(int(hex_str, 16), "b").zfill(len(hex_str) * 4)
 
-    def _bit_at(self, hex_str, index):
+    def _bit_at(self, hex_str: str, index: int) -> bool:
         return self._hex_to_bin(hex_str)[index : index + 1] == "1"
 
-    async def _reconnect(self):
+    async def _reconnect(self) -> None:
         """Reconnect and re-run startup sequence."""
         _LOGGER.warning("Reconnecting to %s:%s", self.ip, TCP_PORT)
         if self._writer is not None:
@@ -269,29 +269,38 @@ class Mertik:
         self._reader, self._writer = await asyncio.open_connection(self.ip, TCP_PORT)
         await self._startup_sequence()
 
-    async def _send_command(self, msg):
+    async def _send_command(self, msg: str) -> None:
         """Send a command and consume its response.
 
         Always reads the response, keeping the TCP buffer in sync.
         Searches for a status packet anywhere in the received data.
         """
         payload = bytearray.fromhex(COMMAND_PREFIX + msg)
+        writer = self._writer
+        reader = self._reader
+        if writer is None or reader is None:
+            _LOGGER.error("Not connected, cannot send command")
+            return
         try:
-            self._writer.write(payload)
-            await self._writer.drain()
+            writer.write(payload)
+            await writer.drain()
         except OSError:
             _LOGGER.warning("Send failed, reconnecting to %s", self.ip)
             await self._reconnect()
+            writer = self._writer
+            reader = self._reader
+            if writer is None or reader is None:
+                return
             try:
-                self._writer.write(payload)
-                await self._writer.drain()
+                writer.write(payload)
+                await writer.drain()
             except OSError as err:
                 _LOGGER.error("Send failed after reconnect: %s", err)
                 return
 
         try:
             data = await asyncio.wait_for(
-                self._reader.read(RECV_BUFFER), timeout=SOCKET_TIMEOUT
+                reader.read(RECV_BUFFER), timeout=SOCKET_TIMEOUT
             )
         except asyncio.TimeoutError:
             _LOGGER.debug("No response to command %s (timeout)", msg)
@@ -300,11 +309,15 @@ class Mertik:
         if not data:
             _LOGGER.warning("Empty response, reconnecting to %s", self.ip)
             await self._reconnect()
+            writer = self._writer
+            reader = self._reader
+            if writer is None or reader is None:
+                return
             try:
-                self._writer.write(payload)
-                await self._writer.drain()
+                writer.write(payload)
+                await writer.drain()
                 data = await asyncio.wait_for(
-                    self._reader.read(RECV_BUFFER), timeout=SOCKET_TIMEOUT
+                    reader.read(RECV_BUFFER), timeout=SOCKET_TIMEOUT
                 )
             except (OSError, asyncio.TimeoutError):
                 return
@@ -322,7 +335,7 @@ class Mertik:
                 return
         _LOGGER.debug("Response contains no status packet: %s", data.hex())
 
-    def _process_status(self, status_str):
+    def _process_status(self, status_str: str) -> None:
         _LOGGER.debug("STATUS PACKET (len=%d): %s", len(status_str), status_str)
 
         if len(status_str) < 32:

@@ -1,19 +1,23 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 import logging
+from typing import Any
 
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 import homeassistant.helpers.issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, FLAME_MIN, FLAME_MAX
+from .mertik import Mertik
 
 _LOGGER = logging.getLogger(__name__)
 OPTIMISTIC_ON_SECONDS = 20
 OPTIMISTIC_OFF_SECONDS = 20
 
 
-class MertikDataCoordinator(DataUpdateCoordinator):
-    def __init__(self, hass, mertik, entry=None):
+class MertikDataCoordinator(DataUpdateCoordinator[None]):
+    def __init__(self, hass: HomeAssistant, mertik: Mertik, entry: ConfigEntry | None = None) -> None:
         super().__init__(
             hass,
             _LOGGER,
@@ -22,16 +26,18 @@ class MertikDataCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=10),
         )
         self.mertik = mertik
-        self._optimistic_on_until = None
-        self._optimistic_off_until = None
-        self._prev_is_on = False
-        self.fire_just_turned_off = False  # set True for one cycle when fire turns off
-        self._in_standby = False  # True when thermostatic standby is active
-        self._pending_mode = None  # mode to apply once ignition completes
-        self._heating_mode = None  # current mode set by the Heating Mode select entity
-        self._was_igniting = False  # tracks igniting falling edge
-        self._flame_on_since = None  # timestamp when flame first lit after ignite
-        self._settle_seconds = 35  # seconds to wait after flame_on before aux_off
+        self._optimistic_on_until: datetime | None = None
+        self._optimistic_off_until: datetime | None = None
+        self._prev_is_on: bool = False
+        self.fire_just_turned_off: bool = False  # set True for one cycle when fire turns off
+        self._in_standby: bool = False  # True when thermostatic standby is active
+        self._pending_mode: str | None = None  # mode to apply once ignition completes
+        self._heating_mode: str | None = None  # current mode set by the Heating Mode select entity
+        self._was_igniting: bool = False  # tracks igniting falling edge
+        self._flame_on_since: datetime | None = None  # timestamp when flame first lit after ignite
+        self._settle_seconds: int = 35  # seconds to wait after flame_on before aux_off
+        self._is_light_on: bool = False
+        self._light_brightness: int = 0
 
     # ---- On/off state ----------------------------------------------------
     # Use flame_on (flame byte > threshold) as the primary "is fire running"
@@ -56,13 +62,13 @@ class MertikDataCoordinator(DataUpdateCoordinator):
             return True
         return False
 
-    def mark_optimistic_on(self):
+    def mark_optimistic_on(self) -> None:
         self._optimistic_off_until = None
         self._optimistic_on_until = dt_util.utcnow() + timedelta(
             seconds=OPTIMISTIC_ON_SECONDS
         )
 
-    def mark_optimistic_off(self):
+    def mark_optimistic_off(self) -> None:
         self._optimistic_on_until = None
         self._optimistic_off_until = dt_util.utcnow() + timedelta(
             seconds=OPTIMISTIC_OFF_SECONDS
@@ -75,10 +81,10 @@ class MertikDataCoordinator(DataUpdateCoordinator):
     def set_heating_mode(self, mode: str) -> None:
         self._heating_mode = mode
 
-    async def ignite_fireplace(self):
+    async def ignite_fireplace(self) -> None:
         await self.mertik.ignite_fireplace()
 
-    async def guard_flame_off(self):
+    async def guard_flame_off(self) -> None:
         self._optimistic_on_until = None
         self._optimistic_off_until = None
         await self.mertik.guard_flame_off()
@@ -87,7 +93,7 @@ class MertikDataCoordinator(DataUpdateCoordinator):
         self.fire_just_turned_off = True
         self._prev_is_on = False
 
-    async def standby(self):
+    async def standby(self) -> None:
         """Pilot flame only -- main burners off but ignition source stays lit.
         Used by thermostatic Off so re-ignition is fast when heat is needed.
         Does NOT set fire_just_turned_off because the device keeps the light
@@ -102,16 +108,16 @@ class MertikDataCoordinator(DataUpdateCoordinator):
     def is_aux_on(self) -> bool:
         return self.mertik.is_aux_on  # already gated on flame_on in mertik.py
 
-    async def aux_on(self):
+    async def aux_on(self) -> None:
         await self.mertik.aux_on()
 
-    async def aux_off(self):
+    async def aux_off(self) -> None:
         await self.mertik.aux_off()
 
     def get_flame_height(self) -> int:
         return self.mertik.get_flame_height()
 
-    async def set_flame_height(self, flame_height) -> None:
+    async def set_flame_height(self, flame_height: int) -> None:
         await self.mertik.set_flame_height(flame_height)
 
     @property
@@ -124,20 +130,23 @@ class MertikDataCoordinator(DataUpdateCoordinator):
 
     @property
     def is_light_on(self) -> bool:
-        return self.mertik.is_light_on
+        return self._is_light_on
 
-    async def light_on(self):
+    async def light_on(self) -> None:
+        self._is_light_on = True
         await self.mertik.light_on()
 
-    async def light_off(self):
+    async def light_off(self) -> None:
+        self._is_light_on = False
         await self.mertik.light_off()
 
-    async def set_light_brightness(self, brightness) -> None:
+    async def set_light_brightness(self, brightness: int) -> None:
+        self._light_brightness = brightness
         await self.mertik.set_light_brightness(brightness)
 
     @property
     def light_brightness(self) -> int:
-        return self.mertik.light_brightness
+        return self._light_brightness
 
     async def apply_heating_mode(self, mode: str) -> None:
         """Apply a named heating mode to the physical fireplace.
@@ -249,7 +258,7 @@ class MertikDataCoordinator(DataUpdateCoordinator):
         await self.apply_heating_mode(mode)
         return True
 
-    async def _async_update_data(self):
+    async def _async_update_data(self) -> None:
         try:
             await self.mertik.refresh_status()
             ir.async_delete_issue(self.hass, DOMAIN, "cannot_connect")

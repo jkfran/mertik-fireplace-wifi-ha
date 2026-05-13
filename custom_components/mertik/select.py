@@ -8,6 +8,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import MertikConfigEntry
 from .const import HEATING_MODES
+from .coordinator import MertikDataCoordinator
 from .entity import MertikEntity
 
 PARALLEL_UPDATES = 1
@@ -31,12 +32,12 @@ class MertikHeatingModeSelect(MertikEntity, SelectEntity, RestoreEntity):
     _attr_options = HEATING_MODES
     _attr_entity_category = EntityCategory.CONFIG
 
-    def __init__(self, dataservice, entry_id, device_name):
+    def __init__(self, dataservice: MertikDataCoordinator, entry_id: str, device_name: str) -> None:
         super().__init__(dataservice, entry_id, device_name)
         self._attr_unique_id = entry_id + "-HeatingMode"
         self._current_mode = "Standby"
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         last_state = await self.async_get_last_state()
         if last_state is not None and last_state.state in HEATING_MODES:

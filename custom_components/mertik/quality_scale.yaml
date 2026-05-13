@@ -299,7 +299,7 @@ rules:
       Web session injection is not applicable.
 
   strict_typing:
-    status: todo
+    status: done
     comment: >
-      Mypy passes with no errors, but not all functions carry complete type
-      annotations and no py.typed marker file is present.
+      All modules carry complete type annotations, mypy strict mode passes
+      with zero errors, and a py.typed marker file is present.

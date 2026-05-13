@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST
@@ -36,7 +37,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MertikConfigEntry) -> bo
     return True
 
 
-async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     return True
 
 

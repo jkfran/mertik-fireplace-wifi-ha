@@ -12,12 +12,15 @@ and resets _is_on accordingly, but retains the brightness level so the
 light can be turned back on at the same level.
 """
 
+from typing import Any
+
 from homeassistant.components.light import ATTR_BRIGHTNESS, ColorMode, LightEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import MertikConfigEntry
+from .coordinator import MertikDataCoordinator
 from .entity import MertikEntity
 
 PARALLEL_UPDATES = 1
@@ -44,13 +47,13 @@ class MertikLightEntity(MertikEntity, LightEntity, RestoreEntity):
     _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
     _attr_assumed_state = True
 
-    def __init__(self, dataservice, entry_id, device_name):
+    def __init__(self, dataservice: MertikDataCoordinator, entry_id: str, device_name: str) -> None:
         super().__init__(dataservice, entry_id, device_name)
         self._attr_unique_id = entry_id + "-Light"
         self._is_on = False
         self._brightness = DEFAULT_BRIGHTNESS
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         """Restore brightness only; always start with light off."""
         await super().async_added_to_hass()
         last_state = await self.async_get_last_state()
@@ -60,7 +63,7 @@ class MertikLightEntity(MertikEntity, LightEntity, RestoreEntity):
         self._is_on = False
         await self._dataservice.light_off()
 
-    async def _restore_light(self):
+    async def _restore_light(self) -> None:
         """Re-send light on after the device auto-killed it when fire turned off."""
         await self._dataservice.light_on()
         await self._dataservice.set_light_brightness(self._brightness)
@@ -79,14 +82,14 @@ class MertikLightEntity(MertikEntity, LightEntity, RestoreEntity):
         super()._handle_coordinator_update()
 
     @property
-    def is_on(self):
+    def is_on(self) -> bool:
         return self._is_on
 
     @property
-    def brightness(self):
+    def brightness(self) -> int:
         return self._brightness
 
-    async def async_turn_on(self, **kwargs):
+    async def async_turn_on(self, **kwargs: Any) -> None:
         if ATTR_BRIGHTNESS in kwargs:
             self._brightness = kwargs[ATTR_BRIGHTNESS]
             if not self._is_on:
@@ -98,7 +101,7 @@ class MertikLightEntity(MertikEntity, LightEntity, RestoreEntity):
         self.async_write_ha_state()
         self._dataservice.async_set_updated_data(None)
 
-    async def async_turn_off(self, **kwargs):
+    async def async_turn_off(self, **kwargs: Any) -> None:
         self._is_on = False
         self.async_write_ha_state()
         await self._dataservice.light_off()

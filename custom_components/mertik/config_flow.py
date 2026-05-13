@@ -2,11 +2,13 @@
 
 import logging
 import socket
-from typing import Any, Dict, Optional
+from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.const import CONF_NAME, CONF_HOST
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.components.sensor import SensorDeviceClass
 
@@ -23,7 +25,7 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-def _temp_sensor_options(hass) -> dict:
+def _temp_sensor_options(hass: HomeAssistant) -> dict[str, str]:
     """Return {entity_id: friendly_name} for all temperature sensors."""
     registry = er.async_get(hass)
     options = {"": "Mertik handset (built-in)"}
@@ -43,8 +45,8 @@ def _temp_sensor_options(hass) -> dict:
 class MertikConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Initial setup: name, host, thresholds."""
 
-    async def async_step_user(self, user_input: Optional[Dict[str, Any]] = None):
-        errors: Dict[str, str] = {}
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
             host = user_input[CONF_HOST]
             low = user_input.get(CONF_LOW_THRESHOLD, DEFAULT_LOW_THRESHOLD)
@@ -80,9 +82,9 @@ class MertikConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
     async def async_step_reconfigure(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ):
-        errors: Dict[str, str] = {}
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
         entry = self._get_reconfigure_entry()
 
         if user_input is not None:
@@ -136,7 +138,7 @@ class MertikConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     @staticmethod
-    def async_get_options_flow(config_entry):
+    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> "MertikOptionsFlow":
         return MertikOptionsFlow(config_entry)
 
 
@@ -147,11 +149,11 @@ class MertikOptionsFlow(config_entries.OptionsFlow):
     Changes take effect immediately without restarting HA.
     """
 
-    def __init__(self, config_entry):
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._entry = config_entry
 
-    async def async_step_init(self, user_input: Optional[Dict[str, Any]] = None):
-        errors: Dict[str, str] = {}
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
 
         # Current values (prefer options over data for previously set values)
         current_low = self._entry.options.get(

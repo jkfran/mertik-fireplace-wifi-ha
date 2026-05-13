@@ -314,11 +314,13 @@ class TestSimpleDelegations:
         assert coordinator._heating_mode == "Low Heat"
 
     def test_is_light_on(self, coordinator, mock_mertik):
-        mock_mertik.is_light_on = True
+        assert coordinator.is_light_on is False
+        coordinator._is_light_on = True
         assert coordinator.is_light_on is True
 
     def test_light_brightness(self, coordinator, mock_mertik):
-        mock_mertik.light_brightness = 200
+        assert coordinator.light_brightness == 0
+        coordinator._light_brightness = 200
         assert coordinator.light_brightness == 200
 
     def test_fault_code_delegates_to_mertik(self, coordinator, mock_mertik):

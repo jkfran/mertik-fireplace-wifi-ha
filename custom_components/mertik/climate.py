@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 import logging
-from typing import Any
+from typing import Any, TypeVar
+
+_T = TypeVar("_T")
 
 from homeassistant.components.climate import (
     ClimateEntity,
@@ -15,6 +17,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import MertikConfigEntry
+from .coordinator import MertikDataCoordinator
 from .const import (
     DOMAIN,
     CONF_LOW_THRESHOLD,
@@ -70,14 +73,14 @@ class MertikClimateEntity(MertikEntity, ClimateEntity, RestoreEntity):
     _attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT]
     _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
 
-    def __init__(self, dataservice, entry_id, device_name, entry):
+    def __init__(self, dataservice: MertikDataCoordinator, entry_id: str, device_name: str, entry: Any) -> None:
         super().__init__(dataservice, entry_id, device_name)
         self._entry = entry
         self._attr_unique_id = entry_id + "-Thermostat"
         self._target_temp = DEFAULT_TARGET
-        self._last_applied_mode = None  # prevent re-sending same command every poll
+        self._last_applied_mode: str | None = None  # prevent re-sending same command every poll
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         last = await self.async_get_last_state()
         if last is not None and last.attributes.get(ATTR_TEMPERATURE) is not None:
@@ -85,8 +88,9 @@ class MertikClimateEntity(MertikEntity, ClimateEntity, RestoreEntity):
 
     # ---- Config helpers --------------------------------------------------
 
-    def _get_option(self, key, default):
-        return self._entry.options.get(key, self._entry.data.get(key, default))
+    def _get_option(self, key: str, default: _T) -> _T:
+        result = self._entry.options.get(key, self._entry.data.get(key, default))
+        return result  # type: ignore[no-any-return]
 
     @property
     def _low_thresh(self) -> float:

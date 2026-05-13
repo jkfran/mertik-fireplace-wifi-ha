@@ -5,6 +5,7 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import MertikConfigEntry
+from .coordinator import MertikDataCoordinator
 from .entity import MertikEntity
 
 PARALLEL_UPDATES = 0  # read-only coordinator-driven platform
@@ -57,12 +58,12 @@ class MertikAmbientTemperatureSensorEntity(MertikEntity, SensorEntity):
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, dataservice, entry_id, device_name):
+    def __init__(self, dataservice: MertikDataCoordinator, entry_id: str, device_name: str) -> None:
         super().__init__(dataservice, entry_id, device_name)
         self._attr_unique_id = entry_id + "-AmbientTemperature"
 
     @property
-    def native_value(self):
+    def native_value(self) -> float:
         return self._dataservice.ambient_temperature
 
 
@@ -72,7 +73,7 @@ class MertikFaultCodeSensorEntity(MertikEntity, SensorEntity):
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_options = ["none"] + list(FAULT_CODE_MAP.values())
 
-    def __init__(self, dataservice, entry_id, device_name):
+    def __init__(self, dataservice: MertikDataCoordinator, entry_id: str, device_name: str) -> None:
         super().__init__(dataservice, entry_id, device_name)
         self._attr_unique_id = entry_id + "-FaultCode"
 
