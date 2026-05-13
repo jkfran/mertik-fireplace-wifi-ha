@@ -3,6 +3,10 @@
 A Home Assistant custom integration for gas fireplaces controlled by the
 **Mertik Maxitrol myfire WiFi box** (B6R-WME / B6R-W2BE-0 and similar).
 
+This implementation adds thermostatic control which can use the Maxitrol
+handset as the temperature sensor, or any other HA temperature sensor.
+Of course the sensor needs to be in the room with the fire!
+
 This is a substantially enhanced fork of
 [jkfran/mertik-fireplace-wifi-ha](https://github.com/jkfran/mertik-fireplace-wifi-ha).
 The wire protocol was reverse-engineered through PCAPdroid packet captures of
