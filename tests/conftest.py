@@ -1,10 +1,10 @@
 """Fixtures for Mertik tests."""
 
-import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
+import pytest
+
 from custom_components.mertik.mertik import Mertik
-from custom_components.mertik.const import DOMAIN
 
 
 @pytest.fixture
@@ -18,14 +18,17 @@ def mock_coordinator():
     coordinator.async_set_updated_data = MagicMock()
     coordinator.mark_optimistic_on = MagicMock()
     coordinator.mark_optimistic_off = MagicMock()
-    coordinator.ignite_fireplace = MagicMock()
-    coordinator.guard_flame_off = MagicMock()
-    coordinator.aux_on = MagicMock()
-    coordinator.aux_off = MagicMock()
-    coordinator.light_on = MagicMock()
-    coordinator.light_off = MagicMock()
-    coordinator.set_light_brightness = MagicMock()
-    coordinator.set_flame_height = MagicMock()
+    coordinator.ignite_fireplace = AsyncMock()
+    coordinator.guard_flame_off = AsyncMock()
+    coordinator.standby = AsyncMock()
+    coordinator.aux_on = AsyncMock()
+    coordinator.aux_off = AsyncMock()
+    coordinator.light_on = AsyncMock()
+    coordinator.light_off = AsyncMock()
+    coordinator.set_light_brightness = AsyncMock()
+    coordinator.set_flame_height = AsyncMock()
+    coordinator.apply_heating_mode = AsyncMock()
+    coordinator.check_pending_mode = AsyncMock(return_value=False)
     coordinator.heating_mode = None
     coordinator.fire_just_turned_off = False
     coordinator.async_add_listener = MagicMock(return_value=MagicMock())
@@ -43,13 +46,38 @@ def mock_config_entry():
 
 
 @pytest.fixture
-def mock_socket():
-    """Return a mock socket that doesn't connect anywhere."""
-    with patch("custom_components.mertik.mertik.socket.socket") as mock_sock_cls:
-        mock_sock = MagicMock()
-        mock_sock_cls.return_value = mock_sock
-        mock_sock.recv.return_value = _build_status_bytes()
-        yield mock_sock
+def mock_reader():
+    """Return a mock asyncio StreamReader."""
+    reader = AsyncMock()
+    reader.read.return_value = _build_status_bytes()
+    return reader
+
+
+@pytest.fixture
+def mock_writer():
+    """Return a mock asyncio StreamWriter."""
+    writer = MagicMock()
+    writer.drain = AsyncMock()
+    writer.wait_closed = AsyncMock()
+    return writer
+
+
+@pytest.fixture
+def mock_connection(mock_reader, mock_writer):
+    """Patch asyncio.open_connection, yield the mock for call verification."""
+    with patch(
+        "custom_components.mertik.mertik.asyncio.open_connection",
+        new_callable=AsyncMock,
+        return_value=(mock_reader, mock_writer),
+    ) as mock_open:
+        yield mock_open
+
+
+@pytest.fixture
+async def mertik_device(mock_connection):
+    """Return a Mertik instance backed by mocked asyncio reader/writer."""
+    device = await Mertik.async_connect("192.168.1.100")
+    return device
 
 
 def _build_status_bytes(
@@ -111,10 +139,3 @@ def _build_status_bytes(
     body = config + on_flag + status_bits + light + filler + temp + room
     raw = "\x02" + prefix + body
     return raw.encode("ascii")
-
-
-@pytest.fixture
-def mertik_device(mock_socket):
-    """Return a Mertik instance with a mocked socket."""
-    device = Mertik("192.168.1.100")
-    return device

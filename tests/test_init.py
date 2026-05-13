@@ -42,10 +42,13 @@ class TestAsyncSetup:
 class TestAsyncSetupEntry:
     @pytest.fixture(autouse=True)
     def mock_mertik_class(self):
-        with patch("custom_components.mertik.Mertik") as mock_cls:
+        with patch(
+            "custom_components.mertik.Mertik.async_connect",
+            new_callable=AsyncMock,
+        ) as mock_connect:
             mock_device = MagicMock()
-            mock_cls.return_value = mock_device
-            self.mock_mertik_cls = mock_cls
+            mock_connect.return_value = mock_device
+            self.mock_async_connect = mock_connect
             self.mock_device = mock_device
             yield
 
@@ -66,7 +69,7 @@ class TestAsyncSetupEntry:
 
     async def test_creates_mertik_with_host(self, hass, mock_config_entry_ha):
         await async_setup_entry(hass, mock_config_entry_ha)
-        self.mock_mertik_cls.assert_called_once_with("192.168.1.55")
+        self.mock_async_connect.assert_called_once_with("192.168.1.55")
 
     async def test_stores_coordinator_in_runtime_data(self, hass, mock_config_entry_ha):
         await async_setup_entry(hass, mock_config_entry_ha)
@@ -102,8 +105,11 @@ class TestAsyncSetupEntry:
 class TestAsyncSetupEntryFirstRefreshFailure:
     @pytest.fixture(autouse=True)
     def mock_mertik_class(self):
-        with patch("custom_components.mertik.Mertik") as mock_cls:
-            mock_cls.return_value = MagicMock()
+        with patch(
+            "custom_components.mertik.Mertik.async_connect",
+            new_callable=AsyncMock,
+            return_value=MagicMock(),
+        ):
             yield
 
     @pytest.fixture(autouse=True)
@@ -129,9 +135,12 @@ class TestAsyncSetupEntryFirstRefreshFailure:
 class TestAsyncSetupEntryConnectionFailure:
     @pytest.fixture(autouse=True)
     def mock_mertik_class(self):
-        with patch("custom_components.mertik.Mertik") as mock_cls:
-            mock_cls.side_effect = OSError("Connection refused")
-            self.mock_mertik_cls = mock_cls
+        with patch(
+            "custom_components.mertik.Mertik.async_connect",
+            new_callable=AsyncMock,
+            side_effect=Exception("Connection refused"),
+        ) as mock_connect:
+            self.mock_async_connect = mock_connect
             yield
 
     @pytest.fixture(autouse=True)
@@ -178,7 +187,7 @@ class TestAsyncUnloadEntry:
     @pytest.fixture
     def entry_with_runtime_data(self, mock_config_entry_ha):
         mock_config_entry_ha.runtime_data = MagicMock()
-        mock_config_entry_ha.runtime_data.mertik.close = MagicMock()
+        mock_config_entry_ha.runtime_data.mertik.close = AsyncMock()
         return mock_config_entry_ha
 
     async def test_unloads_platforms(self, hass, entry_with_runtime_data):

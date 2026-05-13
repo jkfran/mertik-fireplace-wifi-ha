@@ -231,45 +231,45 @@ class TestThermostaticLogic:
         entity._target_temp = target
         return entity
 
-    def test_skips_when_pending_mode(self, hass, mock_coordinator, mock_entry):
+    async def test_skips_when_pending_mode(self, hass, mock_coordinator, mock_entry):
         mock_coordinator.check_pending_mode.return_value = True
         climate = self._make_climate(hass, mock_coordinator, mock_entry)
         with patch.object(climate, "_select_entity_id", return_value="select.mode"):
-            climate._run_thermostatic_logic()
+            await climate._run_thermostatic_logic()
         mock_coordinator.check_pending_mode.assert_called_once()
 
-    def test_skips_when_no_select_entity(self, hass, mock_coordinator, mock_entry):
+    async def test_skips_when_no_select_entity(self, hass, mock_coordinator, mock_entry):
         mock_coordinator.check_pending_mode.return_value = False
         climate = self._make_climate(hass, mock_coordinator, mock_entry)
         with patch.object(climate, "_select_entity_id", return_value=None):
-            climate._run_thermostatic_logic()  # should not raise
+            await climate._run_thermostatic_logic()  # should not raise
 
-    def test_skips_when_select_state_none(self, hass, mock_coordinator, mock_entry):
+    async def test_skips_when_select_state_none(self, hass, mock_coordinator, mock_entry):
         # "select.mode" is not in the state machine → get() returns None
         mock_coordinator.check_pending_mode.return_value = False
         climate = self._make_climate(hass, mock_coordinator, mock_entry)
         with patch.object(climate, "_select_entity_id", return_value="select.mode"):
-            climate._run_thermostatic_logic()
+            await climate._run_thermostatic_logic()
 
-    def test_skips_when_not_in_thermo_mode(self, hass, mock_coordinator, mock_entry):
+    async def test_skips_when_not_in_thermo_mode(self, hass, mock_coordinator, mock_entry):
         mock_coordinator.check_pending_mode.return_value = False
         climate = self._make_climate(hass, mock_coordinator, mock_entry)
         hass.states.async_set("select.mode", "Full Heat")
         climate._last_applied_mode = MODE_LOW
         with patch.object(climate, "_select_entity_id", return_value="select.mode"):
-            climate._run_thermostatic_logic()
+            await climate._run_thermostatic_logic()
         assert climate._last_applied_mode is None  # reset when leaving thermo mode
 
-    def test_skips_when_no_temperature(self, hass, mock_coordinator, mock_entry):
+    async def test_skips_when_no_temperature(self, hass, mock_coordinator, mock_entry):
         mock_coordinator.check_pending_mode.return_value = False
         climate = self._make_climate(hass, mock_coordinator, mock_entry)
         hass.states.async_set("select.mode", MODE_THERMO)
         with patch.object(climate, "_select_entity_id", return_value="select.mode"), patch.object(
             climate, "_get_current_temperature", return_value=None
         ):
-            climate._run_thermostatic_logic()
+            await climate._run_thermostatic_logic()
 
-    def test_same_mode_not_resent(self, hass, mock_coordinator, mock_entry):
+    async def test_same_mode_not_resent(self, hass, mock_coordinator, mock_entry):
         mock_coordinator.check_pending_mode.return_value = False
         climate = self._make_climate(hass, mock_coordinator, mock_entry, target=22.0)
         climate._last_applied_mode = MODE_FULL
@@ -277,134 +277,119 @@ class TestThermostaticLogic:
         with patch.object(climate, "_select_entity_id", return_value="select.mode"), patch.object(
             climate, "_get_current_temperature", return_value=18.0
         ):
-            climate._run_thermostatic_logic()
-        # diff=4 > high_thresh=2 → MODE_FULL, same as last → no task scheduled
+            await climate._run_thermostatic_logic()
+        # diff=4 > high_thresh=2 → MODE_FULL, same as last → nothing sent
         assert climate._last_applied_mode == MODE_FULL
+        mock_coordinator.apply_heating_mode.assert_not_called()
 
-    def test_standby_when_at_setpoint(self, hass, mock_coordinator, mock_entry):
+    async def test_standby_when_at_setpoint(self, hass, mock_coordinator, mock_entry):
         mock_coordinator.check_pending_mode.return_value = False
         mock_coordinator.is_on = True
         climate = self._make_climate(hass, mock_coordinator, mock_entry, target=20.0)
         hass.states.async_set("select.mode", MODE_THERMO)
-        tasks = []
-        hass.async_create_task = MagicMock(side_effect=tasks.append)
         with patch.object(climate, "_select_entity_id", return_value="select.mode"), patch.object(
             climate, "_get_current_temperature", return_value=20.0
         ):
-            climate._run_thermostatic_logic()
+            await climate._run_thermostatic_logic()
         assert climate._last_applied_mode == MODE_STANDBY
-        assert len(tasks) == 1  # standby task scheduled
+        mock_coordinator.standby.assert_called_once()
 
-    def test_standby_not_scheduled_when_fire_already_off(
+    async def test_standby_not_called_when_fire_already_off(
         self, hass, mock_coordinator, mock_entry
     ):
         mock_coordinator.check_pending_mode.return_value = False
         mock_coordinator.is_on = False
         climate = self._make_climate(hass, mock_coordinator, mock_entry, target=20.0)
         hass.states.async_set("select.mode", MODE_THERMO)
-        hass.async_create_task = MagicMock()
         with patch.object(climate, "_select_entity_id", return_value="select.mode"), patch.object(
             climate, "_get_current_temperature", return_value=20.0
         ):
-            climate._run_thermostatic_logic()
-        hass.async_create_task.assert_not_called()
+            await climate._run_thermostatic_logic()
+        assert climate._last_applied_mode == MODE_STANDBY
+        mock_coordinator.standby.assert_not_called()
 
-    def test_low_heat_when_within_low_thresh(self, hass, mock_coordinator, mock_entry):
+    async def test_low_heat_when_within_low_thresh(self, hass, mock_coordinator, mock_entry):
         mock_coordinator.check_pending_mode.return_value = False
         mock_coordinator.is_on = True
         climate = self._make_climate(hass, mock_coordinator, mock_entry, target=20.0)
         hass.states.async_set("select.mode", MODE_THERMO)
-        tasks = []
-        hass.async_create_task = MagicMock(side_effect=tasks.append)
         # diff = 0.5, low_thresh = 1.0 → LOW
         with patch.object(climate, "_select_entity_id", return_value="select.mode"), patch.object(
             climate, "_get_current_temperature", return_value=19.5
         ):
-            climate._run_thermostatic_logic()
+            await climate._run_thermostatic_logic()
         assert climate._last_applied_mode == MODE_LOW
-        assert len(tasks) == 1
+        mock_coordinator.apply_heating_mode.assert_called_once_with(MODE_LOW)
 
-    def test_medium_heat_within_high_thresh(self, hass, mock_coordinator, mock_entry):
+    async def test_medium_heat_within_high_thresh(self, hass, mock_coordinator, mock_entry):
         mock_coordinator.check_pending_mode.return_value = False
         mock_coordinator.is_on = True
         climate = self._make_climate(hass, mock_coordinator, mock_entry, target=20.0)
         hass.states.async_set("select.mode", MODE_THERMO)
-        tasks = []
-        hass.async_create_task = MagicMock(side_effect=tasks.append)
         # diff = 1.5, low_thresh=1.0, high_thresh=2.0 → MEDIUM
         with patch.object(climate, "_select_entity_id", return_value="select.mode"), patch.object(
             climate, "_get_current_temperature", return_value=18.5
         ):
-            climate._run_thermostatic_logic()
+            await climate._run_thermostatic_logic()
         assert climate._last_applied_mode == MODE_MEDIUM
-        assert len(tasks) == 1
+        mock_coordinator.apply_heating_mode.assert_called_once_with(MODE_MEDIUM)
 
-    def test_full_heat_beyond_high_thresh(self, hass, mock_coordinator, mock_entry):
+    async def test_full_heat_beyond_high_thresh(self, hass, mock_coordinator, mock_entry):
         mock_coordinator.check_pending_mode.return_value = False
         mock_coordinator.is_on = True
         climate = self._make_climate(hass, mock_coordinator, mock_entry, target=20.0)
         hass.states.async_set("select.mode", MODE_THERMO)
-        tasks = []
-        hass.async_create_task = MagicMock(side_effect=tasks.append)
         # diff = 5.0, high_thresh=2.0 → FULL
         with patch.object(climate, "_select_entity_id", return_value="select.mode"), patch.object(
             climate, "_get_current_temperature", return_value=15.0
         ):
-            climate._run_thermostatic_logic()
+            await climate._run_thermostatic_logic()
         assert climate._last_applied_mode == MODE_FULL
-        assert len(tasks) == 1
-
-    async def test_standby_task_body_calls_dataservice_standby(
-        self, hass, mock_coordinator, mock_entry
-    ):
-        mock_coordinator.check_pending_mode.return_value = False
-        mock_coordinator.is_on = True
-        climate = self._make_climate(hass, mock_coordinator, mock_entry, target=20.0)
-        hass.states.async_set("select.mode", MODE_THERMO)
-        tasks = []
-        hass.async_create_task = MagicMock(side_effect=tasks.append)
-        with patch.object(climate, "_select_entity_id", return_value="select.mode"), \
-             patch.object(climate, "_get_current_temperature", return_value=20.0):
-            climate._run_thermostatic_logic()
-        assert len(tasks) == 1
-        await tasks[0]
-        mock_coordinator.standby.assert_called_once()
-
-    async def test_apply_task_body_calls_apply_heating_mode(
-        self, hass, mock_coordinator, mock_entry
-    ):
-        mock_coordinator.check_pending_mode.return_value = False
-        mock_coordinator.is_on = True
-        climate = self._make_climate(hass, mock_coordinator, mock_entry, target=20.0)
-        hass.states.async_set("select.mode", MODE_THERMO)
-        tasks = []
-        hass.async_create_task = MagicMock(side_effect=tasks.append)
-        with patch.object(climate, "_select_entity_id", return_value="select.mode"), \
-             patch.object(climate, "_get_current_temperature", return_value=15.0):
-            climate._run_thermostatic_logic()
-        assert len(tasks) == 1
-        await tasks[0]
         mock_coordinator.apply_heating_mode.assert_called_once_with(MODE_FULL)
 
-    def test_fire_off_resets_last_mode_to_standby(self, hass, mock_coordinator, mock_entry):
+    async def test_standby_calls_dataservice_standby(
+        self, hass, mock_coordinator, mock_entry
+    ):
+        mock_coordinator.check_pending_mode.return_value = False
+        mock_coordinator.is_on = True
+        climate = self._make_climate(hass, mock_coordinator, mock_entry, target=20.0)
+        hass.states.async_set("select.mode", MODE_THERMO)
+        with patch.object(climate, "_select_entity_id", return_value="select.mode"), \
+             patch.object(climate, "_get_current_temperature", return_value=20.0):
+            await climate._run_thermostatic_logic()
+        mock_coordinator.standby.assert_called_once()
+
+    async def test_apply_heating_mode_called_with_correct_mode(
+        self, hass, mock_coordinator, mock_entry
+    ):
+        mock_coordinator.check_pending_mode.return_value = False
+        mock_coordinator.is_on = True
+        climate = self._make_climate(hass, mock_coordinator, mock_entry, target=20.0)
+        hass.states.async_set("select.mode", MODE_THERMO)
+        with patch.object(climate, "_select_entity_id", return_value="select.mode"), \
+             patch.object(climate, "_get_current_temperature", return_value=15.0):
+            await climate._run_thermostatic_logic()
+        mock_coordinator.apply_heating_mode.assert_called_once_with(MODE_FULL)
+
+    async def test_fire_off_resets_last_mode_to_standby(self, hass, mock_coordinator, mock_entry):
         mock_coordinator.check_pending_mode.return_value = False
         mock_coordinator.is_on = False
         mock_coordinator._in_standby = False
         climate = self._make_climate(hass, mock_coordinator, mock_entry, target=20.0)
         climate._last_applied_mode = MODE_STANDBY
         hass.states.async_set("select.mode", MODE_THERMO)
-        hass.async_create_task = MagicMock()
-        # diff=5 → FULL, but fire is off → resets _last_applied_mode to STANDBY
+        # diff=5 → FULL, but fire is off and not in standby → resets _last_applied_mode
         with patch.object(climate, "_select_entity_id", return_value="select.mode"), patch.object(
             climate, "_get_current_temperature", return_value=15.0
         ):
-            climate._run_thermostatic_logic()
+            await climate._run_thermostatic_logic()
         assert climate._last_applied_mode == MODE_STANDBY
+        mock_coordinator.apply_heating_mode.assert_not_called()
 
 
 class TestHandleCoordinatorUpdate:
     def test_calls_thermostatic_logic(self, climate):
-        with patch.object(climate, "_run_thermostatic_logic") as mock_thermo, \
+        with patch.object(climate, "_run_thermostatic_logic", new_callable=AsyncMock) as mock_thermo, \
              patch.object(climate, "async_write_ha_state"):
             climate._handle_coordinator_update()
         mock_thermo.assert_called_once()

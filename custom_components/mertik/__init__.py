@@ -20,7 +20,7 @@ type MertikConfigEntry = ConfigEntry[MertikDataCoordinator]
 async def async_setup_entry(hass: HomeAssistant, entry: MertikConfigEntry) -> bool:
     """Set up the Mertik component."""
     try:
-        mertik = await hass.async_add_executor_job(Mertik, entry.data[CONF_HOST])
+        mertik = await Mertik.async_connect(entry.data[CONF_HOST])
     except Exception as err:
         raise ConfigEntryNotReady(
             translation_domain=DOMAIN,
@@ -53,5 +53,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: MertikConfigEntry) -> b
     """Unload a config entry."""
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
-        await hass.async_add_executor_job(entry.runtime_data.mertik.close)
+        await entry.runtime_data.mertik.close()
     return unloaded

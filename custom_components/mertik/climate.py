@@ -143,14 +143,14 @@ class MertikClimateEntity(MertikEntity, ClimateEntity, RestoreEntity):
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         if hvac_mode == HVACMode.OFF:
-            await self.hass.async_add_executor_job(self._dataservice.guard_flame_off)
+            await self._dataservice.guard_flame_off()
             self._dataservice.mark_optimistic_off()
             self._dataservice.async_set_updated_data(None)
 
     # ---- Thermostatic logic (runs on every coordinator poll) ------------
 
     def _handle_coordinator_update(self) -> None:
-        self._run_thermostatic_logic()
+        self.hass.async_create_task(self._run_thermostatic_logic())
         super()._handle_coordinator_update()
 
     def _select_entity_id(self) -> str | None:
@@ -162,11 +162,11 @@ class MertikClimateEntity(MertikEntity, ClimateEntity, RestoreEntity):
         uid = self.unique_id.replace("-Thermostat", "-HeatingMode")
         return registry.async_get_entity_id("select", DOMAIN, uid)
 
-    def _run_thermostatic_logic(self) -> None:
+    async def _run_thermostatic_logic(self) -> None:
         # If we are waiting for an ignition to complete, let the
         # coordinator handle it this cycle and skip the temperature
         # comparison -- flame height commands are ignored during ignition.
-        if self._dataservice.check_pending_mode():
+        if await self._dataservice.check_pending_mode():
             return
 
         entity_id = self._select_entity_id()
@@ -217,29 +217,20 @@ class MertikClimateEntity(MertikEntity, ClimateEntity, RestoreEntity):
                     current,
                     self._target_temp,
                 )
-
-                async def _do_standby():
-                    await self.hass.async_add_executor_job(self._dataservice.standby)
-
-                self.hass.async_create_task(_do_standby())
                 # Do NOT call mark_optimistic_off here -- _in_standby keeps is_on
                 # True so the Fireplace switch stays on while in thermostatic standby.
+                await self._dataservice.standby()
         else:
             # apply_heating_mode() itself checks whether the Fireplace
             # switch is off and refuses to ignite if so. Reset _last_applied_mode
             # when fire is off so we re-evaluate as soon as it comes back on.
             if not self._dataservice.is_on and not self._dataservice._in_standby:
                 self._last_applied_mode = MODE_STANDBY
-            _LOGGER.info(
-                "Thermostatic: applying %s (diff=%.1fC, sensor=%s)",
-                target_mode,
-                diff,
-                sensor_id,
-            )
-
-            async def _do_apply(mode=target_mode):
-                await self.hass.async_add_executor_job(
-                    self._dataservice.apply_heating_mode, mode
+            else:
+                _LOGGER.info(
+                    "Thermostatic: applying %s (diff=%.1fC, sensor=%s)",
+                    target_mode,
+                    diff,
+                    sensor_id,
                 )
-
-            self.hass.async_create_task(_do_apply())
+                await self._dataservice.apply_heating_mode(target_mode)

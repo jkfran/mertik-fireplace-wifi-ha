@@ -40,14 +40,14 @@ class MertikOnOffSwitchEntity(MertikEntity, SwitchEntity):
             # Arm thermostatic control: light pilot only so the switch stays on
             # and the climate loop can ignite the main burner when heat is needed.
             # Never ignite here -- room may already be above setpoint.
-            await self.hass.async_add_executor_job(self._dataservice.standby)
+            await self._dataservice.standby()
         else:
             self._dataservice.mark_optimistic_on()
-            await self.hass.async_add_executor_job(self._dataservice.ignite_fireplace)
+            await self._dataservice.ignite_fireplace()
         self._dataservice.async_set_updated_data(None)
 
     async def async_turn_off(self, **kwargs):
-        await self.hass.async_add_executor_job(self._dataservice.guard_flame_off)
+        await self._dataservice.guard_flame_off()
         self._dataservice.mark_optimistic_off()
         self._dataservice.async_set_updated_data(None)
 
@@ -64,9 +64,9 @@ class MertikAuxOnOffSwitchEntity(MertikEntity, SwitchEntity):
         return bool(self._dataservice.is_aux_on)
 
     async def async_turn_on(self, **kwargs):
-        await self.hass.async_add_executor_job(self._dataservice.aux_on)
+        await self._dataservice.aux_on()
         self._dataservice.async_set_updated_data(None)
 
     async def async_turn_off(self, **kwargs):
-        await self.hass.async_add_executor_job(self._dataservice.aux_off)
+        await self._dataservice.aux_off()
         self._dataservice.async_set_updated_data(None)

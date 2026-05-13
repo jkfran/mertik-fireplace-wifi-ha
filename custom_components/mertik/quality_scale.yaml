@@ -141,9 +141,9 @@ rules:
   test_coverage:
     status: done
     comment: >
-      100% statement coverage across all 12 modules (804 statements, 0 missing).
-      292 tests covering all platform setup, entity properties, coordinator logic,
-      thermostatic control paths, socket reconnection edge cases, and config/options
+      100% statement coverage across all 13 modules (870 statements, 0 missing).
+      318 tests covering all platform setup, entity properties, coordinator logic,
+      thermostatic control paths, asyncio reconnection edge cases, and config/options
       flow including _temp_sensor_options.
 
   # ── Gold ────────────────────────────────────────────────────────────────────
@@ -285,11 +285,12 @@ rules:
 
   # ── Platinum ────────────────────────────────────────────────────────────────
   async_dependency:
-    status: todo
+    status: done
     comment: >
-      mertik.py uses blocking socket I/O (synchronous). Calls are correctly
-      offloaded via async_add_executor_job but a fully async implementation
-      using asyncio streams is required for Platinum.
+      mertik.py rewritten to use asyncio.open_connection (StreamReader/StreamWriter)
+      instead of blocking socket I/O. All coordinator command methods are async def
+      and are awaited directly — no async_add_executor_job calls remain. Read
+      timeouts use asyncio.wait_for; reconnection uses asyncio.sleep.
 
   inject_websession:
     status: exempt
