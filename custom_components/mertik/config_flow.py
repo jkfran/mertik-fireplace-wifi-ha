@@ -79,6 +79,62 @@ class MertikConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
+    async def async_step_reconfigure(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ):
+        errors: Dict[str, str] = {}
+        entry = self._get_reconfigure_entry()
+
+        if user_input is not None:
+            host = user_input[CONF_HOST]
+            low = user_input.get(CONF_LOW_THRESHOLD, DEFAULT_LOW_THRESHOLD)
+            high = user_input.get(CONF_HIGH_THRESHOLD, DEFAULT_HIGH_THRESHOLD)
+
+            if low <= 0 or high <= 0 or low >= high:
+                errors["base"] = "invalid_thresholds"
+            else:
+                can_connect = await self.hass.async_add_executor_job(
+                    _test_connection, host
+                )
+                if not can_connect:
+                    errors["base"] = "cannot_connect"
+                else:
+                    existing = (
+                        self.hass.config_entries.async_entry_for_domain_unique_id(
+                            DOMAIN, host
+                        )
+                    )
+                    if existing and existing.entry_id != entry.entry_id:
+                        errors["base"] = "already_configured"
+                    else:
+                        return self.async_update_reload_and_abort(
+                            entry,
+                            unique_id=host,
+                            data_updates=user_input,
+                        )
+
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_NAME, default=entry.data.get(CONF_NAME, "")
+                ): str,
+                vol.Required(
+                    CONF_HOST, default=entry.data.get(CONF_HOST, "")
+                ): str,
+                vol.Optional(
+                    CONF_LOW_THRESHOLD,
+                    default=entry.data.get(CONF_LOW_THRESHOLD, DEFAULT_LOW_THRESHOLD),
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_HIGH_THRESHOLD,
+                    default=entry.data.get(CONF_HIGH_THRESHOLD, DEFAULT_HIGH_THRESHOLD),
+                ): vol.Coerce(float),
+            }
+        )
+        return self.async_show_form(
+            step_id="reconfigure", data_schema=schema, errors=errors
+        )
+
     @staticmethod
     def async_get_options_flow(config_entry):
         return MertikOptionsFlow(config_entry)

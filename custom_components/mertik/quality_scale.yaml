@@ -259,10 +259,13 @@ rules:
       entities without a matching translation context.
 
   reconfiguration_flow:
-    status: todo
+    status: done
     comment: >
-      No async_step_reconfigure is implemented. Users cannot update the
-      fireplace IP address without removing and re-adding the integration.
+      async_step_reconfigure added to MertikConfigFlow. Users can update the
+      fireplace name, IP address, and heat thresholds. The connection is
+      tested against the new IP before saving. Changing to an IP already used
+      by another config entry is rejected. The entry unique_id (host) is
+      updated via async_update_reload_and_abort.
 
   repair_issues:
     status: todo

@@ -10,6 +10,16 @@
           "low_threshold": "Low heat threshold (degrees C below setpoint)",
           "high_threshold": "Full heat threshold (degrees C below setpoint, must be greater than Low)"
         }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Mertik Maxitrol",
+        "description": "Update the IP address or name of your fireplace.",
+        "data": {
+          "name": "Fireplace name",
+          "host": "IP address of the WiFi box",
+          "low_threshold": "Low heat threshold (degrees C below setpoint)",
+          "high_threshold": "Full heat threshold (degrees C below setpoint, must be greater than Low)"
+        }
       }
     },
     "error": {
@@ -17,7 +27,8 @@
       "invalid_thresholds": "Thresholds must be positive numbers, and the Low threshold must be less than the Full threshold."
     },
     "abort": {
-      "already_configured": "This fireplace is already configured."
+      "already_configured": "This fireplace is already configured.",
+      "reconfigure_successful": "Fireplace configuration updated successfully."
     }
   },
   "exceptions": {
