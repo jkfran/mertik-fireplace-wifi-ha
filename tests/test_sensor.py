@@ -30,7 +30,7 @@ class TestTemperatureSensor:
         assert sensor.unique_id == "test_entry-AmbientTemperature"
 
     def test_translation_key(self, sensor):
-        assert sensor.translation_key == "ambient_temperature"
+        assert sensor.translation_key == "handset_temperature"
 
     def test_has_entity_name(self, sensor):
         assert sensor.has_entity_name is True

@@ -26,7 +26,7 @@ async def async_setup_entry(
 
 
 class MertikAmbientTemperatureSensorEntity(MertikEntity, SensorEntity):
-    _attr_translation_key = "ambient_temperature"
+    _attr_translation_key = "handset_temperature"
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
     _attr_entity_category = EntityCategory.DIAGNOSTIC

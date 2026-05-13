@@ -42,8 +42,8 @@
       }
     },
     "sensor": {
-      "ambient_temperature": {
-        "name": "Ambient Temperature"
+      "handset_temperature": {
+        "name": "Handset Temperature"
       }
     },
     "light": {
