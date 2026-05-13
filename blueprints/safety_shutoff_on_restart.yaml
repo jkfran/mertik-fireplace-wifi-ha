@@ -1,0 +1,36 @@
+blueprint:
+  name: "Mertik – Safety shutoff on HA start"
+  description: >
+    Turns the fireplace off a few seconds after Home Assistant starts.
+    Prevents the fire from running unattended if HA was restarted while
+    the fire was on.
+  domain: automation
+  input:
+    fireplace_switch:
+      name: Fireplace switch
+      description: The Mertik switch entity that controls the main burner.
+      selector:
+        entity:
+          domain: switch
+    delay_seconds:
+      name: Delay (seconds)
+      description: >
+        Seconds to wait after HA start before issuing the turn-off command.
+        10 seconds gives the integration time to fully initialise.
+      default: 10
+      selector:
+        number:
+          min: 5
+          max: 60
+          unit_of_measurement: seconds
+
+trigger:
+  - platform: homeassistant
+    event: start
+
+action:
+  - delay:
+      seconds: !input delay_seconds
+  - service: switch.turn_off
+    target:
+      entity_id: !input fireplace_switch

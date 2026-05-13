@@ -1,0 +1,35 @@
+blueprint:
+  name: "Mertik – Turn off when nobody home"
+  description: >
+    Automatically turns the fireplace off when all tracked people leave home.
+  domain: automation
+  input:
+    fireplace_switch:
+      name: Fireplace switch
+      description: The Mertik switch entity that controls the main burner.
+      selector:
+        entity:
+          domain: switch
+    persons:
+      name: People to track
+      description: Turn off the fireplace when all of these people are away.
+      selector:
+        entity:
+          domain: person
+          multiple: true
+
+trigger:
+  - platform: state
+    entity_id: !input persons
+    to: not_home
+
+condition:
+  - condition: state
+    entity_id: !input persons
+    state: not_home
+    match: all
+
+action:
+  - service: switch.turn_off
+    target:
+      entity_id: !input fireplace_switch

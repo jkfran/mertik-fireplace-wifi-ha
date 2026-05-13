@@ -1,0 +1,57 @@
+blueprint:
+  name: "Mertik – Schedule-based on/off"
+  description: >
+    Turn the fireplace on (in Thermostatic mode) and off on a daily schedule.
+  domain: automation
+  input:
+    fireplace_switch:
+      name: Fireplace switch
+      description: The Mertik switch entity that controls the main burner.
+      selector:
+        entity:
+          domain: switch
+    heating_mode_select:
+      name: Heating Mode
+      description: The Mertik Heating Mode select entity.
+      selector:
+        entity:
+          domain: select
+    on_time:
+      name: Turn on time
+      selector:
+        time:
+    off_time:
+      name: Turn off time
+      selector:
+        time:
+
+trigger:
+  - platform: time
+    at: !input on_time
+    id: "on"
+  - platform: time
+    at: !input off_time
+    id: "off"
+
+action:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: "on"
+        sequence:
+          - service: switch.turn_on
+            target:
+              entity_id: !input fireplace_switch
+          - delay: "00:00:05"
+          - service: select.select_option
+            target:
+              entity_id: !input heating_mode_select
+            data:
+              option: Thermostatic
+      - conditions:
+          - condition: trigger
+            id: "off"
+        sequence:
+          - service: switch.turn_off
+            target:
+              entity_id: !input fireplace_switch

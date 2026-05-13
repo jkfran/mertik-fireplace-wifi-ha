@@ -180,11 +180,11 @@ rules:
       that there is no push mechanism or configurable interval.
 
   docs_examples:
-    status: todo
+    status: done
     comment: >
-      README includes one startup safety automation but lacks automation
-      blueprints or richer use-case examples (schedule-based control,
-      presence-based control, etc.).
+      Three importable blueprints in blueprints/ and linked from README:
+      safety shutoff on restart, turn off when nobody home, and
+      schedule-based on/off with Thermostatic mode.
 
   docs_known_limitations: done
 

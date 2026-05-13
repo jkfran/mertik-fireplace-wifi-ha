@@ -185,23 +185,19 @@ so the IP does not change.
 The myfire WiFi box requires no additional steps — it continues to operate
 normally via the physical handset after the integration is removed.
 
-### Startup safety automation
+### Blueprints
 
-The integration does not send a turn-off command at startup — doing so
-interferes with the device's flame height control. Add this automation to
-ensure the fire is off after every HA restart:
+Import any of these automation blueprints directly into Home Assistant.
 
-```yaml
-alias: "Fireplace off on HA start"
-trigger:
-  - platform: homeassistant
-    event: start
-action:
-  - delay: "00:00:10"
-  - service: switch.turn_off
-    target:
-      entity_id: switch.fireplace
-```
+| Blueprint | Description | Import |
+|-----------|-------------|--------|
+| Safety shutoff on restart | Turns the fire off a few seconds after HA starts, preventing unattended operation after a restart | [![Import blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2FDaveJesse%2Fmertik-fireplace-wifi-ha%2Fmain%2Fblueprints%2Fsafety_shutoff_on_restart.yaml) |
+| Turn off when nobody home | Turns the fire off when all tracked people leave | [![Import blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2FDaveJesse%2Fmertik-fireplace-wifi-ha%2Fmain%2Fblueprints%2Fturn_off_when_nobody_home.yaml) |
+| Schedule-based on/off | Turns the fire on in Thermostatic mode and off at set times each day | [![Import blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2FDaveJesse%2Fmertik-fireplace-wifi-ha%2Fmain%2Fblueprints%2Fschedule_based_control.yaml) |
+
+> **Note:** The integration does not send a turn-off command at startup (doing so
+> interferes with flame height control). The **Safety shutoff** blueprint above
+> is the recommended way to handle this.
 
 ---
 
