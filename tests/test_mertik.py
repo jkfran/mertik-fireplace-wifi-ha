@@ -156,6 +156,38 @@ class TestStatusParsing:
         assert device.flameHeight == 1
 
 
+class TestFaultCodeParsing:
+    """Test fault code parsing from the status packet."""
+
+    def test_fault_code_zero_by_default(self, mock_socket):
+        mock_socket.recv.return_value = _build_status_bytes(fault_code=0x00)
+        device = Mertik("192.168.1.100")
+        assert device.fault_code == 0
+
+    def test_fault_code_f04(self, mock_socket):
+        mock_socket.recv.return_value = _build_status_bytes(fault_code=0x04)
+        device = Mertik("192.168.1.100")
+        assert device.fault_code == 4
+
+    def test_fault_code_f16(self, mock_socket):
+        mock_socket.recv.return_value = _build_status_bytes(fault_code=0x10)
+        device = Mertik("192.168.1.100")
+        assert device.fault_code == 16
+
+    def test_fault_code_f43(self, mock_socket):
+        mock_socket.recv.return_value = _build_status_bytes(fault_code=0x2B)
+        device = Mertik("192.168.1.100")
+        assert device.fault_code == 43
+
+    def test_fault_code_clears_on_subsequent_packet(self, mock_socket):
+        mock_socket.recv.return_value = _build_status_bytes(fault_code=0x04)
+        device = Mertik("192.168.1.100")
+        assert device.fault_code == 4
+        mock_socket.recv.return_value = _build_status_bytes(fault_code=0x00)
+        device.refresh_status()
+        assert device.fault_code == 0
+
+
 class TestCommands:
     """Test command sending."""
 
@@ -498,6 +530,11 @@ class TestStatusParsingEdgeCases:
     def test_invalid_temp_no_crash(self, mertik_device):
         # "ZZ" at [30:32] is non-hex → ValueError caught
         status_str = "303030300003" + "C6" + "FF" + "80" + "8F" + "00" + "04000000" + "ZZ"
+        mertik_device._process_status(status_str)  # must not raise
+
+    def test_invalid_fault_code_no_crash(self, mertik_device):
+        # "ZZ" at [24:26] is non-hex → ValueError caught
+        status_str = "303030300003" + "C6" + "FF" + "80" + "8F" + "00" + "04" + "ZZ" + "00" + "00" + "E6"
         mertik_device._process_status(status_str)  # must not raise
 
 

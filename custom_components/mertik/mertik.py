@@ -51,6 +51,11 @@ FLAME_HEIGHT_STEPS = [
 STATUS_ON_FLAG = slice(14, 16)
 STATUS_BITS = slice(16, 20)
 STATUS_FLAME_HEIGHT = slice(18, 20)
+# Byte at [22:24] = 0x04 in normal operation (unknown field).
+# Byte at [24:26] = 0x00 in normal operation — most likely fault code.
+# UNVERIFIED: enable DEBUG logging and compare packets when the app shows
+# a fault code vs. normal operation to confirm or correct these positions.
+STATUS_FAULT_CODE = slice(24, 26)
 STATUS_AMBIENT_TEMP = slice(30, 32)
 
 FLAME_OFF_THRESHOLD = 123
@@ -82,6 +87,7 @@ class Mertik:
         self._guard_flame_on = False
         self._igniting = False
         self._prev_flame_on = False
+        self._fault_code = 0  # 0 = no fault; F-code number when active
 
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client.settimeout(SOCKET_TIMEOUT)
@@ -126,6 +132,10 @@ class Mertik:
     @property
     def is_igniting(self) -> bool:
         return self._igniting
+
+    @property
+    def fault_code(self) -> int:
+        return self._fault_code
 
     @property
     def ambient_temperature(self) -> float:
@@ -331,6 +341,21 @@ class Mertik:
             self._guard_flame_on = self._bit_at(status_bits, BIT_GUARD_FLAME)
             self._igniting = self._bit_at(status_bits, BIT_IGNITING)
             # AUX bit NOT read here - tracked locally via aux_on()/aux_off()
+        except (ValueError, IndexError):
+            pass
+
+        # Fault code — byte position needs hardware verification.
+        # Enable DEBUG logging and compare packets when the app shows a fault
+        # vs. normal operation to confirm STATUS_FAULT_CODE slice is correct.
+        _LOGGER.debug(
+            "Unknown filler bytes [22:24]=%s [24:26]=%s [26:28]=%s [28:30]=%s",
+            status_str[22:24],
+            status_str[24:26],
+            status_str[26:28],
+            status_str[28:30],
+        )
+        try:
+            self._fault_code = int(status_str[STATUS_FAULT_CODE], 16)
         except (ValueError, IndexError):
             pass
 

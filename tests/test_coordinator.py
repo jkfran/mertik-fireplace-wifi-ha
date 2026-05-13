@@ -311,6 +311,14 @@ class TestSimpleDelegations:
         mock_mertik.light_brightness = 200
         assert coordinator.light_brightness == 200
 
+    def test_fault_code_delegates_to_mertik(self, coordinator, mock_mertik):
+        mock_mertik.fault_code = 4
+        assert coordinator.fault_code == 4
+
+    def test_fault_code_zero_when_no_fault(self, coordinator, mock_mertik):
+        mock_mertik.fault_code = 0
+        assert coordinator.fault_code == 0
+
 
 class TestCheckPendingMode:
     def test_returns_false_when_no_pending_mode(self, coordinator):

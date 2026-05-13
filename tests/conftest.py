@@ -58,6 +58,7 @@ def _build_status_bytes(
     status_hi: str = "80",
     light_level: int = 0x00,
     ambient_temp: int = 0xE6,
+    fault_code: int = 0x00,
 ) -> bytes:
     """Build a raw status response matching the B6R-H8TV4PB packet layout.
 
@@ -69,7 +70,10 @@ def _build_status_bytes(
         [14:16]  on_flag: "FF"=on, "00"=off
         [16:20]  status bits (4 hex chars); [18:20] is the flame byte
         [20:22]  light level
-        [22:30]  filler
+        [22:24]  unknown (always 0x04 in observed packets)
+        [24:26]  fault_code: 0x00=no fault, 0x04=F04, 0x10=F16, etc.
+                 UNVERIFIED — compare debug logs with app during a fault
+        [26:30]  unknown (always 0x00 in observed packets)
         [30:32]  ambient temperature (raw/10 = degrees C)
 
     Confirmed bit positions within the 16-bit status field [16:20]:
@@ -94,12 +98,13 @@ def _build_status_bytes(
         status_hi:   High byte of 4-char status field, e.g. "80".
         light_level: Raw light level byte (not parsed by current code).
         ambient_temp: Raw temperature byte; value/10 = degrees C.
+        fault_code:  Raw fault code byte (0 = no fault). Position unverified.
     """
     prefix = "303030300003"
     config = "C6"
     status_bits = f"{status_hi}{flame_byte:02X}"
     light = f"{light_level:02X}"
-    filler = "04000000"
+    filler = f"04{fault_code:02X}0000"
     temp = f"{ambient_temp:02X}"
     room = "DC" + "4C6976696E6720526F6F6D20" + "FF" * 20 + "043001"
 

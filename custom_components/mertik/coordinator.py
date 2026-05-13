@@ -115,6 +115,10 @@ class MertikDataCoordinator(DataUpdateCoordinator):
         self.mertik.set_flame_height(flame_height)
 
     @property
+    def fault_code(self) -> int:
+        return self.mertik.fault_code
+
+    @property
     def ambient_temperature(self) -> float:
         return self.mertik.ambient_temperature
 
