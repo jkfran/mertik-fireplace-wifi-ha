@@ -95,7 +95,10 @@ rules:
 
   config_entry_unloading:
     status: done
-    comment: async_unload_entry is implemented and forwards to async_unload_platforms.
+    comment: >
+      async_unload_entry unloads all platforms via async_unload_platforms and,
+      on success, closes the Mertik TCP socket via mertik.close() to free the
+      connection resource.
 
   docs_configuration_parameters:
     status: done

@@ -160,6 +160,12 @@ class Mertik:
     def refresh_status(self):
         self._send_command(CMD_STATUS)
 
+    def close(self):
+        try:
+            self.client.close()
+        except OSError:
+            pass
+
     def guard_flame_off(self):
         self._send_command(CMD_GUARD_FLAME_OFF)
         self._local_aux = False

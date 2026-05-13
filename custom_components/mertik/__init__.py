@@ -39,4 +39,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: MertikConfigEntry) -> bool:
     """Unload a config entry."""
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unloaded:
+        await hass.async_add_executor_job(entry.runtime_data.mertik.close)
+    return unloaded

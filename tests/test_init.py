@@ -170,15 +170,30 @@ class TestAsyncUnloadEntry:
             self.mock_unload = mock_unload
             yield
 
-    async def test_unloads_platforms(self, hass, mock_config_entry_ha):
-        await async_unload_entry(hass, mock_config_entry_ha)
-        self.mock_unload.assert_called_once_with(mock_config_entry_ha, PLATFORMS)
+    @pytest.fixture
+    def entry_with_runtime_data(self, mock_config_entry_ha):
+        mock_config_entry_ha.runtime_data = MagicMock()
+        mock_config_entry_ha.runtime_data.mertik.close = MagicMock()
+        return mock_config_entry_ha
 
-    async def test_returns_true_on_success(self, hass, mock_config_entry_ha):
-        result = await async_unload_entry(hass, mock_config_entry_ha)
+    async def test_unloads_platforms(self, hass, entry_with_runtime_data):
+        await async_unload_entry(hass, entry_with_runtime_data)
+        self.mock_unload.assert_called_once_with(entry_with_runtime_data, PLATFORMS)
+
+    async def test_closes_socket_on_success(self, hass, entry_with_runtime_data):
+        await async_unload_entry(hass, entry_with_runtime_data)
+        entry_with_runtime_data.runtime_data.mertik.close.assert_called_once()
+
+    async def test_returns_true_on_success(self, hass, entry_with_runtime_data):
+        result = await async_unload_entry(hass, entry_with_runtime_data)
         assert result is True
 
-    async def test_returns_false_on_failure(self, hass, mock_config_entry_ha):
+    async def test_returns_false_on_failure(self, hass, entry_with_runtime_data):
         self.mock_unload.return_value = False
-        result = await async_unload_entry(hass, mock_config_entry_ha)
+        result = await async_unload_entry(hass, entry_with_runtime_data)
         assert result is False
+
+    async def test_does_not_close_socket_on_failure(self, hass, entry_with_runtime_data):
+        self.mock_unload.return_value = False
+        await async_unload_entry(hass, entry_with_runtime_data)
+        entry_with_runtime_data.runtime_data.mertik.close.assert_not_called()
