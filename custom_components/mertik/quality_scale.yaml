@@ -277,10 +277,11 @@ rules:
       {host} placeholder so users can see which device is unreachable.
 
   stale_devices:
-    status: exempt
+    status: done
     comment: >
-      Each config entry owns exactly one device. Removing the config entry
-      removes the device; there are no sub-devices that could become stale.
+      async_remove_config_entry_device is implemented in __init__.py and
+      returns True, allowing users to manually remove the device from the
+      HA UI. Each config entry owns exactly one device.
 
   # ── Platinum ────────────────────────────────────────────────────────────────
   async_dependency:

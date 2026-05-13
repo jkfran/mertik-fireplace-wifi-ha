@@ -7,7 +7,12 @@ import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
-from custom_components.mertik import async_setup_entry, async_unload_entry, async_setup
+from custom_components.mertik import (
+    async_setup_entry,
+    async_unload_entry,
+    async_setup,
+    async_remove_config_entry_device,
+)
 from custom_components.mertik.coordinator import MertikDataCoordinator
 
 _FIRST_REFRESH = (
@@ -197,3 +202,12 @@ class TestAsyncUnloadEntry:
         self.mock_unload.return_value = False
         await async_unload_entry(hass, entry_with_runtime_data)
         entry_with_runtime_data.runtime_data.mertik.close.assert_not_called()
+
+
+class TestAsyncRemoveConfigEntryDevice:
+    async def test_returns_true(self, hass, mock_config_entry_ha):
+        device_entry = MagicMock()
+        result = await async_remove_config_entry_device(
+            hass, mock_config_entry_ha, device_entry
+        )
+        assert result is True

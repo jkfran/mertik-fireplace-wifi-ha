@@ -4,6 +4,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN
 from .coordinator import MertikDataCoordinator
@@ -36,6 +37,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: MertikConfigEntry) -> bo
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    return True
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant,
+    config_entry: MertikConfigEntry,
+    device_entry: dr.DeviceEntry,
+) -> bool:
+    """Allow the user to remove the device via the HA UI."""
     return True
 
 
