@@ -6,6 +6,7 @@ import pytest
 
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.const import UnitOfTemperature
+from homeassistant.helpers.entity import EntityCategory
 
 from custom_components.mertik.sensor import (
     MertikAmbientTemperatureSensorEntity,
@@ -39,6 +40,9 @@ class TestTemperatureSensor:
 
     def test_unit(self, sensor):
         assert sensor.native_unit_of_measurement == UnitOfTemperature.CELSIUS
+
+    def test_entity_category(self, sensor):
+        assert sensor.entity_category == EntityCategory.DIAGNOSTIC
 
     def test_device_info(self, sensor):
         info = sensor.device_info

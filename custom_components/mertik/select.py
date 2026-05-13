@@ -2,6 +2,7 @@
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
@@ -36,6 +37,7 @@ async def async_setup_entry(
 class MertikHeatingModeSelect(MertikEntity, SelectEntity, RestoreEntity):
     _attr_name = "Heating Mode"
     _attr_options = HEATING_MODES
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, dataservice, entry_id, device_name):
         super().__init__(dataservice, entry_id, device_name)

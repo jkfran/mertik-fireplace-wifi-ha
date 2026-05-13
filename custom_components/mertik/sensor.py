@@ -1,6 +1,7 @@
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import MertikConfigEntry
@@ -28,6 +29,7 @@ class MertikAmbientTemperatureSensorEntity(MertikEntity, SensorEntity):
     _attr_name = "Ambient Temperature"
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, dataservice, entry_id, device_name):
         super().__init__(dataservice, entry_id, device_name)

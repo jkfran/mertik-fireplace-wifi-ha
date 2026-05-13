@@ -213,10 +213,12 @@ rules:
       sub-device topology; additional fireplaces require separate config entries.
 
   entity_category:
-    status: todo
+    status: done
     comment: >
-      No EntityCategory is assigned to any entity. Ambient Temperature should
-      be DIAGNOSTIC; Flame Height and Heating Mode are candidates for CONFIG.
+      Ambient Temperature sensor: EntityCategory.DIAGNOSTIC (device telemetry).
+      Flame Height number and Heating Mode select: EntityCategory.CONFIG
+      (fine-tuning / mode-selection controls, secondary to the switch and
+      thermostat). Switch, Light, Aux, Climate have no category (primary controls).
 
   entity_device_class:
     status: done

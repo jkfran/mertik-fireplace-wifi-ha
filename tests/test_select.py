@@ -4,6 +4,8 @@ from unittest.mock import MagicMock, AsyncMock, patch
 
 import pytest
 
+from homeassistant.helpers.entity import EntityCategory
+
 from custom_components.mertik.select import (
     MertikHeatingModeSelect,
     async_setup_entry,
@@ -31,6 +33,9 @@ class TestHeatingModeSelect:
 
     def test_options(self, select):
         assert select.options == HEATING_MODES
+
+    def test_entity_category(self, select):
+        assert select.entity_category == EntityCategory.CONFIG
 
     def test_current_option_default(self, select):
         assert select.current_option == "Standby"

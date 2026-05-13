@@ -4,6 +4,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from homeassistant.helpers.entity import EntityCategory
+
 from custom_components.mertik.number import (
     MertikFlameHeightEntity,
     async_setup_entry,
@@ -29,6 +31,9 @@ class TestFlameHeightEntity:
 
     def test_icon(self, number):
         assert number.icon == "mdi:fire"
+
+    def test_entity_category(self, number):
+        assert number.entity_category == EntityCategory.CONFIG
 
     def test_device_info(self, number):
         info = number.device_info

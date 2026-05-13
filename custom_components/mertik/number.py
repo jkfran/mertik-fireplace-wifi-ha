@@ -1,5 +1,6 @@
 from homeassistant.components.number import NumberEntity
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import MertikConfigEntry
@@ -31,6 +32,7 @@ class MertikFlameHeightEntity(MertikEntity, NumberEntity):
 
     _attr_name = "Flame Height"
     _attr_icon = "mdi:fire"
+    _attr_entity_category = EntityCategory.CONFIG
     _attr_native_min_value = 1
     _attr_native_max_value = 13
     _attr_native_step = 1
