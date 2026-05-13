@@ -25,7 +25,7 @@ async def async_setup_entry(
 
 class MertikOnOffSwitchEntity(MertikEntity, SwitchEntity):
     _attr_name = None
-    _attr_translation_key = "fireplace"
+    _attr_icon = "mdi:fireplace"
 
     def __init__(self, dataservice, entry_id, device_name):
         super().__init__(dataservice, entry_id, device_name)

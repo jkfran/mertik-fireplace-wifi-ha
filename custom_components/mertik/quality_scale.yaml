@@ -251,11 +251,12 @@ rules:
   icon_translations:
     status: done
     comment: >
-      icons.json introduced with default icons for switch (fireplace, aux),
-      climate (thermostat), number (flame_height), and state-based icons for
-      the heating_mode select (Standby/Low/Medium/Full Heat/Thermostatic) using
-      mdi:, ri: (RemixIcon), and icomoon-free: icon sets. All _attr_icon and
-      dynamic icon properties removed from Python entity code.
+      icons.json introduced with default icons for switch (aux), climate
+      (thermostat), and state-based icons for the heating_mode select
+      (Standby/Low/Medium/Full Heat/Thermostatic) using mdi:, ri: (RemixIcon),
+      and icomoon-free: icon sets. The main fireplace switch and flame_height
+      number retain _attr_icon in Python as HA does not resolve icons.json for
+      entities without a matching translation context.
 
   reconfiguration_flow:
     status: todo

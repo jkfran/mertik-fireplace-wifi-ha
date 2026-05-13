@@ -29,11 +29,8 @@ class TestOnOffSwitch:
     def test_has_entity_name(self, switch):
         assert switch.has_entity_name is True
 
-    def test_translation_key(self, switch):
-        assert switch.translation_key == "fireplace"
-
-    def test_icon_in_icons_json(self, switch):
-        assert switch.icon is None
+    def test_icon(self, switch):
+        assert switch.icon == "mdi:fireplace"
 
     def test_device_info(self, switch):
         info = switch.device_info
@@ -111,6 +108,7 @@ class TestAuxSwitch:
         assert switch.has_entity_name is True
 
     def test_icon_in_icons_json(self, switch):
+        """Aux icon is defined in icons.json; Python returns None."""
         assert switch.icon is None
 
     def test_device_info(self, switch):

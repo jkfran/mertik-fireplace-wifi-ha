@@ -1,9 +1,6 @@
 {
   "entity": {
     "switch": {
-      "fireplace": {
-        "default": "mdi:fireplace"
-      },
       "aux": {
         "default": "mdi:light"
       }
@@ -23,11 +20,6 @@
           "Full Heat": "icomoon-free:fire",
           "Thermostatic": "mdi:thermostat"
         }
-      }
-    },
-    "number": {
-      "flame_height": {
-        "default": "mdi:fire"
       }
     }
   }

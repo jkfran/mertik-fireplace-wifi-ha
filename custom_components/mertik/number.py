@@ -31,6 +31,7 @@ class MertikFlameHeightEntity(MertikEntity, NumberEntity):
     """
 
     _attr_translation_key = "flame_height"
+    _attr_icon = "mdi:fire"
     _attr_entity_category = EntityCategory.CONFIG
     _attr_native_min_value = 1
     _attr_native_max_value = 13

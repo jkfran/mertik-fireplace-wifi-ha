@@ -29,8 +29,8 @@ class TestFlameHeightEntity:
     def test_has_entity_name(self, number):
         assert number.has_entity_name is True
 
-    def test_icon_in_icons_json(self, number):
-        assert number.icon is None
+    def test_icon(self, number):
+        assert number.icon == "mdi:fire"
 
     def test_entity_category(self, number):
         assert number.entity_category == EntityCategory.CONFIG
