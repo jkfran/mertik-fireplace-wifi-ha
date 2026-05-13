@@ -12,14 +12,6 @@ from .entity import MertikEntity
 
 PARALLEL_UPDATES = 1
 
-ICON_MAP = {
-    "Full Heat": "mdi:fire",
-    "Medium Heat": "mdi:fire-circle",
-    "Low Heat": "mdi:flame",
-    "Standby": "mdi:fire-off",
-    "Thermostatic": "mdi:thermostat",
-}
-
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -54,10 +46,6 @@ class MertikHeatingModeSelect(MertikEntity, SelectEntity, RestoreEntity):
     @property
     def current_option(self) -> str:
         return self._current_mode
-
-    @property
-    def icon(self) -> str:
-        return ICON_MAP.get(self._current_mode, "mdi:fire")
 
     async def async_select_option(self, option: str) -> None:
         self._current_mode = option

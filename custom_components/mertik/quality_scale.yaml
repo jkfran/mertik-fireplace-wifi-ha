@@ -249,10 +249,13 @@ rules:
       strings.json and translations/en.json under the exceptions section.
 
   icon_translations:
-    status: todo
+    status: done
     comment: >
-      Icons are set via _attr_icon in code. An icons.json file must be
-      introduced and icons defined per entity translation key.
+      icons.json introduced with default icons for switch (fireplace, aux),
+      climate (thermostat), number (flame_height), and state-based icons for
+      the heating_mode select (Standby/Low/Medium/Full Heat/Thermostatic) using
+      mdi:, ri: (RemixIcon), and icomoon-free: icon sets. All _attr_icon and
+      dynamic icon properties removed from Python entity code.
 
   reconfiguration_flow:
     status: todo

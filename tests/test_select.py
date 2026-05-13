@@ -46,32 +46,6 @@ class TestHeatingModeSelect:
         assert info["name"] == "My Fireplace"
         assert info["manufacturer"] == "Mertik Maxitrol"
 
-    # --- Icon -----------------------------------------------------------------
-
-    def test_icon_standby(self, select):
-        select._current_mode = "Standby"
-        assert select.icon == "mdi:fire-off"
-
-    def test_icon_full_heat(self, select):
-        select._current_mode = "Full Heat"
-        assert select.icon == "mdi:fire"
-
-    def test_icon_medium_heat(self, select):
-        select._current_mode = "Medium Heat"
-        assert select.icon == "mdi:fire-circle"
-
-    def test_icon_low_heat(self, select):
-        select._current_mode = "Low Heat"
-        assert select.icon == "mdi:flame"
-
-    def test_icon_thermostatic(self, select):
-        select._current_mode = "Thermostatic"
-        assert select.icon == "mdi:thermostat"
-
-    def test_icon_unknown_falls_back(self, select):
-        select._current_mode = "Unknown"
-        assert select.icon == "mdi:fire"
-
     # --- async_added_to_hass --------------------------------------------------
 
     async def test_added_to_hass_restores_valid_mode(self, select, mock_coordinator):

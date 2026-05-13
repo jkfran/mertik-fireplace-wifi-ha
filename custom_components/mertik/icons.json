@@ -1,0 +1,34 @@
+{
+  "entity": {
+    "switch": {
+      "fireplace": {
+        "default": "mdi:fireplace"
+      },
+      "aux": {
+        "default": "mdi:light"
+      }
+    },
+    "climate": {
+      "thermostat": {
+        "default": "mdi:thermostat"
+      }
+    },
+    "select": {
+      "heating_mode": {
+        "default": "mdi:fire-off",
+        "state": {
+          "Standby": "mdi:fire-off",
+          "Low Heat": "ri:fire-line",
+          "Medium Heat": "ri:fire-fill",
+          "Full Heat": "icomoon-free:fire",
+          "Thermostatic": "mdi:thermostat"
+        }
+      }
+    },
+    "number": {
+      "flame_height": {
+        "default": "mdi:fire"
+      }
+    }
+  }
+}

@@ -1,7 +1,5 @@
 """Tests for switch entities."""
 
-from unittest.mock import MagicMock
-
 import pytest
 
 from custom_components.mertik.switch import (
@@ -31,8 +29,11 @@ class TestOnOffSwitch:
     def test_has_entity_name(self, switch):
         assert switch.has_entity_name is True
 
-    def test_icon(self, switch):
-        assert switch.icon == "mdi:fireplace"
+    def test_translation_key(self, switch):
+        assert switch.translation_key == "fireplace"
+
+    def test_icon_in_icons_json(self, switch):
+        assert switch.icon is None
 
     def test_device_info(self, switch):
         info = switch.device_info
@@ -109,8 +110,8 @@ class TestAuxSwitch:
     def test_has_entity_name(self, switch):
         assert switch.has_entity_name is True
 
-    def test_icon(self, switch):
-        assert switch.icon == "mdi:light"
+    def test_icon_in_icons_json(self, switch):
+        assert switch.icon is None
 
     def test_device_info(self, switch):
         info = switch.device_info

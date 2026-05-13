@@ -63,7 +63,6 @@ class MertikClimateEntity(MertikEntity, ClimateEntity, RestoreEntity):
     """
 
     _attr_translation_key = "thermostat"
-    _attr_icon = "mdi:thermostat"
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_min_temp = MIN_TEMP
     _attr_max_temp = MAX_TEMP_C
