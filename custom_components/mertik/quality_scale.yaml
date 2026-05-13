@@ -70,7 +70,9 @@ rules:
     status: done
     comment: >
       Coordinator is stored in entry.runtime_data in async_setup_entry.
-      All platform files and tests use entry.runtime_data to access it.
+      A typed config entry alias (type MertikConfigEntry =
+      ConfigEntry[MertikDataCoordinator]) is defined in __init__.py and
+      used in all six platform async_setup_entry signatures.
 
   test_before_configure: done
 

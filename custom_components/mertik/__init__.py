@@ -1,7 +1,8 @@
 import logging
 
-from homeassistant import config_entries, core
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from .coordinator import MertikDataCoordinator
@@ -11,10 +12,10 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = ["switch", "number", "sensor", "light", "climate", "select"]
 
+type MertikConfigEntry = ConfigEntry[MertikDataCoordinator]
 
-async def async_setup_entry(
-    hass: core.HomeAssistant, entry: config_entries.ConfigEntry
-) -> bool:
+
+async def async_setup_entry(hass: HomeAssistant, entry: MertikConfigEntry) -> bool:
     """Set up the Mertik component."""
     try:
         mertik = await hass.async_add_executor_job(Mertik, entry.data[CONF_HOST])
@@ -30,12 +31,10 @@ async def async_setup_entry(
     return True
 
 
-async def async_setup(hass: core.HomeAssistant, config: dict) -> bool:
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     return True
 
 
-async def async_unload_entry(
-    hass: core.HomeAssistant, entry: config_entries.ConfigEntry
-) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: MertikConfigEntry) -> bool:
     """Unload a config entry."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

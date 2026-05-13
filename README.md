@@ -132,12 +132,17 @@ own handset sensor. You can select any other HA temperature sensor via
 Enter the IP address of your myfire WiFi box. Assign a static DHCP lease
 so the IP does not change.
 
-### Removal
+### Removing the integration
 
-**Settings → Devices & Services → Mertik Maxitrol → ⋮ → Delete**
+1. **Settings → Devices & Services → Mertik Maxitrol → ⋮ → Delete**
+   This removes the integration and all its entities from Home Assistant.
+2. *(HACS installs only)* Open HACS → Integrations → Mertik Maxitrol Fireplace →
+   **Remove** to uninstall the component files, then restart Home Assistant.
+3. *(Manual installs only)* Delete the `custom_components/mertik/` folder from
+   your config directory and restart Home Assistant.
 
-This removes the integration and all its entities. No configuration files need
-to be deleted manually.
+The myfire WiFi box requires no additional steps — it continues to operate
+normally via the physical handset after the integration is removed.
 
 ### Startup safety automation
 

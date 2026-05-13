@@ -10,8 +10,11 @@ from homeassistant.components.climate import (
     HVACMode,
 )
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
+from . import MertikConfigEntry
 from .const import (
     DOMAIN,
     CONF_LOW_THRESHOLD,
@@ -36,7 +39,11 @@ TEMP_STEP = 0.5
 DEFAULT_TARGET = 20.0
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: MertikConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
     dataservice = entry.runtime_data
     async_add_entities(
         [

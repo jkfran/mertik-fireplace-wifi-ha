@@ -1,10 +1,17 @@
 from homeassistant.components.switch import SwitchEntity
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from . import MertikConfigEntry
 from .const import MODE_THERMO
 from .entity import MertikEntity
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: MertikConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
     dataservice = entry.runtime_data
     async_add_entities(
         [

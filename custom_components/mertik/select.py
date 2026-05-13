@@ -1,8 +1,11 @@
 """Heating mode selector for Mertik Maxitrol fireplace."""
 
 from homeassistant.components.select import SelectEntity
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
+from . import MertikConfigEntry
 from .const import HEATING_MODES
 from .entity import MertikEntity
 
@@ -15,7 +18,11 @@ ICON_MAP = {
 }
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: MertikConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
     dataservice = entry.runtime_data
     async_add_entities(
         [

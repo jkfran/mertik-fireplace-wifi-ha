@@ -13,15 +13,21 @@ light can be turned back on at the same level.
 """
 
 from homeassistant.components.light import ATTR_BRIGHTNESS, ColorMode, LightEntity
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
+from . import MertikConfigEntry
 from .entity import MertikEntity
 
 DEFAULT_BRIGHTNESS = 128
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: MertikConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
     dataservice = entry.runtime_data
     async_add_entities(
         [
