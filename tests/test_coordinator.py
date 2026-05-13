@@ -264,6 +264,66 @@ class TestThermostaticIgnitionGuard:
         assert coordinator_off._in_standby is True
 
 
+class TestSimpleDelegations:
+    def test_heating_mode_property(self, coordinator):
+        coordinator._heating_mode = "Full Heat"
+        assert coordinator.heating_mode == "Full Heat"
+
+    def test_set_heating_mode(self, coordinator):
+        coordinator.set_heating_mode("Low Heat")
+        assert coordinator._heating_mode == "Low Heat"
+
+    def test_is_light_on(self, coordinator, mock_mertik):
+        mock_mertik.is_light_on = True
+        assert coordinator.is_light_on is True
+
+    def test_light_brightness(self, coordinator, mock_mertik):
+        mock_mertik.light_brightness = 200
+        assert coordinator.light_brightness == 200
+
+
+class TestCheckPendingMode:
+    def test_returns_false_when_no_pending_mode(self, coordinator):
+        coordinator._pending_mode = None
+        assert coordinator.check_pending_mode() is False
+
+    def test_still_igniting_clears_flame_on_since_and_returns_true(
+        self, coordinator, mock_mertik
+    ):
+        coordinator._pending_mode = "Full Heat"
+        mock_mertik.is_igniting = True
+        coordinator._flame_on_since = "something"
+        result = coordinator.check_pending_mode()
+        assert result is True
+        assert coordinator._flame_on_since is None
+
+    def test_igniting_done_flame_on_not_set_returns_true(
+        self, coordinator, mock_mertik
+    ):
+        coordinator._pending_mode = "Full Heat"
+        mock_mertik.is_igniting = False
+        mock_mertik.is_flame_on = False
+        result = coordinator.check_pending_mode()
+        assert result is True
+
+    def test_flame_on_starts_settle_timer(self, coordinator, mock_mertik):
+        coordinator._pending_mode = "Full Heat"
+        mock_mertik.is_igniting = False
+        mock_mertik.is_flame_on = True
+        coordinator._flame_on_since = None
+        result = coordinator.check_pending_mode()
+        assert result is True
+        assert coordinator._flame_on_since is not None
+
+    def test_returns_true_while_settling(self, coordinator, mock_mertik):
+        coordinator._pending_mode = "Full Heat"
+        mock_mertik.is_igniting = False
+        mock_mertik.is_flame_on = True
+        coordinator._flame_on_since = dt_util.utcnow()
+        result = coordinator.check_pending_mode()
+        assert result is True
+
+
 class TestThermostaticScenarios:
     """End-to-end thermostatic behaviour scenarios.
 

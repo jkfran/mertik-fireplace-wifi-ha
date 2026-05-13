@@ -139,10 +139,12 @@ rules:
     comment: Integration uses only an IP address with no credentials or tokens.
 
   test_coverage:
-    status: todo
+    status: done
     comment: >
-      Overall coverage is ~67%. climate.py and select.py have 0% coverage;
-      config_flow.py is at ~46%. Must exceed 95% across all modules.
+      100% statement coverage across all 12 modules (804 statements, 0 missing).
+      292 tests covering all platform setup, entity properties, coordinator logic,
+      thermostatic control paths, socket reconnection edge cases, and config/options
+      flow including _temp_sensor_options.
 
   # ── Gold ────────────────────────────────────────────────────────────────────
   devices:

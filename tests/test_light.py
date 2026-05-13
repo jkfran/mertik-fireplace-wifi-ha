@@ -96,6 +96,45 @@ class TestLightEntity:
         mock_coordinator.light_off.assert_called_once()
         mock_coordinator.async_set_updated_data.assert_called_once_with(None)
 
+    async def test_added_to_hass_restores_brightness(self, light, mock_coordinator):
+        last_state = MagicMock()
+        last_state.attributes = {ATTR_BRIGHTNESS: 200}
+        with patch.object(
+            light, "async_get_last_state", new_callable=AsyncMock, return_value=last_state
+        ):
+            await light.async_added_to_hass()
+        assert light.brightness == 200
+        assert light.is_on is False
+        mock_coordinator.light_off.assert_called_once()
+
+    async def test_added_to_hass_no_brightness_attr(self, light, mock_coordinator):
+        last_state = MagicMock()
+        last_state.attributes = {}
+        with patch.object(
+            light, "async_get_last_state", new_callable=AsyncMock, return_value=last_state
+        ):
+            await light.async_added_to_hass()
+        assert light.brightness == 128
+        assert light.is_on is False
+        mock_coordinator.light_off.assert_called_once()
+
+    async def test_added_to_hass_no_last_state(self, light, mock_coordinator):
+        with patch.object(
+            light, "async_get_last_state", new_callable=AsyncMock, return_value=None
+        ):
+            await light.async_added_to_hass()
+        assert light.is_on is False
+        mock_coordinator.light_off.assert_called_once()
+
+    async def test_restore_light_calls_light_on_and_brightness(
+        self, light, mock_coordinator
+    ):
+        light._brightness = 200
+        with patch.object(light, "async_write_ha_state"):
+            await light._restore_light()
+        mock_coordinator.light_on.assert_called_once()
+        mock_coordinator.set_light_brightness.assert_called_once_with(200)
+
     def test_fire_off_resets_is_on(self, light, mock_coordinator):
         """When fire turns off and light was on, _restore_light task is scheduled."""
         from unittest.mock import patch, AsyncMock

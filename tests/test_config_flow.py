@@ -301,3 +301,45 @@ async def test_temp_sensor_options_includes_builtin(hass: HomeAssistant):
     options = _temp_sensor_options(hass)
     assert "" in options
     assert "Mertik handset" in options[""]
+
+
+async def test_temp_sensor_options_with_registered_sensors(hass: HomeAssistant):
+    """_temp_sensor_options includes external temp sensors, skips Mertik own sensor."""
+    from custom_components.mertik.config_flow import _temp_sensor_options
+    from homeassistant.components.sensor import SensorDeviceClass
+    from custom_components.mertik.const import DOMAIN
+
+    hass.states.async_set(
+        "sensor.living_room", "22.5",
+        {"device_class": SensorDeviceClass.TEMPERATURE, "friendly_name": "Living Room"},
+    )
+    hass.states.async_set(
+        "sensor.mertik_internal", "21.0",
+        {"device_class": SensorDeviceClass.TEMPERATURE},
+    )
+    # sensor.no_state intentionally has no state → exercises the `continue` branch
+
+    external = MagicMock()
+    external.entity_id = "sensor.living_room"
+    external.domain = "sensor"
+    external.platform = "weather"  # not DOMAIN → included
+
+    mertik_sensor = MagicMock()
+    mertik_sensor.entity_id = "sensor.mertik_internal"
+    mertik_sensor.domain = "sensor"
+    mertik_sensor.platform = DOMAIN  # own sensor → skipped
+
+    no_state = MagicMock()
+    no_state.entity_id = "sensor.no_state"
+
+    with patch("custom_components.mertik.config_flow.er.async_get") as mock_er:
+        mock_registry = MagicMock()
+        mock_registry.entities.values.return_value = [external, mertik_sensor, no_state]
+        mock_er.return_value = mock_registry
+        options = _temp_sensor_options(hass)
+
+    assert "sensor.living_room" in options
+    assert "Living Room" in options["sensor.living_room"]
+    assert "sensor.mertik_internal" not in options
+    assert "sensor.no_state" not in options
+    assert "" in options

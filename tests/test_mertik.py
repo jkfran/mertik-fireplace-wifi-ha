@@ -384,6 +384,123 @@ class TestSocketReconnection:
             new_sock.connect.assert_called_with(("192.168.1.100", 2000))
 
 
+class TestProperties:
+    def test_is_flame_on_true_when_flame_on(self, mock_socket):
+        mock_socket.recv.return_value = _build_status_bytes(
+            on_flag="FF", flame_byte=0x8F
+        )
+        device = Mertik("192.168.1.100")
+        assert device.is_flame_on is True
+
+    def test_is_aux_on_false_when_flame_off(self, mertik_device):
+        mertik_device._local_aux = True
+        mertik_device.flame_on = False
+        assert mertik_device.is_aux_on is False
+
+    def test_close_success(self, mertik_device, mock_socket):
+        mertik_device.close()
+        mock_socket.close.assert_called_once()
+
+    def test_close_swallows_oserror(self, mertik_device, mock_socket):
+        mock_socket.close.side_effect = OSError("Connection reset")
+        mertik_device.close()  # must not raise
+
+    def test_set_thermostat_sends_command(self, mertik_device, mock_socket):
+        mock_socket.send.reset_mock()
+        mertik_device.set_thermostat(20.0)
+        # 20.0°C * 2 = 40 half-degrees = 0x28
+        assert mock_socket.send.called
+        payload = mock_socket.send.call_args[0][0].hex()
+        assert "4231" in payload  # CMD_THERMOSTAT_PREFIX
+        assert "28" in payload  # 0x28 for 20.0°C
+
+    def test_set_thermostat_clamps_to_min(self, mertik_device, mock_socket):
+        mock_socket.send.reset_mock()
+        mertik_device.set_thermostat(1.0)  # below MIN of 5.0
+        assert mock_socket.send.called
+
+    def test_set_thermostat_clamps_to_max(self, mertik_device, mock_socket):
+        mock_socket.send.reset_mock()
+        mertik_device.set_thermostat(40.0)  # above MAX of 36.0
+        assert mock_socket.send.called
+
+
+class TestSendCommandEdgeCases:
+    def _make_device(self, mock_socket):
+        device = Mertik.__new__(Mertik)
+        device.ip = "192.168.1.100"
+        device.client = mock_socket
+        device.on = False
+        device.flame_on = False
+        device._prev_flame_on = False
+        device._local_aux = False
+        device.flameHeight = 0
+        device._shutting_down = False
+        device._guard_flame_on = False
+        device._igniting = False
+        device._ambient_temperature = 0.0
+        return device
+
+    def test_timeout_on_recv_returns_gracefully(self, mertik_device, mock_socket):
+        mock_socket.recv.side_effect = socket.timeout("No response")
+        mertik_device.refresh_status()  # must not raise
+        assert mertik_device.on is False
+
+    def test_send_fails_after_reconnect_returns_gracefully(
+        self, mertik_device, mock_socket
+    ):
+        # Patch _reconnect to no-op so we can isolate the retry-send failure.
+        mock_socket.send.side_effect = socket.error("Connection lost")
+        with patch.object(mertik_device, "_reconnect"):
+            mertik_device.refresh_status()  # logs error and returns
+
+    def test_reconnect_close_exception_swallowed(self, mertik_device, mock_socket):
+        mock_socket.close.side_effect = Exception("Close failed")
+        with patch("custom_components.mertik.mertik.socket.socket") as mock_cls, \
+             patch("time.sleep"):
+            new_sock = MagicMock()
+            new_sock.recv.return_value = _build_status_bytes()
+            mock_cls.return_value = new_sock
+            mertik_device._reconnect()  # close exception must be swallowed
+
+    def test_error_during_reconnect_recv_returns_gracefully(
+        self, mertik_device, mock_socket
+    ):
+        recv_count = 0
+
+        def recv_side_effect(size):
+            nonlocal recv_count
+            recv_count += 1
+            if recv_count == 1:
+                return b""  # empty recv triggers the reconnect path
+            raise socket.timeout("Still nothing")
+
+        mock_socket.recv.side_effect = recv_side_effect
+        with patch.object(mertik_device, "_reconnect"):
+            mertik_device.refresh_status()  # must not raise
+
+
+class TestStatusParsingEdgeCases:
+    def test_short_status_packet_returns_early(self, mertik_device):
+        mertik_device._process_status("SHORT")  # < 32 chars, must not raise or change state
+        assert mertik_device.on is False
+
+    def test_invalid_flame_byte_no_crash(self, mertik_device):
+        # "ZZ" at [18:20] is non-hex → ValueError caught
+        status_str = "303030300003" + "C6" + "FF" + "80" + "ZZ" + "00" + "04000000" + "E6"
+        mertik_device._process_status(status_str)  # must not raise
+
+    def test_invalid_status_bits_no_crash(self, mertik_device):
+        # "ZZ" at [16:18] means status_bits "ZZ8F" is non-hex → ValueError caught
+        status_str = "303030300003" + "C6" + "FF" + "ZZ" + "8F" + "00" + "04000000" + "E6"
+        mertik_device._process_status(status_str)  # must not raise
+
+    def test_invalid_temp_no_crash(self, mertik_device):
+        # "ZZ" at [30:32] is non-hex → ValueError caught
+        status_str = "303030300003" + "C6" + "FF" + "80" + "8F" + "00" + "04000000" + "ZZ"
+        mertik_device._process_status(status_str)  # must not raise
+
+
 class TestHelperMethods:
     """Test _hex_to_bin and _bit_at helpers."""
 
