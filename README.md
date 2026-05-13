@@ -119,6 +119,26 @@ own handset sensor. You can select any other HA temperature sensor via
 
 ---
 
+## Data updates
+
+The integration communicates with the fireplace over a **direct local TCP connection** (port 2000) with no cloud dependency. There is no push notification mechanism — the device does not send unsolicited updates.
+
+HA **polls the device every 10 seconds** by sending a status request and parsing the response. Each poll refreshes:
+
+- On/off state and flame status
+- Ignition and shutdown flags
+- Ambient temperature (from the handset sensor)
+
+The 10-second interval is chosen for two reasons:
+1. **Thermostatic control** — the control loop runs on every poll and must react to temperature changes promptly to avoid overshooting the target.
+2. **Optimistic state window** — after a command (e.g. turn on), the integration shows the new state optimistically for up to 20 seconds while the device executes the request. A slower poll interval would leave the UI unresponsive for an unacceptable portion of the ignition cycle.
+
+**Optimistic state model** — because the device takes several seconds to physically execute commands (ignition, shutdown), the integration maintains local optimistic state between polls. For example, after pressing "On", the Fireplace switch shows as on immediately; if the device has not confirmed the change within 20 seconds, the state reverts to what the device reports. This avoids a flickering UI during normal use.
+
+There is no user-configurable polling interval. The interval is fixed because the thermostatic control algorithm depends on a consistent polling rate.
+
+---
+
 ## Installation
 
 ### HACS (recommended)

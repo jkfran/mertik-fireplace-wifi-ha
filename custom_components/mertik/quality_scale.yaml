@@ -172,10 +172,12 @@ rules:
     comment: No discovery mechanism is available to provide updated network information.
 
   docs_data_update:
-    status: todo
+    status: done
     comment: >
-      README mentions 10-second polling but does not document what data is
-      fetched, device-side limitations, or the optimistic state model.
+      README "Data updates" section documents the 10-second TCP polling interval,
+      what data is fetched each poll, why 10 seconds was chosen (thermostatic
+      control + 20-second optimistic window), the optimistic state model, and
+      that there is no push mechanism or configurable interval.
 
   docs_examples:
     status: todo
