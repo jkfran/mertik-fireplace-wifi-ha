@@ -70,9 +70,9 @@ def _build_status_bytes(
         [14:16]  on_flag: "FF"=on, "00"=off
         [16:20]  status bits (4 hex chars); [18:20] is the flame byte
         [20:22]  light level
-        [22:24]  unknown (always 0x04 in observed packets)
-        [24:26]  fault_code: 0x00=no fault, 0x04=F04, 0x10=F16, etc.
-                 UNVERIFIED — compare debug logs with app during a fault
+        [22:24]  unknown (always 0x04 in all observed packets)
+        [24:26]  mode byte: 0x00=manual, 0x20=thermostatic active.
+                 NOT the fault code — fault codes travel in a separate packet type.
         [26:30]  unknown (always 0x00 in observed packets)
         [30:32]  ambient temperature (raw/10 = degrees C)
 
@@ -98,7 +98,7 @@ def _build_status_bytes(
         status_hi:   High byte of 4-char status field, e.g. "80".
         light_level: Raw light level byte (not parsed by current code).
         ambient_temp: Raw temperature byte; value/10 = degrees C.
-        fault_code:  Raw fault code byte (0 = no fault). Position unverified.
+        fault_code:  Mode byte value (0x00=manual, 0x20=thermostatic active).
     """
     prefix = "303030300003"
     config = "C6"

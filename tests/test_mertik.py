@@ -156,33 +156,33 @@ class TestStatusParsing:
         assert device.flameHeight == 1
 
 
-class TestFaultCodeParsing:
-    """Test fault code parsing from the status packet."""
+class TestModeByteAndFaultCodeParsing:
+    """Test mode byte parsing from the status packet.
 
-    def test_fault_code_zero_by_default(self, mock_socket):
+    The fault_code property currently reflects the mode byte at [24:26]
+    (0x00=manual, 0x20=thermostatic active). Fault codes proper are not yet
+    located — they appear to arrive in a separate packet type.
+    """
+
+    def test_mode_byte_zero_by_default(self, mock_socket):
         mock_socket.recv.return_value = _build_status_bytes(fault_code=0x00)
         device = Mertik("192.168.1.100")
         assert device.fault_code == 0
 
-    def test_fault_code_f04(self, mock_socket):
+    def test_mode_byte_thermostatic_active(self, mock_socket):
+        mock_socket.recv.return_value = _build_status_bytes(fault_code=0x20)
+        device = Mertik("192.168.1.100")
+        assert device.fault_code == 0x20
+
+    def test_mode_byte_arbitrary_value(self, mock_socket):
         mock_socket.recv.return_value = _build_status_bytes(fault_code=0x04)
         device = Mertik("192.168.1.100")
         assert device.fault_code == 4
 
-    def test_fault_code_f16(self, mock_socket):
-        mock_socket.recv.return_value = _build_status_bytes(fault_code=0x10)
+    def test_mode_byte_updates_on_subsequent_packet(self, mock_socket):
+        mock_socket.recv.return_value = _build_status_bytes(fault_code=0x20)
         device = Mertik("192.168.1.100")
-        assert device.fault_code == 16
-
-    def test_fault_code_f43(self, mock_socket):
-        mock_socket.recv.return_value = _build_status_bytes(fault_code=0x2B)
-        device = Mertik("192.168.1.100")
-        assert device.fault_code == 43
-
-    def test_fault_code_clears_on_subsequent_packet(self, mock_socket):
-        mock_socket.recv.return_value = _build_status_bytes(fault_code=0x04)
-        device = Mertik("192.168.1.100")
-        assert device.fault_code == 4
+        assert device.fault_code == 0x20
         mock_socket.recv.return_value = _build_status_bytes(fault_code=0x00)
         device.refresh_status()
         assert device.fault_code == 0

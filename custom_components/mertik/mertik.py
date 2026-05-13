@@ -51,11 +51,14 @@ FLAME_HEIGHT_STEPS = [
 STATUS_ON_FLAG = slice(14, 16)
 STATUS_BITS = slice(16, 20)
 STATUS_FLAME_HEIGHT = slice(18, 20)
-# Byte at [22:24] = 0x04 in normal operation (unknown field).
-# Byte at [24:26] = 0x00 in normal operation — most likely fault code.
-# UNVERIFIED: enable DEBUG logging and compare packets when the app shows
-# a fault code vs. normal operation to confirm or correct these positions.
-STATUS_FAULT_CODE = slice(24, 26)
+# [22:24] = 0x04 in every observed packet (constant, purpose unknown).
+# [24:26] = mode/state indicator — 0x00 manual, 0x20 thermostatic active.
+#           NOT the fault code: 0x20 ≠ F04 (which would need to be 0x04).
+# Fault codes likely arrive in a separate packet type that does not match
+# STATUS_PREFIXES. To identify it: enable DEBUG logging, trigger F16
+# (handset out of range for 1.5 h), then look for unusual "no status packet"
+# entries in the log that appear when the app shows the error code.
+STATUS_MODE_BYTE = slice(24, 26)
 STATUS_AMBIENT_TEMP = slice(30, 32)
 
 FLAME_OFF_THRESHOLD = 123
@@ -344,18 +347,18 @@ class Mertik:
         except (ValueError, IndexError):
             pass
 
-        # Fault code — byte position needs hardware verification.
-        # Enable DEBUG logging and compare packets when the app shows a fault
-        # vs. normal operation to confirm STATUS_FAULT_CODE slice is correct.
+        # [24:26] = mode byte — 0x00 manual, 0x20 thermostatic active.
+        # Fault codes are NOT in the regular status packet; they arrive in a
+        # separate packet type. Log unparsed bytes to help identify that packet
+        # when it eventually appears alongside an app-reported error code.
         _LOGGER.debug(
-            "Unknown filler bytes [22:24]=%s [24:26]=%s [26:28]=%s [28:30]=%s",
-            status_str[22:24],
+            "Status extras — mode_byte=%s unknown[26:28]=%s unknown[28:30]=%s",
             status_str[24:26],
             status_str[26:28],
             status_str[28:30],
         )
         try:
-            self._fault_code = int(status_str[STATUS_FAULT_CODE], 16)
+            self._fault_code = int(status_str[STATUS_MODE_BYTE], 16)
         except (ValueError, IndexError):
             pass
 
