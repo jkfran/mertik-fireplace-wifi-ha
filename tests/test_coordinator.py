@@ -21,6 +21,7 @@ def mock_mertik():
     mertik.is_igniting = False
     mertik.is_aux_on = False
     mertik.ambient_temperature = 20.0
+    mertik.ip = "192.168.1.100"
     return mertik
 
 
@@ -168,6 +169,35 @@ class TestAsyncUpdateData:
         mock_mertik.refresh_status.side_effect = Exception("Connection lost")
         with pytest.raises(UpdateFailed):
             await coordinator._async_update_data()
+
+    async def test_deletes_repair_issue_on_success(self, coordinator, mock_mertik):
+        with patch(
+            "homeassistant.helpers.issue_registry.async_delete_issue"
+        ) as mock_delete:
+            await coordinator._async_update_data()
+            mock_delete.assert_called_once_with(
+                coordinator.hass, "mertik", "cannot_connect"
+            )
+
+    async def test_creates_repair_issue_on_failure(self, coordinator, mock_mertik):
+        import homeassistant.helpers.issue_registry as ir
+        from homeassistant.helpers.update_coordinator import UpdateFailed
+
+        mock_mertik.refresh_status.side_effect = Exception("Connection lost")
+        with patch(
+            "homeassistant.helpers.issue_registry.async_create_issue"
+        ) as mock_create:
+            with pytest.raises(UpdateFailed):
+                await coordinator._async_update_data()
+            mock_create.assert_called_once_with(
+                coordinator.hass,
+                "mertik",
+                "cannot_connect",
+                is_fixable=False,
+                severity=ir.IssueSeverity.ERROR,
+                translation_key="cannot_connect",
+                translation_placeholders={"host": "192.168.1.100"},
+            )
 
 
 class TestThermostaticIgnitionGuard:

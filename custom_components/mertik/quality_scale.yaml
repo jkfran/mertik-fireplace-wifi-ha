@@ -268,10 +268,13 @@ rules:
       updated via async_update_reload_and_abort.
 
   repair_issues:
-    status: todo
+    status: done
     comment: >
-      No repair issues or flows are implemented. Persistent connection failures
-      or misconfiguration are not surfaced as actionable repair workflows.
+      coordinator.py raises a persistent repair issue (cannot_connect) via
+      ir.async_create_issue on each failed poll, and clears it via
+      ir.async_delete_issue on recovery. The issue title and description are
+      defined in strings.json / translations/en.json under "issues", with a
+      {host} placeholder so users can see which device is unreachable.
 
   stale_devices:
     status: exempt

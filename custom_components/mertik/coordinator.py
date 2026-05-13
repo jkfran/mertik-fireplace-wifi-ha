@@ -1,6 +1,7 @@
 from datetime import timedelta
 import logging
 
+import homeassistant.helpers.issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -247,12 +248,22 @@ class MertikDataCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self):
         try:
             await self.hass.async_add_executor_job(self.mertik.refresh_status)
+            ir.async_delete_issue(self.hass, DOMAIN, "cannot_connect")
             # Detect when fire turns off so light entity can reset its state.
             # The device physically turns the light off when fire is extinguished.
             current_on = self.is_on
             self.fire_just_turned_off = self._prev_is_on and not current_on
             self._prev_is_on = current_on
         except Exception as err:
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                "cannot_connect",
+                is_fixable=False,
+                severity=ir.IssueSeverity.ERROR,
+                translation_key="cannot_connect",
+                translation_placeholders={"host": self.mertik.ip},
+            )
             raise UpdateFailed(
                 translation_domain=DOMAIN,
                 translation_key="update_failed",

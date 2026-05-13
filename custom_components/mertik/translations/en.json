@@ -31,6 +31,12 @@
       "reconfigure_successful": "Fireplace configuration updated successfully."
     }
   },
+  "issues": {
+    "cannot_connect": {
+      "title": "Cannot connect to Mertik Maxitrol fireplace",
+      "description": "Home Assistant cannot reach the fireplace WiFi box at {host}. Check that the device is powered on and connected to your network. If the IP address has changed, use **Reconfigure** to update it."
+    }
+  },
   "exceptions": {
     "cannot_connect": {
       "message": "Unable to connect to the fireplace. Check the IP address and that the device is powered on and connected to your network."
