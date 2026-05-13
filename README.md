@@ -228,7 +228,75 @@ are met. Controls work correctly regardless of whether "APP" is displayed.
 
 ---
 
-## Disclaimer
+## Troubleshooting
+
+### Integration fails to connect / stays unavailable
+
+**Symptom:** The integration shows as unavailable or the setup fails with "Unable to connect to fireplace".
+
+**Description:** The integration communicates over TCP port 2000. If the fireplace's myfire WiFi box cannot be reached on that port, setup or polling will fail.
+
+**Resolution:**
+1. Confirm the myfire WiFi box is powered and joined to your network (the handset should show "APP").
+2. Verify the IP address entered during setup. Open a terminal and run `ping <ip>` — the box should respond.
+3. Check that nothing on your network is blocking TCP port 2000 (router firewall, VLAN isolation, etc.).
+4. If the IP address has changed (DHCP re-assignment), update it via **Settings → Devices & Services → Mertik Maxitrol → ⋮ → Reconfigure**, or assign the box a static DHCP lease in your router.
+
+---
+
+### Handset does not enter APP mode / entities are unavailable
+
+**Symptom:** The handset never shows "APP" and ambient temperature is missing or stuck.
+
+**Description:** APP mode is required for the WiFi box to accept remote commands. The handset enters APP mode automatically once the myfire box establishes a TCP connection with the integration — it is not a manual step. If APP mode never appears, the box has not connected.
+
+**Resolution:**
+1. Confirm the integration is set up and the config entry is loaded (not in a failed state).
+2. Power-cycle the myfire WiFi box (unplug it from the fireplace for 10 seconds).
+3. Check the HA log (`Settings → System → Logs`) for connection errors referencing the fireplace IP.
+4. Verify only one client is connected to the box at a time — the myfire mobile app and this integration cannot be connected simultaneously.
+
+---
+
+### Flame height does not change after adjusting the slider
+
+**Symptom:** Moving the Flame Height slider has no visible effect, or the slider snaps back.
+
+**Description:** The device status packet always reports the post-ignition baseline flame level regardless of `set_flame_height` commands. The integration tracks flame height locally (from commands), so the slider may not match device reality after a restart or reconnect. Additionally, flame height commands sent within ~35 seconds of ignition are silently ignored by the firmware.
+
+**Resolution:**
+1. Wait at least 35 seconds after the fire ignites before adjusting flame height.
+2. Listen for the audible beep from the handset — it confirms the command was received.
+3. If commands never take effect, confirm the fire is actually burning (not in thermostatic Standby pilot mode).
+
+---
+
+### Temperature sensor does not appear in the Configure dropdown
+
+**Symptom:** An external temperature sensor is not listed when configuring the thermostatic sensor.
+
+**Description:** The dropdown only shows sensors that have `device_class: temperature` set in their state attributes and have a current state in HA. Sensors that are unavailable, unknown, or missing the device class are excluded.
+
+**Resolution:**
+1. Go to **Developer Tools → States** and find your sensor. Check that `device_class` is `temperature` in the attributes.
+2. If `device_class` is missing, add it via a `template` sensor or customize the entity in `configuration.yaml`.
+3. If the sensor is from a custom integration, ensure it is currently available (not `unavailable` or `unknown`).
+4. After confirming the sensor is valid, return to **Settings → Devices & Services → Mertik Maxitrol → Configure** and the sensor should appear.
+
+---
+
+### Fire turns itself off while in Thermostatic mode
+
+**Symptom:** The fire extinguishes unexpectedly when the room is warm, then re-ignites when it cools.
+
+**Description:** This is intentional thermostatic Standby behaviour. When the room temperature reaches the setpoint, the main burners are extinguished but the pilot flame stays lit. "Off" in this context means the main burners are off, not that the device has turned off entirely. The Fireplace switch remains on.
+
+**Resolution:**
+This is not a fault. If you want the fire to stay at a fixed output rather than cycling, select **Full Heat**, **Medium Heat**, or **Low Heat** from the Heating Mode entity instead of Thermostatic.
+
+---
+
+
 
 This integration controls a gas appliance. Use at your own risk. The authors
 accept no responsibility for any damage or injury. Always ensure your

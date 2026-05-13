@@ -193,11 +193,12 @@ rules:
   docs_supported_functions: done
 
   docs_troubleshooting:
-    status: todo
+    status: done
     comment: >
-      No troubleshooting section exists. Common issues (handset not entering
-      APP mode, flame height not reflecting commands, temperature sensor not
-      appearing in the selector) should be documented with resolution steps.
+      README "Troubleshooting" section covers five common issues with symptom,
+      description, and numbered resolution steps: connection failure, handset
+      not entering APP mode, flame height commands not taking effect, temperature
+      sensor missing from dropdown, and fire cycling in Thermostatic mode.
 
   docs_use_cases:
     status: todo
