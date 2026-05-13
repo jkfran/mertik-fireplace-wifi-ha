@@ -62,7 +62,7 @@ class MertikClimateEntity(MertikEntity, ClimateEntity, RestoreEntity):
     temperature readout used in Thermostatic mode.
     """
 
-    _attr_name = "Thermostat"
+    _attr_translation_key = "thermostat"
     _attr_icon = "mdi:thermostat"
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_min_temp = MIN_TEMP

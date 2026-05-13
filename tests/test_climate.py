@@ -54,8 +54,8 @@ class TestClimateEntityProperties:
     def test_unique_id(self, climate):
         assert climate.unique_id == "test_entry-Thermostat"
 
-    def test_name(self, climate):
-        assert climate.name == "Thermostat"
+    def test_translation_key(self, climate):
+        assert climate.translation_key == "thermostat"
 
     def test_has_entity_name(self, climate):
         assert climate.has_entity_name is True
@@ -430,4 +430,4 @@ class TestClimatePlatformSetup:
             await async_setup_entry(hass, mock_config_entry, lambda e: added.extend(e))
         assert len(added) == 1
         assert isinstance(added[0], MertikClimateEntity)
-        assert added[0].name == "Thermostat"
+        assert added[0].translation_key == "thermostat"

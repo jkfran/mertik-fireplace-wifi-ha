@@ -39,7 +39,7 @@ async def async_setup_entry(
 
 
 class MertikLightEntity(MertikEntity, LightEntity, RestoreEntity):
-    _attr_name = "Light"
+    _attr_translation_key = "light"
     _attr_color_mode = ColorMode.BRIGHTNESS
     _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
     _attr_assumed_state = True

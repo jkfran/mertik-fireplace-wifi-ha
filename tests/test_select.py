@@ -25,8 +25,8 @@ class TestHeatingModeSelect:
     def test_unique_id(self, select):
         assert select.unique_id == "test_entry-HeatingMode"
 
-    def test_name(self, select):
-        assert select.name == "Heating Mode"
+    def test_translation_key(self, select):
+        assert select.translation_key == "heating_mode"
 
     def test_has_entity_name(self, select):
         assert select.has_entity_name is True
@@ -160,4 +160,4 @@ class TestSelectPlatformSetup:
             await async_setup_entry(hass, mock_config_entry, lambda e: added.extend(e))
         assert len(added) == 1
         assert isinstance(added[0], MertikHeatingModeSelect)
-        assert added[0].name == "Heating Mode"
+        assert added[0].translation_key == "heating_mode"

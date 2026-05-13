@@ -23,8 +23,8 @@ class TestFlameHeightEntity:
     def test_unique_id(self, number):
         assert number.unique_id == "test_entry-FlameHeight"
 
-    def test_name(self, number):
-        assert number.name == "Flame Height"
+    def test_translation_key(self, number):
+        assert number.translation_key == "flame_height"
 
     def test_has_entity_name(self, number):
         assert number.has_entity_name is True

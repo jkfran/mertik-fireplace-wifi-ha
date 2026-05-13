@@ -24,13 +24,14 @@ class TestLightEntity:
         entity = MertikLightEntity(mock_coordinator, "test_entry", "My Fireplace")
         entity.hass = hass
         entity.entity_id = "light.test_fireplace_light"
+        entity.platform = MagicMock(platform_name="mertik", domain="light")
         return entity
 
     def test_unique_id(self, light):
         assert light.unique_id == "test_entry-Light"
 
-    def test_name(self, light):
-        assert light.name == "Light"
+    def test_translation_key(self, light):
+        assert light.translation_key == "light"
 
     def test_has_entity_name(self, light):
         assert light.has_entity_name is True
@@ -162,4 +163,4 @@ class TestLightPlatformSetup:
             await async_setup_entry(hass, mock_config_entry, lambda e: added.extend(e))
         assert len(added) == 1
         assert isinstance(added[0], MertikLightEntity)
-        assert added[0].name == "Light"
+        assert added[0].translation_key == "light"

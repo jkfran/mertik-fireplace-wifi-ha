@@ -53,7 +53,7 @@ class MertikOnOffSwitchEntity(MertikEntity, SwitchEntity):
 
 
 class MertikAuxOnOffSwitchEntity(MertikEntity, SwitchEntity):
-    _attr_name = "Aux"
+    _attr_translation_key = "aux"
     _attr_icon = "mdi:light"
 
     def __init__(self, dataservice, entry_id, device_name):

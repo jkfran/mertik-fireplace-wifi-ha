@@ -235,10 +235,11 @@ rules:
       Height could reasonably be disabled by default.
 
   entity_translations:
-    status: todo
+    status: done
     comment: >
-      Entity names are hardcoded strings (e.g. "Heating Mode", "Flame Height").
-      They must be moved to strings.json and referenced via _attr_translation_key.
+      All non-primary entities use _attr_translation_key. Names are defined in
+      strings.json and translations/en.json under entity.<platform>.<key>.name.
+      The main fireplace switch keeps _attr_name = None (uses device name).
 
   exception_translations:
     status: todo

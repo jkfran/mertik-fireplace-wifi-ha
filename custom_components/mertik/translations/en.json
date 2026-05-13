@@ -20,6 +20,38 @@
       "already_configured": "This fireplace is already configured."
     }
   },
+  "entity": {
+    "switch": {
+      "aux": {
+        "name": "Aux"
+      }
+    },
+    "climate": {
+      "thermostat": {
+        "name": "Thermostat"
+      }
+    },
+    "select": {
+      "heating_mode": {
+        "name": "Heating Mode"
+      }
+    },
+    "number": {
+      "flame_height": {
+        "name": "Flame Height"
+      }
+    },
+    "sensor": {
+      "ambient_temperature": {
+        "name": "Ambient Temperature"
+      }
+    },
+    "light": {
+      "light": {
+        "name": "Light"
+      }
+    }
+  },
   "options": {
     "step": {
       "init": {

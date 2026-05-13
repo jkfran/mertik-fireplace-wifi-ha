@@ -103,8 +103,8 @@ class TestAuxSwitch:
     def test_unique_id(self, switch):
         assert switch.unique_id == "test_entry-AuxOnOff"
 
-    def test_name(self, switch):
-        assert switch.name == "Aux"
+    def test_translation_key(self, switch):
+        assert switch.translation_key == "aux"
 
     def test_has_entity_name(self, switch):
         assert switch.has_entity_name is True
@@ -158,7 +158,7 @@ class TestSwitchPlatformSetup:
         await async_setup_entry(hass, mock_config_entry, lambda e: added.extend(e))
 
         assert added[0].name is None
-        assert added[1].name == "Aux"
+        assert added[1].translation_key == "aux"
 
     async def test_all_entities_share_device(
         self, hass, mock_coordinator, mock_config_entry

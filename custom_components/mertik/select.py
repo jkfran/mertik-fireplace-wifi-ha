@@ -35,7 +35,7 @@ async def async_setup_entry(
 
 
 class MertikHeatingModeSelect(MertikEntity, SelectEntity, RestoreEntity):
-    _attr_name = "Heating Mode"
+    _attr_translation_key = "heating_mode"
     _attr_options = HEATING_MODES
     _attr_entity_category = EntityCategory.CONFIG
 

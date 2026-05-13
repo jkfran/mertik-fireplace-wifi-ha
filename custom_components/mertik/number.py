@@ -30,7 +30,7 @@ class MertikFlameHeightEntity(MertikEntity, NumberEntity):
     flame height commands when not running.
     """
 
-    _attr_name = "Flame Height"
+    _attr_translation_key = "flame_height"
     _attr_icon = "mdi:fire"
     _attr_entity_category = EntityCategory.CONFIG
     _attr_native_min_value = 1
