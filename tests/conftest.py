@@ -1,6 +1,6 @@
 """Fixtures for Mertik tests."""
 
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -18,17 +18,17 @@ def mock_coordinator():
     coordinator.async_set_updated_data = MagicMock()
     coordinator.mark_optimistic_on = MagicMock()
     coordinator.mark_optimistic_off = MagicMock()
-    coordinator.ignite_fireplace = AsyncMock()
-    coordinator.guard_flame_off = AsyncMock()
-    coordinator.standby = AsyncMock()
-    coordinator.aux_on = AsyncMock()
-    coordinator.aux_off = AsyncMock()
-    coordinator.light_on = AsyncMock()
-    coordinator.light_off = AsyncMock()
-    coordinator.set_light_brightness = AsyncMock()
-    coordinator.set_flame_height = AsyncMock()
-    coordinator.apply_heating_mode = AsyncMock()
-    coordinator.check_pending_mode = AsyncMock(return_value=False)
+    coordinator.ignite_fireplace = MagicMock()
+    coordinator.guard_flame_off = MagicMock()
+    coordinator.standby = MagicMock()
+    coordinator.aux_on = MagicMock()
+    coordinator.aux_off = MagicMock()
+    coordinator.light_on = MagicMock()
+    coordinator.light_off = MagicMock()
+    coordinator.set_light_brightness = MagicMock()
+    coordinator.set_flame_height = MagicMock()
+    coordinator.apply_heating_mode = MagicMock()
+    coordinator.check_pending_mode = MagicMock(return_value=False)
     coordinator.heating_mode = None
     coordinator.fire_just_turned_off = False
     coordinator.async_add_listener = MagicMock(return_value=MagicMock())
@@ -46,36 +46,39 @@ def mock_config_entry():
 
 
 @pytest.fixture
-def mock_reader():
-    """Return a mock asyncio StreamReader."""
-    reader = AsyncMock()
-    reader.read.return_value = _build_status_bytes()
-    return reader
+def mock_socket():
+    """Return a mock socket instance."""
+    sock = MagicMock()
+    sock.recv.return_value = _build_status_bytes()
+    return sock
+
+
+# Backward-compat aliases used by tests that still reference mock_reader/mock_writer
+@pytest.fixture
+def mock_reader(mock_socket):
+    """Socket mock; recv is the read side."""
+    return mock_socket
 
 
 @pytest.fixture
-def mock_writer():
-    """Return a mock asyncio StreamWriter."""
-    writer = MagicMock()
-    writer.drain = AsyncMock()
-    writer.wait_closed = AsyncMock()
-    return writer
+def mock_writer(mock_socket):
+    """Socket mock; send is the write side."""
+    return mock_socket
 
 
 @pytest.fixture
-def mock_connection(mock_reader, mock_writer):
-    """Patch asyncio.open_connection, yield the mock for call verification."""
+def mock_connection(mock_socket):
+    """Patch socket.socket to return mock_socket; yield mock_socket for assertions."""
     with patch(
-        "custom_components.mertik.mertik.asyncio.open_connection",
-        new_callable=AsyncMock,
-        return_value=(mock_reader, mock_writer),
-    ) as mock_open:
-        yield mock_open
+        "custom_components.mertik.mertik.socket.socket",
+        return_value=mock_socket,
+    ):
+        yield mock_socket
 
 
 @pytest.fixture
 async def mertik_device(mock_connection):
-    """Return a Mertik instance backed by mocked asyncio reader/writer."""
+    """Return a Mertik instance backed by a mocked socket."""
     device = await Mertik.async_connect("192.168.1.100")
     return device
 

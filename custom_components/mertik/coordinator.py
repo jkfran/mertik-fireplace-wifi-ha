@@ -81,19 +81,19 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
     def set_heating_mode(self, mode: str) -> None:
         self._heating_mode = mode
 
-    async def ignite_fireplace(self) -> None:
-        await self.mertik.ignite_fireplace()
+    def ignite_fireplace(self) -> None:
+        self.mertik.ignite_fireplace()
 
-    async def guard_flame_off(self) -> None:
+    def guard_flame_off(self) -> None:
         self._optimistic_on_until = None
         self._optimistic_off_until = None
-        await self.mertik.guard_flame_off()
+        self.mertik.guard_flame_off()
         self._in_standby = False
         # Signal light entity that fire turned off (device kills light too)
         self.fire_just_turned_off = True
         self._prev_is_on = False
 
-    async def standby(self) -> None:
+    def standby(self) -> None:
         """Pilot flame only -- main burners off but ignition source stays lit.
         Used by thermostatic Off so re-ignition is fast when heat is needed.
         Does NOT set fire_just_turned_off because the device keeps the light
@@ -102,23 +102,23 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         self._optimistic_on_until = None
         self._optimistic_off_until = None
         self._in_standby = True
-        await self.mertik.standBy()
+        self.mertik.standBy()
 
     @property
     def is_aux_on(self) -> bool:
         return self.mertik.is_aux_on  # already gated on flame_on in mertik.py
 
-    async def aux_on(self) -> None:
-        await self.mertik.aux_on()
+    def aux_on(self) -> None:
+        self.mertik.aux_on()
 
-    async def aux_off(self) -> None:
-        await self.mertik.aux_off()
+    def aux_off(self) -> None:
+        self.mertik.aux_off()
 
     def get_flame_height(self) -> int:
         return self.mertik.get_flame_height()
 
-    async def set_flame_height(self, flame_height: int) -> None:
-        await self.mertik.set_flame_height(flame_height)
+    def set_flame_height(self, flame_height: int) -> None:
+        self.mertik.set_flame_height(flame_height)
 
     @property
     def fault_code(self) -> int:
@@ -132,23 +132,23 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
     def is_light_on(self) -> bool:
         return self._is_light_on
 
-    async def light_on(self) -> None:
+    def light_on(self) -> None:
         self._is_light_on = True
-        await self.mertik.light_on()
+        self.mertik.light_on()
 
-    async def light_off(self) -> None:
+    def light_off(self) -> None:
         self._is_light_on = False
-        await self.mertik.light_off()
+        self.mertik.light_off()
 
-    async def set_light_brightness(self, brightness: int) -> None:
+    def set_light_brightness(self, brightness: int) -> None:
         self._light_brightness = brightness
-        await self.mertik.set_light_brightness(brightness)
+        self.mertik.set_light_brightness(brightness)
 
     @property
     def light_brightness(self) -> int:
         return self._light_brightness
 
-    async def apply_heating_mode(self, mode: str) -> None:
+    def apply_heating_mode(self, mode: str) -> None:
         """Apply a named heating mode to the physical fireplace.
 
         Standby is handled first -- it must never trigger ignition regardless
@@ -169,7 +169,7 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         # Standby never ignites -- handle it unconditionally before ignition logic.
         if mode == MODE_STANDBY:
             self._pending_mode = None
-            await self.standby()
+            self.standby()
             return
 
         physically_on = self.mertik.is_flame_on or self.mertik.is_igniting
@@ -187,23 +187,23 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
             self._pending_mode = mode
             self._in_standby = False
             self.mark_optimistic_on()
-            await self.mertik.ignite_fireplace()
+            self.mertik.ignite_fireplace()
             return
 
         # Fire is physically on (flame_on or igniting): apply mode directly.
         self._in_standby = False
         self._pending_mode = None
         if mode == MODE_FULL:
-            await self.mertik.set_flame_height(FLAME_MAX)
-            await self.mertik.aux_on()
+            self.mertik.set_flame_height(FLAME_MAX)
+            self.mertik.aux_on()
         elif mode == MODE_MEDIUM:
-            await self.mertik.aux_off()
-            await self.mertik.set_flame_height(FLAME_MAX)
+            self.mertik.aux_off()
+            self.mertik.set_flame_height(FLAME_MAX)
         elif mode == MODE_LOW:
-            await self.mertik.aux_off()
-            await self.mertik.set_flame_height(FLAME_MIN)
+            self.mertik.aux_off()
+            self.mertik.set_flame_height(FLAME_MIN)
 
-    async def check_pending_mode(self) -> bool:
+    def check_pending_mode(self) -> bool:
         """Called by the thermostatic loop each poll cycle.
 
         Returns True if a pending mode was applied (so the caller knows
@@ -255,12 +255,12 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         mode = self._pending_mode
         self._pending_mode = None
         self._flame_on_since = None
-        await self.apply_heating_mode(mode)
+        self.apply_heating_mode(mode)
         return True
 
     async def _async_update_data(self) -> None:
         try:
-            await self.mertik.refresh_status()
+            await self.hass.async_add_executor_job(self.mertik.refresh_status)
             ir.async_delete_issue(self.hass, DOMAIN, "cannot_connect")
             # Detect when fire turns off so light entity can reset its state.
             # The device physically turns the light off when fire is extinguished.

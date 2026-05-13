@@ -52,10 +52,12 @@ class MertikHeatingModeSelect(MertikEntity, SelectEntity, RestoreEntity):
         self._current_mode = option
         self._dataservice.set_heating_mode(option)
         if option == "Standby":
-            await self._dataservice.standby()
+            await self.hass.async_add_executor_job(self._dataservice.standby)
             self._dataservice.mark_optimistic_off()
         elif option != "Thermostatic":
-            await self._dataservice.apply_heating_mode(option)
+            await self.hass.async_add_executor_job(
+                self._dataservice.apply_heating_mode, option
+            )
         # Thermostatic: climate entity drives hardware on next poll
         self.async_write_ha_state()
         self._dataservice.async_set_updated_data(None)

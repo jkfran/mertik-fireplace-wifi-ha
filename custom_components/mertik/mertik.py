@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+import socket
+import time
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -91,22 +93,18 @@ class Mertik:
         self._prev_flame_on = False
         self._fault_code = 0  # 0 = no fault; F-code number when active
 
-        self._reader: asyncio.StreamReader | None = None
-        self._writer: asyncio.StreamWriter | None = None
+        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.client.settimeout(SOCKET_TIMEOUT)
+        self.client.connect((self.ip, TCP_PORT))
+        self._startup_sequence()
 
     @classmethod
     async def async_connect(cls, ip: str) -> "Mertik":
-        """Create a Mertik instance and open the TCP connection."""
-        instance = cls(ip)
-        await instance.connect()
-        return instance
+        """Create a Mertik instance and open the TCP connection via executor."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, cls, ip)
 
-    async def connect(self) -> None:
-        """Open TCP connection and run startup sequence."""
-        self._reader, self._writer = await asyncio.open_connection(self.ip, TCP_PORT)
-        await self._startup_sequence()
-
-    async def _startup_sequence(self) -> None:
+    def _startup_sequence(self) -> None:
         """APP mode startup sequence.
 
         CMD_GUARD_FLAME_OFF is NOT sent at startup. When it was included,
@@ -121,8 +119,8 @@ class Mertik:
         an HA automation triggered by the 'Home Assistant Start' event
         that calls the Fireplace switch turn_off service.
         """
-        await self._send_command(CMD_STATUS)
-        await self._send_command(CMD_APP_MODE)
+        self._send_command(CMD_STATUS)
+        self._send_command(CMD_APP_MODE)
 
     @property
     def is_on(self) -> bool:
@@ -153,20 +151,20 @@ class Mertik:
     def ambient_temperature(self) -> float:
         return self._ambient_temperature
 
-    async def standBy(self) -> None:
-        await self._send_command(CMD_STANDBY)
+    def standBy(self) -> None:
+        self._send_command(CMD_STANDBY)
         self._local_aux = False
         self.flameHeight = 0
 
-    async def aux_on(self) -> None:
-        await self._send_command(CMD_AUX_ON)
+    def aux_on(self) -> None:
+        self._send_command(CMD_AUX_ON)
         self._local_aux = True
 
-    async def aux_off(self) -> None:
-        await self._send_command(CMD_AUX_OFF)
+    def aux_off(self) -> None:
+        self._send_command(CMD_AUX_OFF)
         self._local_aux = False
 
-    async def ignite_fireplace(self) -> None:
+    def ignite_fireplace(self) -> None:
         """Ignite and immediately send aux_on.
 
         Both burners light physically at ignition. We send aux_on straight
@@ -174,34 +172,32 @@ class Mertik:
         1. The Rear Burner switch shows On (accurate physical state)
         2. The user can then turn aux off if they only want the front burner
         """
-        await self._send_command(CMD_IGNITE)
+        self._send_command(CMD_IGNITE)
         self._local_aux = True  # set locally before aux_on command
-        await self._send_command(CMD_AUX_ON)
+        self._send_command(CMD_AUX_ON)
         self.flameHeight = 1  # reset flame to step 1 at ignition
 
-    async def refresh_status(self) -> None:
-        await self._send_command(CMD_STATUS)
+    def refresh_status(self) -> None:
+        self._send_command(CMD_STATUS)
 
     async def close(self) -> None:
-        if self._writer is not None:
-            try:
-                self._writer.close()
-                await self._writer.wait_closed()
-            except OSError:
-                pass
+        try:
+            self.client.close()
+        except OSError:
+            pass
 
-    async def guard_flame_off(self) -> None:
-        await self._send_command(CMD_GUARD_FLAME_OFF)
+    def guard_flame_off(self) -> None:
+        self._send_command(CMD_GUARD_FLAME_OFF)
         self._local_aux = False
         self.flameHeight = 0
 
-    async def light_on(self) -> None:
-        await self._send_command(CMD_LIGHT_ON)
+    def light_on(self) -> None:
+        self._send_command(CMD_LIGHT_ON)
 
-    async def light_off(self) -> None:
-        await self._send_command(CMD_LIGHT_OFF)
+    def light_off(self) -> None:
+        self._send_command(CMD_LIGHT_OFF)
 
-    async def set_light_brightness(self, brightness: int) -> None:
+    def set_light_brightness(self, brightness: int) -> None:
         normalized = (brightness - 1) / 254 * 100
         if normalized == 100:
             device_code = BRIGHTNESS_CODE_MAX
@@ -212,22 +208,22 @@ class Mertik:
             if level >= 40:
                 level += 1
             device_code = f"{level:02d}{level:02d}"
-        await self._send_command(
+        self._send_command(
             f"{CMD_BRIGHTNESS_PREFIX}{device_code}{CMD_BRIGHTNESS_SUFFIX}"
         )
 
-    async def set_eco(self) -> None:
-        await self._send_command(CMD_SET_ECO)
+    def set_eco(self) -> None:
+        self._send_command(CMD_SET_ECO)
 
-    async def set_manual(self) -> None:
-        await self._send_command(CMD_SET_MANUAL)
+    def set_manual(self) -> None:
+        self._send_command(CMD_SET_MANUAL)
 
-    async def set_thermostat(self, temp_celsius: float) -> None:
+    def set_thermostat(self, temp_celsius: float) -> None:
         snapped = round(temp_celsius * 2) / 2.0
         snapped = max(5.0, min(36.0, snapped))
         half_degrees = int(snapped * 2)
         hex_chars = f"{half_degrees:02X}"
-        await self._send_command(
+        self._send_command(
             f"{CMD_THERMOSTAT_PREFIX}{hex_chars}{CMD_THERMOSTAT_SUFFIX}"
         )
 
@@ -241,85 +237,65 @@ class Mertik:
         """
         return self.flameHeight
 
-    async def set_flame_height(self, flame_height: int) -> None:
+    def set_flame_height(self, flame_height: int) -> None:
         """Set flame to step 1-13. Updates local tracker on ACK."""
         idx = max(0, min(11, int(flame_height) - 1))
         step_code = FLAME_HEIGHT_STEPS[idx]
-        await self._send_command(f"{CMD_FLAME_PREFIX}{step_code}{CMD_FLAME_SUFFIX}")
+        self._send_command(f"{CMD_FLAME_PREFIX}{step_code}{CMD_FLAME_SUFFIX}")
         # Update local tracker - command confirmed by device ACK
         self.flameHeight = int(flame_height)
-        await self.refresh_status()
+        self.refresh_status()
 
     def _hex_to_bin(self, hex_str: str) -> str:
         return format(int(hex_str, 16), "b").zfill(len(hex_str) * 4)
 
     def _bit_at(self, hex_str: str, index: int) -> bool:
-        return self._hex_to_bin(hex_str)[index : index + 1] == "1"
+        return self._hex_to_bin(hex_str)[index: index + 1] == "1"
 
-    async def _reconnect(self) -> None:
+    def _reconnect(self) -> None:
         """Reconnect and re-run startup sequence."""
         _LOGGER.warning("Reconnecting to %s:%s", self.ip, TCP_PORT)
-        if self._writer is not None:
-            try:
-                self._writer.close()
-                await self._writer.wait_closed()
-            except Exception:
-                pass
-        await asyncio.sleep(1)
-        self._reader, self._writer = await asyncio.open_connection(self.ip, TCP_PORT)
-        await self._startup_sequence()
+        try:
+            self.client.close()
+        except Exception:
+            pass
+        time.sleep(1)
+        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.client.settimeout(SOCKET_TIMEOUT)
+        self.client.connect((self.ip, TCP_PORT))
+        self._startup_sequence()
 
-    async def _send_command(self, msg: str) -> None:
+    def _send_command(self, msg: str) -> None:
         """Send a command and consume its response.
 
         Always reads the response, keeping the TCP buffer in sync.
         Searches for a status packet anywhere in the received data.
         """
         payload = bytearray.fromhex(COMMAND_PREFIX + msg)
-        writer = self._writer
-        reader = self._reader
-        if writer is None or reader is None:
-            _LOGGER.error("Not connected, cannot send command")
-            return
         try:
-            writer.write(payload)
-            await writer.drain()
-        except OSError:
+            self.client.send(payload)
+        except socket.error:
             _LOGGER.warning("Send failed, reconnecting to %s", self.ip)
-            await self._reconnect()
-            writer = self._writer
-            reader = self._reader
-            if writer is None or reader is None:
-                return
+            self._reconnect()
             try:
-                writer.write(payload)
-                await writer.drain()
-            except OSError as err:
+                self.client.send(payload)
+            except socket.error as err:
                 _LOGGER.error("Send failed after reconnect: %s", err)
                 return
 
         try:
-            data = await asyncio.wait_for(
-                reader.read(RECV_BUFFER), timeout=SOCKET_TIMEOUT
-            )
-        except asyncio.TimeoutError:
+            data = self.client.recv(RECV_BUFFER)
+        except socket.timeout:
             _LOGGER.debug("No response to command %s (timeout)", msg)
             return
 
         if not data:
             _LOGGER.warning("Empty response, reconnecting to %s", self.ip)
-            await self._reconnect()
-            writer = self._writer
-            reader = self._reader
-            if writer is None or reader is None:
-                return
+            self._reconnect()
             try:
-                writer.write(payload)
-                await writer.drain()
-                data = await asyncio.wait_for(
-                    reader.read(RECV_BUFFER), timeout=SOCKET_TIMEOUT
-                )
-            except (OSError, asyncio.TimeoutError):
+                self.client.send(payload)
+                data = self.client.recv(RECV_BUFFER)
+            except (socket.error, socket.timeout):
                 return
 
         _LOGGER.debug("RAW RESPONSE hex=%s", data.hex())

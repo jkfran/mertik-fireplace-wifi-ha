@@ -61,12 +61,14 @@ class MertikLightEntity(MertikEntity, LightEntity, RestoreEntity):
             if last_state.attributes.get(ATTR_BRIGHTNESS) is not None:
                 self._brightness = last_state.attributes[ATTR_BRIGHTNESS]
         self._is_on = False
-        await self._dataservice.light_off()
+        await self.hass.async_add_executor_job(self._dataservice.light_off)
 
     async def _restore_light(self) -> None:
         """Re-send light on after the device auto-killed it when fire turned off."""
-        await self._dataservice.light_on()
-        await self._dataservice.set_light_brightness(self._brightness)
+        await self.hass.async_add_executor_job(self._dataservice.light_on)
+        await self.hass.async_add_executor_job(
+            self._dataservice.set_light_brightness, self._brightness
+        )
         # _is_on stays True; brightness unchanged
         self.async_write_ha_state()
 
@@ -93,10 +95,12 @@ class MertikLightEntity(MertikEntity, LightEntity, RestoreEntity):
         if ATTR_BRIGHTNESS in kwargs:
             self._brightness = kwargs[ATTR_BRIGHTNESS]
             if not self._is_on:
-                await self._dataservice.light_on()
-            await self._dataservice.set_light_brightness(self._brightness)
+                await self.hass.async_add_executor_job(self._dataservice.light_on)
+            await self.hass.async_add_executor_job(
+                self._dataservice.set_light_brightness, self._brightness
+            )
         else:
-            await self._dataservice.light_on()
+            await self.hass.async_add_executor_job(self._dataservice.light_on)
         self._is_on = True
         self.async_write_ha_state()
         self._dataservice.async_set_updated_data(None)
@@ -104,5 +108,5 @@ class MertikLightEntity(MertikEntity, LightEntity, RestoreEntity):
     async def async_turn_off(self, **kwargs: Any) -> None:
         self._is_on = False
         self.async_write_ha_state()
-        await self._dataservice.light_off()
+        await self.hass.async_add_executor_job(self._dataservice.light_off)
         self._dataservice.async_set_updated_data(None)

@@ -22,16 +22,16 @@ def mock_mertik():
     mertik.is_aux_on = False
     mertik.ambient_temperature = 20.0
     mertik.ip = "192.168.1.100"
-    mertik.refresh_status = AsyncMock()
-    mertik.ignite_fireplace = AsyncMock()
-    mertik.guard_flame_off = AsyncMock()
-    mertik.standBy = AsyncMock()
-    mertik.aux_on = AsyncMock()
-    mertik.aux_off = AsyncMock()
-    mertik.set_flame_height = AsyncMock()
-    mertik.light_on = AsyncMock()
-    mertik.light_off = AsyncMock()
-    mertik.set_light_brightness = AsyncMock()
+    mertik.refresh_status = MagicMock()
+    mertik.ignite_fireplace = MagicMock()
+    mertik.guard_flame_off = MagicMock()
+    mertik.standBy = MagicMock()
+    mertik.aux_on = MagicMock()
+    mertik.aux_off = MagicMock()
+    mertik.set_flame_height = MagicMock()
+    mertik.light_on = MagicMock()
+    mertik.light_off = MagicMock()
+    mertik.set_light_brightness = MagicMock()
     return mertik
 
 
@@ -113,22 +113,22 @@ class TestOptimisticState:
 
 class TestCoordinatorDelegation:
     async def test_ignite_fireplace(self, coordinator, mock_mertik):
-        await coordinator.ignite_fireplace()
+        coordinator.ignite_fireplace()
         mock_mertik.ignite_fireplace.assert_called_once()
 
     async def test_guard_flame_off_clears_optimistic(self, coordinator, mock_mertik):
         coordinator.mark_optimistic_on()
-        await coordinator.guard_flame_off()
+        coordinator.guard_flame_off()
         mock_mertik.guard_flame_off.assert_called_once()
         assert coordinator._optimistic_on_until is None
         assert coordinator._optimistic_off_until is None
 
     async def test_aux_on(self, coordinator, mock_mertik):
-        await coordinator.aux_on()
+        coordinator.aux_on()
         mock_mertik.aux_on.assert_called_once()
 
     async def test_aux_off(self, coordinator, mock_mertik):
-        await coordinator.aux_off()
+        coordinator.aux_off()
         mock_mertik.aux_off.assert_called_once()
 
     def test_get_flame_height(self, coordinator, mock_mertik):
@@ -136,19 +136,19 @@ class TestCoordinatorDelegation:
         assert coordinator.get_flame_height() == 5
 
     async def test_set_flame_height(self, coordinator, mock_mertik):
-        await coordinator.set_flame_height(7)
+        coordinator.set_flame_height(7)
         mock_mertik.set_flame_height.assert_called_once_with(7)
 
     async def test_light_on(self, coordinator, mock_mertik):
-        await coordinator.light_on()
+        coordinator.light_on()
         mock_mertik.light_on.assert_called_once()
 
     async def test_light_off(self, coordinator, mock_mertik):
-        await coordinator.light_off()
+        coordinator.light_off()
         mock_mertik.light_off.assert_called_once()
 
     async def test_set_light_brightness(self, coordinator, mock_mertik):
-        await coordinator.set_light_brightness(128)
+        coordinator.set_light_brightness(128)
         mock_mertik.set_light_brightness.assert_called_once_with(128)
 
     def test_ambient_temperature(self, coordinator, mock_mertik):
@@ -239,7 +239,7 @@ class TestThermostaticIgnitionGuard:
         self, coordinator_off, mock_mertik
     ):
         """apply_heating_mode must not ignite when fire is off and not in standby."""
-        await coordinator_off.apply_heating_mode("Full Heat")
+        coordinator_off.apply_heating_mode("Full Heat")
         # ignite_fireplace must NOT have been called
         mock_mertik.ignite_fireplace.assert_not_called()
 
@@ -251,7 +251,7 @@ class TestThermostaticIgnitionGuard:
 
         for mode in (MODE_FULL, MODE_MEDIUM, MODE_LOW):
             mock_mertik.reset_mock()
-            await coordinator_off.apply_heating_mode(mode)
+            coordinator_off.apply_heating_mode(mode)
             (
                 mock_mertik.ignite_fireplace.assert_not_called(),
                 (f"ignite_fireplace should not be called for {mode} when fire is off"),
@@ -261,7 +261,7 @@ class TestThermostaticIgnitionGuard:
         self, coordinator_standby, mock_mertik
     ):
         """Thermostatic standby -> apply mode without re-igniting (pilot already lit)."""
-        await coordinator_standby.apply_heating_mode("Low Heat")
+        coordinator_standby.apply_heating_mode("Low Heat")
         # ignite_fireplace must NOT be called -- fire goes from pilot to Low Heat
         mock_mertik.ignite_fireplace.assert_not_called()
         # But flame height and aux commands ARE sent
@@ -283,7 +283,7 @@ class TestThermostaticIgnitionGuard:
         mock_mertik.is_flame_on = False  # pilot has gone out
         mock_mertik.is_igniting = False
 
-        await coordinator_standby.apply_heating_mode("Full Heat")
+        coordinator_standby.apply_heating_mode("Full Heat")
 
         mock_mertik.ignite_fireplace.assert_called_once()
         assert coordinator_standby._pending_mode == "Full Heat"
@@ -294,13 +294,13 @@ class TestThermostaticIgnitionGuard:
     async def test_guard_flame_off_clears_standby_flag(self, coordinator_standby):
         """Turning the fire off via the switch must clear _in_standby."""
         assert coordinator_standby._in_standby is True
-        await coordinator_standby.guard_flame_off()
+        coordinator_standby.guard_flame_off()
         assert coordinator_standby._in_standby is False
 
     async def test_standby_sets_in_standby_flag(self, coordinator_off):
         """standby() must set _in_standby so thermostat can re-ignite."""
         assert coordinator_off._in_standby is False
-        await coordinator_off.standby()
+        coordinator_off.standby()
         assert coordinator_off._in_standby is True
 
 
@@ -335,7 +335,7 @@ class TestSimpleDelegations:
 class TestCheckPendingMode:
     async def test_returns_false_when_no_pending_mode(self, coordinator):
         coordinator._pending_mode = None
-        assert await coordinator.check_pending_mode() is False
+        assert coordinator.check_pending_mode() is False
 
     async def test_still_igniting_clears_flame_on_since_and_returns_true(
         self, coordinator, mock_mertik
@@ -343,7 +343,7 @@ class TestCheckPendingMode:
         coordinator._pending_mode = "Full Heat"
         mock_mertik.is_igniting = True
         coordinator._flame_on_since = "something"
-        result = await coordinator.check_pending_mode()
+        result = coordinator.check_pending_mode()
         assert result is True
         assert coordinator._flame_on_since is None
 
@@ -353,7 +353,7 @@ class TestCheckPendingMode:
         coordinator._pending_mode = "Full Heat"
         mock_mertik.is_igniting = False
         mock_mertik.is_flame_on = False
-        result = await coordinator.check_pending_mode()
+        result = coordinator.check_pending_mode()
         assert result is True
 
     async def test_flame_on_starts_settle_timer(self, coordinator, mock_mertik):
@@ -361,7 +361,7 @@ class TestCheckPendingMode:
         mock_mertik.is_igniting = False
         mock_mertik.is_flame_on = True
         coordinator._flame_on_since = None
-        result = await coordinator.check_pending_mode()
+        result = coordinator.check_pending_mode()
         assert result is True
         assert coordinator._flame_on_since is not None
 
@@ -370,7 +370,7 @@ class TestCheckPendingMode:
         mock_mertik.is_igniting = False
         mock_mertik.is_flame_on = True
         coordinator._flame_on_since = dt_util.utcnow()
-        result = await coordinator.check_pending_mode()
+        result = coordinator.check_pending_mode()
         assert result is True
 
 
@@ -433,7 +433,7 @@ class TestThermostaticScenarios:
 
         mode = self._select_mode(20.5)
         assert mode == "Standby"
-        await coord.apply_heating_mode(mode)
+        coord.apply_heating_mode(mode)
 
         mock_mertik.ignite_fireplace.assert_not_called()
         mock_mertik.standBy.assert_called_once()
@@ -448,7 +448,7 @@ class TestThermostaticScenarios:
 
         mode = self._select_mode(19.5)
         assert mode == "Low Heat"
-        await coord.apply_heating_mode(mode)
+        coord.apply_heating_mode(mode)
 
         mock_mertik.ignite_fireplace.assert_called_once()
         assert coord._pending_mode == "Low Heat"
@@ -460,7 +460,7 @@ class TestThermostaticScenarios:
         mock_mertik.is_igniting = False
         mock_mertik.is_flame_on = True
         coord._flame_on_since = dt_util.utcnow() - timedelta(seconds=36)
-        await coord.check_pending_mode()
+        coord.check_pending_mode()
 
         mock_mertik.aux_off.assert_called()
         mock_mertik.set_flame_height.assert_called()
@@ -474,7 +474,7 @@ class TestThermostaticScenarios:
 
         mode = self._select_mode(18.5)
         assert mode == "Medium Heat"
-        await coord.apply_heating_mode(mode)
+        coord.apply_heating_mode(mode)
 
         mock_mertik.ignite_fireplace.assert_called_once()
         assert coord._pending_mode == "Medium Heat"
@@ -485,7 +485,7 @@ class TestThermostaticScenarios:
         mock_mertik.is_igniting = False
         mock_mertik.is_flame_on = True
         coord._flame_on_since = dt_util.utcnow() - timedelta(seconds=36)
-        await coord.check_pending_mode()
+        coord.check_pending_mode()
 
         mock_mertik.aux_off.assert_called()
         from custom_components.mertik.const import FLAME_MAX
@@ -500,7 +500,7 @@ class TestThermostaticScenarios:
 
         mode = self._select_mode(17.5)
         assert mode == "Full Heat"
-        await coord.apply_heating_mode(mode)
+        coord.apply_heating_mode(mode)
 
         mock_mertik.ignite_fireplace.assert_called_once()
         assert coord._pending_mode == "Full Heat"
@@ -511,7 +511,7 @@ class TestThermostaticScenarios:
         mock_mertik.is_igniting = False
         mock_mertik.is_flame_on = True
         coord._flame_on_since = dt_util.utcnow() - timedelta(seconds=36)
-        await coord.check_pending_mode()
+        coord.check_pending_mode()
 
         mock_mertik.aux_on.assert_called()
         from custom_components.mertik.const import FLAME_MAX
@@ -531,7 +531,7 @@ class TestThermostaticScenarios:
         # Was at setpoint (Standby), now 0.1C below
         mode = self._select_mode(19.9)
         assert mode == "Low Heat"
-        await coord.apply_heating_mode(mode)
+        coord.apply_heating_mode(mode)
 
         mock_mertik.ignite_fireplace.assert_called_once()
         assert coord._pending_mode == "Low Heat"
@@ -547,7 +547,7 @@ class TestThermostaticScenarios:
 
         mode = self._select_mode(19.9)
         assert mode == "Low Heat"
-        await coord.apply_heating_mode(mode)
+        coord.apply_heating_mode(mode)
 
         mock_mertik.ignite_fireplace.assert_not_called()
         mock_mertik.aux_off.assert_called()
@@ -573,7 +573,7 @@ class TestThermostaticScenarios:
 
         mode = self._select_mode(19.9)  # 0.1 C below setpoint -> Low Heat
         assert mode == "Low Heat"
-        await coord.apply_heating_mode(mode)
+        coord.apply_heating_mode(mode)
 
         mock_mertik.ignite_fireplace.assert_called_once()
         assert coord._pending_mode == "Low Heat"
@@ -590,7 +590,7 @@ class TestThermostaticScenarios:
 
         mode = self._select_mode(20.1)
         assert mode == "Standby"
-        await coord.apply_heating_mode(mode)
+        coord.apply_heating_mode(mode)
 
         mock_mertik.standBy.assert_called_once()
         mock_mertik.guard_flame_off.assert_not_called()
@@ -603,7 +603,7 @@ class TestThermostaticScenarios:
 
         mode = self._select_mode(18.5)
         assert mode == "Medium Heat"
-        await coord.apply_heating_mode(mode)
+        coord.apply_heating_mode(mode)
 
         mock_mertik.ignite_fireplace.assert_not_called()
         mock_mertik.aux_off.assert_called()
@@ -619,7 +619,7 @@ class TestThermostaticScenarios:
 
         mode = self._select_mode(19.5)
         assert mode == "Low Heat"
-        await coord.apply_heating_mode(mode)
+        coord.apply_heating_mode(mode)
 
         mock_mertik.ignite_fireplace.assert_not_called()
         mock_mertik.aux_off.assert_called()
@@ -635,7 +635,7 @@ class TestThermostaticScenarios:
 
         mode = self._select_mode(17.5)
         assert mode == "Full Heat"
-        await coord.apply_heating_mode(mode)
+        coord.apply_heating_mode(mode)
 
         mock_mertik.ignite_fireplace.assert_not_called()
         mock_mertik.aux_on.assert_called()
@@ -651,7 +651,7 @@ class TestThermostaticScenarios:
 
         mode = self._select_mode(18.5)
         assert mode == "Medium Heat"
-        await coord.apply_heating_mode(mode)
+        coord.apply_heating_mode(mode)
 
         mock_mertik.ignite_fireplace.assert_not_called()
         mock_mertik.aux_off.assert_called()
