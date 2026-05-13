@@ -1,12 +1,10 @@
-from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.components.number import NumberEntity
 
-from .const import DOMAIN
+from .entity import MertikEntity
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    dataservice = hass.data[DOMAIN].get(entry.entry_id)
+    dataservice = entry.runtime_data
     async_add_entities(
         [
             MertikFlameHeightEntity(dataservice, entry.entry_id, entry.data["name"]),
@@ -14,7 +12,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     )
 
 
-class MertikFlameHeightEntity(CoordinatorEntity, NumberEntity):
+class MertikFlameHeightEntity(MertikEntity, NumberEntity):
     """Flame height control (1-13 steps).
 
     Step 13 is the maximum (raw 0xFF), matching the device's own reporting.
@@ -22,7 +20,6 @@ class MertikFlameHeightEntity(CoordinatorEntity, NumberEntity):
     flame height commands when not running.
     """
 
-    _attr_has_entity_name = True
     _attr_name = "Flame Height"
     _attr_icon = "mdi:fire"
     _attr_native_min_value = 1
@@ -30,14 +27,8 @@ class MertikFlameHeightEntity(CoordinatorEntity, NumberEntity):
     _attr_native_step = 1
 
     def __init__(self, dataservice, entry_id, device_name):
-        super().__init__(dataservice)
-        self._dataservice = dataservice
+        super().__init__(dataservice, entry_id, device_name)
         self._attr_unique_id = entry_id + "-FlameHeight"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry_id)},
-            name=device_name,
-            manufacturer="Mertik Maxitrol",
-        )
 
     # Always available -- shows 0 when fire is off rather than an
     # alarm/unavailable icon, which is more informative and less alarming.

@@ -8,8 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from custom_components.mertik import async_setup_entry, async_unload_entry, async_setup
-from custom_components.mertik.const import DOMAIN
-from custom_components.mertik.mertikdatacoordinator import MertikDataCoordinator
+from custom_components.mertik.coordinator import MertikDataCoordinator
 
 PLATFORMS = ["switch", "number", "sensor", "light", "climate", "select"]
 
@@ -53,17 +52,13 @@ class TestAsyncSetupEntry:
         await async_setup_entry(hass, mock_config_entry_ha)
         self.mock_mertik_cls.assert_called_once_with("192.168.1.55")
 
-    async def test_stores_coordinator_in_hass_data(self, hass, mock_config_entry_ha):
+    async def test_stores_coordinator_in_runtime_data(self, hass, mock_config_entry_ha):
         await async_setup_entry(hass, mock_config_entry_ha)
-        assert DOMAIN in hass.data
-        assert mock_config_entry_ha.entry_id in hass.data[DOMAIN]
-        coordinator = hass.data[DOMAIN][mock_config_entry_ha.entry_id]
-        assert isinstance(coordinator, MertikDataCoordinator)
+        assert isinstance(mock_config_entry_ha.runtime_data, MertikDataCoordinator)
 
     async def test_coordinator_has_mertik_device(self, hass, mock_config_entry_ha):
         await async_setup_entry(hass, mock_config_entry_ha)
-        coordinator = hass.data[DOMAIN][mock_config_entry_ha.entry_id]
-        assert coordinator.mertik is self.mock_device
+        assert mock_config_entry_ha.runtime_data.mertik is self.mock_device
 
     async def test_forwards_platforms(self, hass, mock_config_entry_ha):
         await async_setup_entry(hass, mock_config_entry_ha)
@@ -80,8 +75,8 @@ class TestAsyncSetupEntry:
         entry2.data = {"name": "Second Fire", "host": "192.168.1.56"}
         entry2.options = {}
         await async_setup_entry(hass, entry2)
-        assert mock_config_entry_ha.entry_id in hass.data[DOMAIN]
-        assert entry2.entry_id in hass.data[DOMAIN]
+        assert isinstance(mock_config_entry_ha.runtime_data, MertikDataCoordinator)
+        assert isinstance(entry2.runtime_data, MertikDataCoordinator)
 
 
 class TestAsyncSetupEntryConnectionFailure:
@@ -105,12 +100,18 @@ class TestAsyncSetupEntryConnectionFailure:
         with pytest.raises(ConfigEntryNotReady):
             await async_setup_entry(hass, mock_config_entry_ha)
 
-    async def test_does_not_store_data_on_failure(self, hass, mock_config_entry_ha):
+    async def test_does_not_set_runtime_data_on_failure(
+        self, hass, mock_config_entry_ha
+    ):
         with pytest.raises(ConfigEntryNotReady):
             await async_setup_entry(hass, mock_config_entry_ha)
-        assert mock_config_entry_ha.entry_id not in hass.data.get(DOMAIN, {})
+        assert not hasattr(mock_config_entry_ha, "runtime_data") or not isinstance(
+            mock_config_entry_ha.runtime_data, MertikDataCoordinator
+        )
 
-    async def test_does_not_forward_platforms_on_failure(self, hass, mock_config_entry_ha):
+    async def test_does_not_forward_platforms_on_failure(
+        self, hass, mock_config_entry_ha
+    ):
         with pytest.raises(ConfigEntryNotReady):
             await async_setup_entry(hass, mock_config_entry_ha)
         self.mock_forward.assert_not_called()
@@ -128,24 +129,14 @@ class TestAsyncUnloadEntry:
             yield
 
     async def test_unloads_platforms(self, hass, mock_config_entry_ha):
-        hass.data[DOMAIN] = {mock_config_entry_ha.entry_id: MagicMock()}
         await async_unload_entry(hass, mock_config_entry_ha)
         self.mock_unload.assert_called_once_with(mock_config_entry_ha, PLATFORMS)
 
-    async def test_removes_data_on_success(self, hass, mock_config_entry_ha):
-        hass.data[DOMAIN] = {mock_config_entry_ha.entry_id: MagicMock()}
+    async def test_returns_true_on_success(self, hass, mock_config_entry_ha):
         result = await async_unload_entry(hass, mock_config_entry_ha)
         assert result is True
-        assert mock_config_entry_ha.entry_id not in hass.data[DOMAIN]
 
-    async def test_keeps_data_on_failure(self, hass, mock_config_entry_ha):
+    async def test_returns_false_on_failure(self, hass, mock_config_entry_ha):
         self.mock_unload.return_value = False
-        coordinator = MagicMock()
-        hass.data[DOMAIN] = {mock_config_entry_ha.entry_id: coordinator}
         result = await async_unload_entry(hass, mock_config_entry_ha)
         assert result is False
-        assert hass.data[DOMAIN][mock_config_entry_ha.entry_id] is coordinator
-
-    async def test_handles_missing_domain_data(self, hass, mock_config_entry_ha):
-        result = await async_unload_entry(hass, mock_config_entry_ha)
-        assert result is True

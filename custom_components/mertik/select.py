@@ -1,11 +1,10 @@
 """Heating mode selector for Mertik Maxitrol fireplace."""
 
 from homeassistant.components.select import SelectEntity
-from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import DOMAIN, HEATING_MODES
+from .const import HEATING_MODES
+from .entity import MertikEntity
 
 ICON_MAP = {
     "Full Heat": "mdi:fire",
@@ -17,7 +16,7 @@ ICON_MAP = {
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    dataservice = hass.data[DOMAIN].get(entry.entry_id)
+    dataservice = entry.runtime_data
     async_add_entities(
         [
             MertikHeatingModeSelect(dataservice, entry.entry_id, entry.data["name"]),
@@ -25,20 +24,13 @@ async def async_setup_entry(hass, entry, async_add_entities):
     )
 
 
-class MertikHeatingModeSelect(CoordinatorEntity, SelectEntity, RestoreEntity):
-    _attr_has_entity_name = True
+class MertikHeatingModeSelect(MertikEntity, SelectEntity, RestoreEntity):
     _attr_name = "Heating Mode"
     _attr_options = HEATING_MODES
 
     def __init__(self, dataservice, entry_id, device_name):
-        super().__init__(dataservice)
-        self._dataservice = dataservice
+        super().__init__(dataservice, entry_id, device_name)
         self._attr_unique_id = entry_id + "-HeatingMode"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry_id)},
-            name=device_name,
-            manufacturer="Mertik Maxitrol",
-        )
         self._current_mode = "Standby"
 
     async def async_added_to_hass(self):

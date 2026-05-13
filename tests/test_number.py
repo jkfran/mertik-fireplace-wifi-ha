@@ -63,7 +63,7 @@ class TestFlameHeightEntity:
 
 class TestNumberPlatformSetup:
     async def test_creates_one_entity(self, hass, mock_coordinator, mock_config_entry):
-        hass.data[DOMAIN] = {mock_config_entry.entry_id: mock_coordinator}
+        mock_config_entry.runtime_data = mock_coordinator
         added = []
         await async_setup_entry(hass, mock_config_entry, lambda e: added.extend(e))
         assert len(added) == 1

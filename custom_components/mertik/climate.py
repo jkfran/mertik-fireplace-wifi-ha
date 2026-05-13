@@ -10,9 +10,7 @@ from homeassistant.components.climate import (
     HVACMode,
 )
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DOMAIN,
@@ -28,6 +26,7 @@ from .const import (
     MODE_LOW,
     MODE_THERMO,
 )
+from .entity import MertikEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,7 +37,7 @@ DEFAULT_TARGET = 20.0
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    dataservice = hass.data[DOMAIN].get(entry.entry_id)
+    dataservice = entry.runtime_data
     async_add_entities(
         [
             MertikClimateEntity(dataservice, entry.entry_id, entry.data["name"], entry),
@@ -46,7 +45,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     )
 
 
-class MertikClimateEntity(CoordinatorEntity, ClimateEntity, RestoreEntity):
+class MertikClimateEntity(MertikEntity, ClimateEntity, RestoreEntity):
     """Thermostat setpoint + thermostatic control logic.
 
     Use the Heating Mode select entity to choose Off / Full / Medium / Low /
@@ -54,7 +53,6 @@ class MertikClimateEntity(CoordinatorEntity, ClimateEntity, RestoreEntity):
     temperature readout used in Thermostatic mode.
     """
 
-    _attr_has_entity_name = True
     _attr_name = "Thermostat"
     _attr_icon = "mdi:thermostat"
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
@@ -65,15 +63,9 @@ class MertikClimateEntity(CoordinatorEntity, ClimateEntity, RestoreEntity):
     _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
 
     def __init__(self, dataservice, entry_id, device_name, entry):
-        super().__init__(dataservice)
-        self._dataservice = dataservice
+        super().__init__(dataservice, entry_id, device_name)
         self._entry = entry
         self._attr_unique_id = entry_id + "-Thermostat"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry_id)},
-            name=device_name,
-            manufacturer="Mertik Maxitrol",
-        )
         self._target_temp = DEFAULT_TARGET
         self._last_applied_mode = None  # prevent re-sending same command every poll
 
