@@ -242,10 +242,11 @@ rules:
       The main fireplace switch keeps _attr_name = None (uses device name).
 
   exception_translations:
-    status: todo
+    status: done
     comment: >
-      Exceptions raised in the integration do not inherit HomeAssistantError
-      with translation_domain / translation_key and strings.json definitions.
+      ConfigEntryNotReady (cannot_connect) and UpdateFailed (update_failed) both
+      use translation_domain=DOMAIN and translation_key. Messages are defined in
+      strings.json and translations/en.json under the exceptions section.
 
   icon_translations:
     status: todo

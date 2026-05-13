@@ -5,6 +5,7 @@ from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
+from .const import DOMAIN
 from .coordinator import MertikDataCoordinator
 from .mertik import Mertik
 
@@ -21,7 +22,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: MertikConfigEntry) -> bo
         mertik = await hass.async_add_executor_job(Mertik, entry.data[CONF_HOST])
     except Exception as err:
         raise ConfigEntryNotReady(
-            f"Unable to connect to fireplace at {entry.data[CONF_HOST]}"
+            translation_domain=DOMAIN,
+            translation_key="cannot_connect",
         ) from err
 
     coordinator = MertikDataCoordinator(hass, mertik, entry)

@@ -20,6 +20,14 @@
       "already_configured": "This fireplace is already configured."
     }
   },
+  "exceptions": {
+    "cannot_connect": {
+      "message": "Unable to connect to the fireplace. Check the IP address and that the device is powered on and connected to your network."
+    },
+    "update_failed": {
+      "message": "Error communicating with the fireplace."
+    }
+  },
   "entity": {
     "switch": {
       "aux": {

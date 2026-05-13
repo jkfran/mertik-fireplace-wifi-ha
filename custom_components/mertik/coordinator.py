@@ -4,7 +4,7 @@ import logging
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .const import FLAME_MIN, FLAME_MAX
+from .const import DOMAIN, FLAME_MIN, FLAME_MAX
 
 _LOGGER = logging.getLogger(__name__)
 OPTIMISTIC_ON_SECONDS = 20
@@ -253,4 +253,7 @@ class MertikDataCoordinator(DataUpdateCoordinator):
             self.fire_just_turned_off = self._prev_is_on and not current_on
             self._prev_is_on = current_on
         except Exception as err:
-            raise UpdateFailed(f"Error communicating with fireplace: {err}") from err
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="update_failed",
+            ) from err
