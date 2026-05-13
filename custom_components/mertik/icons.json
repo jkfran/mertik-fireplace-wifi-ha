@@ -15,9 +15,9 @@
         "default": "mdi:fire-off",
         "state": {
           "Standby": "mdi:fire-off",
-          "Low Heat": "ri:fire-line",
-          "Medium Heat": "ri:fire-fill",
-          "Full Heat": "icomoon-free:fire",
+          "Low Heat": "mdi:campfire",
+          "Medium Heat": "mdi:fire",
+          "Full Heat": "mdi:fire-circle",
           "Thermostatic": "mdi:thermostat"
         }
       }
