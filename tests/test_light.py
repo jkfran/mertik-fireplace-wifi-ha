@@ -19,7 +19,6 @@ from custom_components.mertik.const import DOMAIN
 
 
 class TestLightEntity:
-
     @pytest.fixture
     def light(self, hass, mock_coordinator):
         entity = MertikLightEntity(mock_coordinator, "test_entry", "My Fireplace")
@@ -100,11 +99,14 @@ class TestLightEntity:
     def test_fire_off_resets_is_on(self, light, mock_coordinator):
         """When fire turns off and light was on, _restore_light task is scheduled."""
         from unittest.mock import patch, AsyncMock
+
         light._is_on = True
         mock_coordinator.fire_just_turned_off = True
         # _restore_light is scheduled as a task via async_create_task.
         # We patch it to avoid the entity_id requirement in unit tests.
-        with patch.object(light, "_restore_light", new_callable=AsyncMock) as mock_restore:
+        with patch.object(
+            light, "_restore_light", new_callable=AsyncMock
+        ) as mock_restore:
             with patch.object(light, "async_write_ha_state"):
                 light._handle_coordinator_update()
         # The task was scheduled (hass.async_create_task called with _restore_light)
@@ -113,7 +115,7 @@ class TestLightEntity:
 
 class TestLightPlatformSetup:
     async def test_creates_one_entity(self, hass, mock_coordinator, mock_config_entry):
-        hass.data[DOMAIN] = {mock_config_entry.entry_id: mock_coordinator}
+        mock_config_entry.runtime_data = mock_coordinator
         added = []
         with patch.object(
             MertikLightEntity, "async_added_to_hass", new_callable=AsyncMock

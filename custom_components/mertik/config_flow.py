@@ -1,4 +1,5 @@
 """Config flow and options flow for Mertik Maxitrol fireplace."""
+
 import logging
 import socket
 from typing import Any, Dict, Optional
@@ -46,7 +47,7 @@ class MertikConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: Dict[str, str] = {}
         if user_input is not None:
             host = user_input[CONF_HOST]
-            low  = user_input.get(CONF_LOW_THRESHOLD,  DEFAULT_LOW_THRESHOLD)
+            low = user_input.get(CONF_LOW_THRESHOLD, DEFAULT_LOW_THRESHOLD)
             high = user_input.get(CONF_HIGH_THRESHOLD, DEFAULT_HIGH_THRESHOLD)
 
             if low <= 0 or high <= 0 or low >= high:
@@ -64,12 +65,18 @@ class MertikConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         title="Mertik Maxitrol", data=user_input
                     )
 
-        schema = vol.Schema({
-            vol.Required(CONF_NAME): str,
-            vol.Required(CONF_HOST): str,
-            vol.Optional(CONF_LOW_THRESHOLD,  default=DEFAULT_LOW_THRESHOLD):  vol.Coerce(float),
-            vol.Optional(CONF_HIGH_THRESHOLD, default=DEFAULT_HIGH_THRESHOLD): vol.Coerce(float),
-        })
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_NAME): str,
+                vol.Required(CONF_HOST): str,
+                vol.Optional(
+                    CONF_LOW_THRESHOLD, default=DEFAULT_LOW_THRESHOLD
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_HIGH_THRESHOLD, default=DEFAULT_HIGH_THRESHOLD
+                ): vol.Coerce(float),
+            }
+        )
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
     @staticmethod
@@ -91,21 +98,21 @@ class MertikOptionsFlow(config_entries.OptionsFlow):
         errors: Dict[str, str] = {}
 
         # Current values (prefer options over data for previously set values)
-        current_low  = self._entry.options.get(
+        current_low = self._entry.options.get(
             CONF_LOW_THRESHOLD,
-            self._entry.data.get(CONF_LOW_THRESHOLD, DEFAULT_LOW_THRESHOLD)
+            self._entry.data.get(CONF_LOW_THRESHOLD, DEFAULT_LOW_THRESHOLD),
         )
         current_high = self._entry.options.get(
             CONF_HIGH_THRESHOLD,
-            self._entry.data.get(CONF_HIGH_THRESHOLD, DEFAULT_HIGH_THRESHOLD)
+            self._entry.data.get(CONF_HIGH_THRESHOLD, DEFAULT_HIGH_THRESHOLD),
         )
         current_sensor = self._entry.options.get(
             CONF_TEMP_SENSOR,
-            self._entry.data.get(CONF_TEMP_SENSOR, DEFAULT_TEMP_SENSOR)
+            self._entry.data.get(CONF_TEMP_SENSOR, DEFAULT_TEMP_SENSOR),
         )
 
         if user_input is not None:
-            low  = user_input.get(CONF_LOW_THRESHOLD,  current_low)
+            low = user_input.get(CONF_LOW_THRESHOLD, current_low)
             high = user_input.get(CONF_HIGH_THRESHOLD, current_high)
             if low <= 0 or high <= 0 or low >= high:
                 errors["base"] = "invalid_thresholds"
@@ -118,18 +125,25 @@ class MertikOptionsFlow(config_entries.OptionsFlow):
         if current_sensor not in sensor_options:
             current_sensor = DEFAULT_TEMP_SENSOR
 
-        schema = vol.Schema({
-            vol.Optional(CONF_TEMP_SENSOR, default=current_sensor):
-                vol.In(sensor_options),
-            vol.Optional(CONF_LOW_THRESHOLD,  default=current_low):  vol.Coerce(float),
-            vol.Optional(CONF_HIGH_THRESHOLD, default=current_high): vol.Coerce(float),
-        })
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_TEMP_SENSOR, default=current_sensor): vol.In(
+                    sensor_options
+                ),
+                vol.Optional(CONF_LOW_THRESHOLD, default=current_low): vol.Coerce(
+                    float
+                ),
+                vol.Optional(CONF_HIGH_THRESHOLD, default=current_high): vol.Coerce(
+                    float
+                ),
+            }
+        )
         return self.async_show_form(
             step_id="init",
             data_schema=schema,
             errors=errors,
             description_placeholders={
-                "low_desc":  "Degrees C below setpoint to switch to Low Heat",
+                "low_desc": "Degrees C below setpoint to switch to Low Heat",
                 "high_desc": "Degrees C below setpoint to switch to Full Heat (must be > Low threshold)",
             },
         )

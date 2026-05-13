@@ -136,6 +136,13 @@ own handset sensor. You can select any other HA temperature sensor via
 Enter the IP address of your myfire WiFi box. Assign a static DHCP lease
 so the IP does not change.
 
+### Removal
+
+**Settings → Devices & Services → Mertik Maxitrol → ⋮ → Delete**
+
+This removes the integration and all its entities. No configuration files need
+to be deleted manually.
+
 ### Startup safety automation
 
 The integration does not send a turn-off command at startup — doing so

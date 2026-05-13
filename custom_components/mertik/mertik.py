@@ -12,19 +12,19 @@ TCP_PORT = 2000
 SOCKET_TIMEOUT = 3
 RECV_BUFFER = 4096
 
-CMD_STATUS          = "303303"
-CMD_APP_MODE        = "303103"
-CMD_STANDBY         = "3136303003"
-CMD_IGNITE          = "314103"
+CMD_STATUS = "303303"
+CMD_APP_MODE = "303103"
+CMD_STANDBY = "3136303003"
+CMD_IGNITE = "314103"
 CMD_GUARD_FLAME_OFF = "313003"
-CMD_AUX_ON          = "32303031030a"
-CMD_AUX_OFF         = "32303030030a"
-CMD_LIGHT_ON        = "3330303103"
-CMD_LIGHT_OFF       = "3330303003"
-CMD_SET_ECO         = "4233303103"
-CMD_SET_MANUAL      = "423003"
-CMD_FLAME_PREFIX    = "3136"
-CMD_FLAME_SUFFIX    = "03"
+CMD_AUX_ON = "32303031030a"
+CMD_AUX_OFF = "32303030030a"
+CMD_LIGHT_ON = "3330303103"
+CMD_LIGHT_OFF = "3330303003"
+CMD_SET_ECO = "4233303103"
+CMD_SET_MANUAL = "423003"
+CMD_FLAME_PREFIX = "3136"
+CMD_FLAME_SUFFIX = "03"
 CMD_BRIGHTNESS_PREFIX = "33304645"
 CMD_BRIGHTNESS_SUFFIX = "03"
 CMD_THERMOSTAT_PREFIX = "4231"
@@ -34,21 +34,31 @@ BRIGHTNESS_CODE_MAX = "4642"
 BRIGHTNESS_CODE_MIN = "3633"
 
 FLAME_HEIGHT_STEPS = [
-    "3830", "3842", "3937", "4132", "4145", "4239",
-    "4335", "4430", "4443", "4537", "4633", "4646",
+    "3830",
+    "3842",
+    "3937",
+    "4132",
+    "4145",
+    "4239",
+    "4335",
+    "4430",
+    "4443",
+    "4537",
+    "4633",
+    "4646",
 ]
 
-STATUS_ON_FLAG      = slice(14, 16)
-STATUS_BITS         = slice(16, 20)
+STATUS_ON_FLAG = slice(14, 16)
+STATUS_BITS = slice(16, 20)
 STATUS_FLAME_HEIGHT = slice(18, 20)
 STATUS_AMBIENT_TEMP = slice(30, 32)
 
 FLAME_OFF_THRESHOLD = 123
 
 BIT_SHUTTING_DOWN = 7
-BIT_GUARD_FLAME   = 8
-BIT_IGNITING      = 11
-BIT_AUX_ON        = 9
+BIT_GUARD_FLAME = 8
+BIT_IGNITING = 11
+BIT_AUX_ON = 9
 
 
 class Mertik:
@@ -62,8 +72,8 @@ class Mertik:
         # set_flame_height() commands have been sent. The aux bit
         # is unreliable due to delayed responses from the handshake
         # commands corrupting the recv() sequence.
-        self.flameHeight = 0      # local command-tracked value
-        self._local_aux = False   # local command-tracked aux state
+        self.flameHeight = 0  # local command-tracked value
+        self._local_aux = False  # local command-tracked aux state
 
         # These come from the status packet (reliable)
         self.on = False
@@ -143,9 +153,9 @@ class Mertik:
         2. The user can then turn aux off if they only want the front burner
         """
         self._send_command(CMD_IGNITE)
-        self._local_aux = True   # set locally before aux_on command
+        self._local_aux = True  # set locally before aux_on command
         self._send_command(CMD_AUX_ON)
-        self.flameHeight = 1     # reset flame to step 1 at ignition
+        self.flameHeight = 1  # reset flame to step 1 at ignition
 
     def refresh_status(self):
         self._send_command(CMD_STATUS)
@@ -187,9 +197,7 @@ class Mertik:
         snapped = max(5.0, min(36.0, snapped))
         half_degrees = int(snapped * 2)
         hex_chars = f"{half_degrees:02X}"
-        self._send_command(
-            f"{CMD_THERMOSTAT_PREFIX}{hex_chars}{CMD_THERMOSTAT_SUFFIX}"
-        )
+        self._send_command(f"{CMD_THERMOSTAT_PREFIX}{hex_chars}{CMD_THERMOSTAT_SUFFIX}")
 
     def get_flame_height(self) -> int:
         """Return locally tracked flame height (command-based, not status-based).
@@ -214,7 +222,7 @@ class Mertik:
         return format(int(hex_str, 16), "b").zfill(len(hex_str) * 4)
 
     def _bit_at(self, hex_str, index):
-        return self._hex_to_bin(hex_str)[index: index + 1] == "1"
+        return self._hex_to_bin(hex_str)[index : index + 1] == "1"
 
     def _reconnect(self):
         """Reconnect and re-run startup sequence."""
@@ -313,9 +321,9 @@ class Mertik:
         # Status bits (shutting down, guard, igniting only - not aux)
         try:
             status_bits = status_str[STATUS_BITS]
-            self._shutting_down  = self._bit_at(status_bits, BIT_SHUTTING_DOWN)
+            self._shutting_down = self._bit_at(status_bits, BIT_SHUTTING_DOWN)
             self._guard_flame_on = self._bit_at(status_bits, BIT_GUARD_FLAME)
-            self._igniting       = self._bit_at(status_bits, BIT_IGNITING)
+            self._igniting = self._bit_at(status_bits, BIT_IGNITING)
             # AUX bit NOT read here - tracked locally via aux_on()/aux_off()
         except (ValueError, IndexError):
             pass

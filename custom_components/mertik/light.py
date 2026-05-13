@@ -11,41 +11,34 @@ The entity detects this via the coordinator's fire_just_turned_off flag
 and resets _is_on accordingly, but retains the brightness level so the
 light can be turned back on at the same level.
 """
-from homeassistant.components.light import LightEntity, ColorMode, ATTR_BRIGHTNESS
-from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.core import callback
 
-from .const import DOMAIN
+from homeassistant.components.light import ATTR_BRIGHTNESS, ColorMode, LightEntity
+from homeassistant.core import callback
+from homeassistant.helpers.restore_state import RestoreEntity
+
+from .entity import MertikEntity
 
 DEFAULT_BRIGHTNESS = 128
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    dataservice = hass.data[DOMAIN].get(entry.entry_id)
-    async_add_entities([
-        MertikLightEntity(dataservice, entry.entry_id, entry.data["name"]),
-    ])
+    dataservice = entry.runtime_data
+    async_add_entities(
+        [
+            MertikLightEntity(dataservice, entry.entry_id, entry.data["name"]),
+        ]
+    )
 
 
-class MertikLightEntity(CoordinatorEntity, LightEntity, RestoreEntity):
-
-    _attr_has_entity_name = True
+class MertikLightEntity(MertikEntity, LightEntity, RestoreEntity):
     _attr_name = "Light"
     _attr_color_mode = ColorMode.BRIGHTNESS
     _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
     _attr_assumed_state = True
 
     def __init__(self, dataservice, entry_id, device_name):
-        super().__init__(dataservice)
-        self._dataservice = dataservice
+        super().__init__(dataservice, entry_id, device_name)
         self._attr_unique_id = entry_id + "-Light"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry_id)},
-            name=device_name,
-            manufacturer="Mertik Maxitrol",
-        )
         self._is_on = False
         self._brightness = DEFAULT_BRIGHTNESS
 

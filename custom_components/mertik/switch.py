@@ -1,43 +1,32 @@
-from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-
 from homeassistant.components.switch import SwitchEntity
 
-from .const import DOMAIN
+from .const import MODE_THERMO
+from .entity import MertikEntity
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    dataservice = hass.data[DOMAIN].get(entry.entry_id)
+    dataservice = entry.runtime_data
+    async_add_entities(
+        [
+            MertikOnOffSwitchEntity(dataservice, entry.entry_id, entry.data["name"]),
+            MertikAuxOnOffSwitchEntity(dataservice, entry.entry_id, entry.data["name"]),
+        ]
+    )
 
-    entities = [
-        MertikOnOffSwitchEntity(dataservice, entry.entry_id, entry.data["name"]),
-        MertikAuxOnOffSwitchEntity(dataservice, entry.entry_id, entry.data["name"]),
-    ]
 
-    async_add_entities(entities)
-
-
-class MertikOnOffSwitchEntity(CoordinatorEntity, SwitchEntity):
-    _attr_has_entity_name = True
+class MertikOnOffSwitchEntity(MertikEntity, SwitchEntity):
     _attr_name = None
     _attr_icon = "mdi:fireplace"
 
     def __init__(self, dataservice, entry_id, device_name):
-        super().__init__(dataservice)
-        self._dataservice = dataservice
+        super().__init__(dataservice, entry_id, device_name)
         self._attr_unique_id = entry_id + "-OnOff"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry_id)},
-            name=device_name,
-            manufacturer="Mertik Maxitrol",
-        )
 
     @property
     def is_on(self):
         return bool(self._dataservice.is_on)
 
     async def async_turn_on(self, **kwargs):
-        from .const import MODE_THERMO
         if self._dataservice.heating_mode == MODE_THERMO:
             # Arm thermostatic control: light pilot only so the switch stays on
             # and the climate loop can ignite the main burner when heat is needed.
@@ -54,20 +43,13 @@ class MertikOnOffSwitchEntity(CoordinatorEntity, SwitchEntity):
         self._dataservice.async_set_updated_data(None)
 
 
-class MertikAuxOnOffSwitchEntity(CoordinatorEntity, SwitchEntity):
-    _attr_has_entity_name = True
+class MertikAuxOnOffSwitchEntity(MertikEntity, SwitchEntity):
     _attr_name = "Aux"
     _attr_icon = "mdi:light"
 
     def __init__(self, dataservice, entry_id, device_name):
-        super().__init__(dataservice)
-        self._dataservice = dataservice
+        super().__init__(dataservice, entry_id, device_name)
         self._attr_unique_id = entry_id + "-AuxOnOff"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry_id)},
-            name=device_name,
-            manufacturer="Mertik Maxitrol",
-        )
 
     @property
     def is_on(self):

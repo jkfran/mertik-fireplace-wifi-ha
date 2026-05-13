@@ -7,7 +7,7 @@ import pytest
 
 from homeassistant.util import dt as dt_util
 
-from custom_components.mertik.mertikdatacoordinator import (
+from custom_components.mertik.coordinator import (
     MertikDataCoordinator,
     OPTIMISTIC_ON_SECONDS,
     OPTIMISTIC_OFF_SECONDS,
@@ -164,6 +164,7 @@ class TestAsyncUpdateData:
 
     async def test_raises_update_failed_on_error(self, coordinator, mock_mertik):
         from homeassistant.helpers.update_coordinator import UpdateFailed
+
         mock_mertik.refresh_status.side_effect = Exception("Connection lost")
         with pytest.raises(UpdateFailed):
             await coordinator._async_update_data()
@@ -182,14 +183,14 @@ class TestThermostaticIgnitionGuard:
         coord = MertikDataCoordinator(hass, mock_mertik)
         mock_mertik.is_flame_on = False
         mock_mertik.is_igniting = False
-        coord._in_standby = False   # user switched off -- not thermostatic standby
+        coord._in_standby = False  # user switched off -- not thermostatic standby
         return coord
 
     @pytest.fixture
     def coordinator_standby(self, hass, mock_mertik):
         """Coordinator in thermostatic standby (pilot lit, thermostat controls it)."""
         coord = MertikDataCoordinator(hass, mock_mertik)
-        mock_mertik.is_flame_on = True   # pilot counts as flame_on
+        mock_mertik.is_flame_on = True  # pilot counts as flame_on
         mock_mertik.is_igniting = False
         coord._in_standby = True
         return coord
@@ -207,11 +208,13 @@ class TestThermostaticIgnitionGuard:
     ):
         """Guard applies to all heat modes, not just Full Heat."""
         from custom_components.mertik.const import MODE_LOW, MODE_MEDIUM, MODE_FULL
+
         for mode in (MODE_FULL, MODE_MEDIUM, MODE_LOW):
             mock_mertik.reset_mock()
             coordinator_off.apply_heating_mode(mode)
-            mock_mertik.ignite_fireplace.assert_not_called(), (
-                f"ignite_fireplace should not be called for {mode} when fire is off"
+            (
+                mock_mertik.ignite_fireplace.assert_not_called(),
+                (f"ignite_fireplace should not be called for {mode} when fire is off"),
             )
 
     def test_apply_heating_mode_allowed_from_standby(
@@ -237,7 +240,7 @@ class TestThermostaticIgnitionGuard:
         Sending flame-height to a dead device clears _in_standby, making is_on False
         -- which manifests as the fire appearing to turn itself off.
         """
-        mock_mertik.is_flame_on = False   # pilot has gone out
+        mock_mertik.is_flame_on = False  # pilot has gone out
         mock_mertik.is_igniting = False
 
         coordinator_standby.apply_heating_mode("Full Heat")
@@ -276,14 +279,15 @@ class TestThermostaticScenarios:
     synchronous portion of _run_thermostatic_logic.
     """
 
-    SETPOINT    = 20.0
-    LOW_THRESH  = 1.0
+    SETPOINT = 20.0
+    LOW_THRESH = 1.0
     HIGH_THRESH = 2.0
 
     @pytest.fixture
     def coord(self, hass, mock_mertik):
         """Real coordinator with mocked device, fire off by default."""
-        from custom_components.mertik.mertikdatacoordinator import MertikDataCoordinator
+        from custom_components.mertik.coordinator import MertikDataCoordinator
+
         c = MertikDataCoordinator(hass, mock_mertik)
         mock_mertik.is_flame_on = False
         mock_mertik.is_igniting = False
@@ -293,8 +297,12 @@ class TestThermostaticScenarios:
     def _select_mode(self, temp, last_mode=None):
         """Pure mode-selection calculation matching climate.py logic."""
         from custom_components.mertik.const import (
-            MODE_STANDBY, MODE_LOW, MODE_MEDIUM, MODE_FULL
+            MODE_STANDBY,
+            MODE_LOW,
+            MODE_MEDIUM,
+            MODE_FULL,
         )
+
         diff = self.SETPOINT - temp
         if diff <= 0:
             return MODE_STANDBY
@@ -306,7 +314,9 @@ class TestThermostaticScenarios:
             return MODE_FULL
 
     # ── Scenario 1: above setpoint -> Standby, no ignition ───────────────────
-    def test_scenario_01_above_setpoint_goes_standby_no_ignition(self, coord, mock_mertik):
+    def test_scenario_01_above_setpoint_goes_standby_no_ignition(
+        self, coord, mock_mertik
+    ):
         """Room temp above setpoint: mode=Standby, no ignition."""
         mock_mertik.is_flame_on = False
         coord._in_standby = False
@@ -324,7 +334,7 @@ class TestThermostaticScenarios:
         mock_mertik.is_flame_on = False
         mock_mertik.is_igniting = False
         coord._in_standby = False
-        coord.mark_optimistic_on()   # user pressed Fireplace switch On
+        coord.mark_optimistic_on()  # user pressed Fireplace switch On
 
         mode = self._select_mode(19.5)
         assert mode == "Low Heat"
@@ -336,6 +346,7 @@ class TestThermostaticScenarios:
         # Simulate ignition completing after settle period
         from datetime import timedelta
         from homeassistant.util import dt as dt_util
+
         mock_mertik.is_igniting = False
         mock_mertik.is_flame_on = True
         coord._flame_on_since = dt_util.utcnow() - timedelta(seconds=36)
@@ -360,6 +371,7 @@ class TestThermostaticScenarios:
 
         from datetime import timedelta
         from homeassistant.util import dt as dt_util
+
         mock_mertik.is_igniting = False
         mock_mertik.is_flame_on = True
         coord._flame_on_since = dt_util.utcnow() - timedelta(seconds=36)
@@ -367,6 +379,7 @@ class TestThermostaticScenarios:
 
         mock_mertik.aux_off.assert_called()
         from custom_components.mertik.const import FLAME_MAX
+
         mock_mertik.set_flame_height.assert_called_with(FLAME_MAX)
 
     # ── Scenario 4: 2.5C below -> cold start, Full Heat ─────────────────────
@@ -384,6 +397,7 @@ class TestThermostaticScenarios:
 
         from datetime import timedelta
         from homeassistant.util import dt as dt_util
+
         mock_mertik.is_igniting = False
         mock_mertik.is_flame_on = True
         coord._flame_on_since = dt_util.utcnow() - timedelta(seconds=36)
@@ -391,12 +405,13 @@ class TestThermostaticScenarios:
 
         mock_mertik.aux_on.assert_called()
         from custom_components.mertik.const import FLAME_MAX
+
         mock_mertik.set_flame_height.assert_called_with(FLAME_MAX)
 
     # ── Scenario 5: not yet ignited, temp drops below setpoint -> ignite + Low ─
     def test_scenario_05_not_ignited_standby_drop_to_low(self, coord, mock_mertik):
         """Fire on but not ignited (standby mode=Standby). 0.1C drop -> Low Heat."""
-        mock_mertik.is_flame_on = False   # not yet ignited
+        mock_mertik.is_flame_on = False  # not yet ignited
         mock_mertik.is_igniting = False
         coord._in_standby = False
         coord.mark_optimistic_on()
@@ -412,7 +427,7 @@ class TestThermostaticScenarios:
     # ── Scenario 6: previously ignited (standby/pilot), temp drops -> Low Heat ─
     def test_scenario_06_from_standby_pilot_to_low_heat(self, coord, mock_mertik):
         """Fire in standby (pilot lit). 0.1C drop -> Low Heat, no re-ignition."""
-        mock_mertik.is_flame_on = True   # pilot keeps flame_on True
+        mock_mertik.is_flame_on = True  # pilot keeps flame_on True
         mock_mertik.is_igniting = False
         coord._in_standby = True
 
@@ -423,6 +438,7 @@ class TestThermostaticScenarios:
         mock_mertik.ignite_fireplace.assert_not_called()
         mock_mertik.aux_off.assert_called()
         from custom_components.mertik.const import FLAME_MIN
+
         mock_mertik.set_flame_height.assert_called_with(FLAME_MIN)
 
     # ── Scenario 6b: standby with dead pilot -> re-ignite ────────────────────
@@ -435,11 +451,11 @@ class TestThermostaticScenarios:
         that the dead device will silently ignore (which clears _in_standby and
         makes is_on go False -- the 'turns itself off' symptom).
         """
-        mock_mertik.is_flame_on = False   # pilot went out
+        mock_mertik.is_flame_on = False  # pilot went out
         mock_mertik.is_igniting = False
         coord._in_standby = True
 
-        mode = self._select_mode(19.9)   # 0.1 C below setpoint -> Low Heat
+        mode = self._select_mode(19.9)  # 0.1 C below setpoint -> Low Heat
         assert mode == "Low Heat"
         coord.apply_heating_mode(mode)
 
@@ -474,6 +490,7 @@ class TestThermostaticScenarios:
         mock_mertik.ignite_fireplace.assert_not_called()
         mock_mertik.aux_off.assert_called()
         from custom_components.mertik.const import FLAME_MAX
+
         mock_mertik.set_flame_height.assert_called_with(FLAME_MAX)
 
     # ── Scenario 9: Medium Heat, temp rises 1.0C -> Low Heat ─────────────────
@@ -489,6 +506,7 @@ class TestThermostaticScenarios:
         mock_mertik.ignite_fireplace.assert_not_called()
         mock_mertik.aux_off.assert_called()
         from custom_components.mertik.const import FLAME_MIN
+
         mock_mertik.set_flame_height.assert_called_with(FLAME_MIN)
 
     # ── Scenario 10: Medium Heat, temp drops 1.0C -> Full Heat ───────────────
@@ -504,6 +522,7 @@ class TestThermostaticScenarios:
         mock_mertik.ignite_fireplace.assert_not_called()
         mock_mertik.aux_on.assert_called()
         from custom_components.mertik.const import FLAME_MAX
+
         mock_mertik.set_flame_height.assert_called_with(FLAME_MAX)
 
     # ── Scenario 11: Full Heat, temp rises 1.0C -> Medium Heat ───────────────
@@ -519,4 +538,5 @@ class TestThermostaticScenarios:
         mock_mertik.ignite_fireplace.assert_not_called()
         mock_mertik.aux_off.assert_called()
         from custom_components.mertik.const import FLAME_MAX
+
         mock_mertik.set_flame_height.assert_called_with(FLAME_MAX)

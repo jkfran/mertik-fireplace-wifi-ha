@@ -7,26 +7,26 @@ from homeassistant.util import dt as dt_util
 from .const import FLAME_MIN, FLAME_MAX
 
 _LOGGER = logging.getLogger(__name__)
-OPTIMISTIC_ON_SECONDS  = 20
+OPTIMISTIC_ON_SECONDS = 20
 OPTIMISTIC_OFF_SECONDS = 20
 
 
 class MertikDataCoordinator(DataUpdateCoordinator):
-
     def __init__(self, hass, mertik):
-        super().__init__(hass, _LOGGER, name="Mertik",
-                         update_interval=timedelta(seconds=10))
+        super().__init__(
+            hass, _LOGGER, name="Mertik", update_interval=timedelta(seconds=10)
+        )
         self.mertik = mertik
-        self._optimistic_on_until  = None
+        self._optimistic_on_until = None
         self._optimistic_off_until = None
         self._prev_is_on = False
         self.fire_just_turned_off = False  # set True for one cycle when fire turns off
-        self._in_standby = False       # True when thermostatic standby is active
-        self._pending_mode = None      # mode to apply once ignition completes
-        self._heating_mode = None      # current mode set by the Heating Mode select entity
-        self._was_igniting = False     # tracks igniting falling edge
-        self._flame_on_since = None    # timestamp when flame first lit after ignite
-        self._settle_seconds = 35      # seconds to wait after flame_on before aux_off
+        self._in_standby = False  # True when thermostatic standby is active
+        self._pending_mode = None  # mode to apply once ignition completes
+        self._heating_mode = None  # current mode set by the Heating Mode select entity
+        self._was_igniting = False  # tracks igniting falling edge
+        self._flame_on_since = None  # timestamp when flame first lit after ignite
+        self._settle_seconds = 35  # seconds to wait after flame_on before aux_off
 
     # ---- On/off state ----------------------------------------------------
     # Use flame_on (flame byte > threshold) as the primary "is fire running"
@@ -53,11 +53,15 @@ class MertikDataCoordinator(DataUpdateCoordinator):
 
     def mark_optimistic_on(self):
         self._optimistic_off_until = None
-        self._optimistic_on_until  = dt_util.utcnow() + timedelta(seconds=OPTIMISTIC_ON_SECONDS)
+        self._optimistic_on_until = dt_util.utcnow() + timedelta(
+            seconds=OPTIMISTIC_ON_SECONDS
+        )
 
     def mark_optimistic_off(self):
-        self._optimistic_on_until  = None
-        self._optimistic_off_until = dt_util.utcnow() + timedelta(seconds=OPTIMISTIC_OFF_SECONDS)
+        self._optimistic_on_until = None
+        self._optimistic_off_until = dt_util.utcnow() + timedelta(
+            seconds=OPTIMISTIC_OFF_SECONDS
+        )
 
     @property
     def heating_mode(self) -> str | None:
@@ -70,7 +74,7 @@ class MertikDataCoordinator(DataUpdateCoordinator):
         self.mertik.ignite_fireplace()
 
     def guard_flame_off(self):
-        self._optimistic_on_until  = None
+        self._optimistic_on_until = None
         self._optimistic_off_until = None
         self.mertik.guard_flame_off()
         self._in_standby = False
@@ -84,7 +88,7 @@ class MertikDataCoordinator(DataUpdateCoordinator):
         Does NOT set fire_just_turned_off because the device keeps the light
         on in standby mode (only guard_flame_off kills the light).
         """
-        self._optimistic_on_until  = None
+        self._optimistic_on_until = None
         self._optimistic_off_until = None
         self._in_standby = True
         self.mertik.standBy()
@@ -197,8 +201,10 @@ class MertikDataCoordinator(DataUpdateCoordinator):
             return False
         # Still igniting -- wait
         if self.mertik.is_igniting:
-            _LOGGER.debug("Waiting for ignition to complete before applying %s",
-                          self._pending_mode)
+            _LOGGER.debug(
+                "Waiting for ignition to complete before applying %s",
+                self._pending_mode,
+            )
             self._flame_on_since = None
             return True
         # Igniting bit just dropped False -- flame_on may lag by one poll cycle.
@@ -210,7 +216,8 @@ class MertikDataCoordinator(DataUpdateCoordinator):
             self._flame_on_since = dt_util.utcnow()
             _LOGGER.info(
                 "Burner lit, waiting %ds before applying %s",
-                self._settle_seconds, self._pending_mode
+                self._settle_seconds,
+                self._pending_mode,
             )
             return True
         # Check if enough time has passed since the burner lit
@@ -218,13 +225,14 @@ class MertikDataCoordinator(DataUpdateCoordinator):
         if elapsed < self._settle_seconds:
             _LOGGER.debug(
                 "Settling: %.0fs / %ds before applying %s",
-                elapsed, self._settle_seconds, self._pending_mode
+                elapsed,
+                self._settle_seconds,
+                self._pending_mode,
             )
             return True
         # Settle period complete -- apply the deferred mode
         _LOGGER.info(
-            "Settled (%.0fs), applying deferred mode %s",
-            elapsed, self._pending_mode
+            "Settled (%.0fs), applying deferred mode %s", elapsed, self._pending_mode
         )
         mode = self._pending_mode
         self._pending_mode = None

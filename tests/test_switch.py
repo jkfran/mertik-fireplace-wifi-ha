@@ -55,7 +55,9 @@ class TestOnOffSwitch:
         mock_coordinator.mark_optimistic_on.assert_called_once()
         mock_coordinator.async_set_updated_data.assert_called_once_with(None)
 
-    async def test_turn_on_thermostatic_mode_arms_standby(self, switch, mock_coordinator):
+    async def test_turn_on_thermostatic_mode_arms_standby(
+        self, switch, mock_coordinator
+    ):
         """Fireplace switch On in Thermostatic mode arms pilot, never ignites main burner.
 
         Real-life bug: room=21C, setpoint=19C, Thermostatic mode active.
@@ -63,6 +65,7 @@ class TestOnOffSwitch:
         and the climate loop can decide when to ignite the main burner.
         """
         from custom_components.mertik.const import MODE_THERMO
+
         mock_coordinator.heating_mode = MODE_THERMO
         await switch.async_turn_on()
         mock_coordinator.standby.assert_called_once()
@@ -73,6 +76,7 @@ class TestOnOffSwitch:
     async def test_turn_on_non_thermostatic_ignites(self, switch, mock_coordinator):
         """Fireplace switch On in any manual mode ignites immediately."""
         from custom_components.mertik.const import MODE_FULL
+
         mock_coordinator.heating_mode = MODE_FULL
         await switch.async_turn_on()
         mock_coordinator.ignite_fireplace.assert_called_once()
@@ -136,8 +140,10 @@ class TestAuxSwitch:
 class TestSwitchPlatformSetup:
     """Test switch platform async_setup_entry."""
 
-    async def test_creates_two_entities(self, hass, mock_coordinator, mock_config_entry):
-        hass.data[DOMAIN] = {mock_config_entry.entry_id: mock_coordinator}
+    async def test_creates_two_entities(
+        self, hass, mock_coordinator, mock_config_entry
+    ):
+        mock_config_entry.runtime_data = mock_coordinator
         added = []
 
         await async_setup_entry(hass, mock_config_entry, lambda e: added.extend(e))
@@ -147,16 +153,20 @@ class TestSwitchPlatformSetup:
         assert isinstance(added[1], MertikAuxOnOffSwitchEntity)
 
     async def test_entity_names(self, hass, mock_coordinator, mock_config_entry):
-        hass.data[DOMAIN] = {mock_config_entry.entry_id: mock_coordinator}
+        mock_config_entry.runtime_data = mock_coordinator
         added = []
         await async_setup_entry(hass, mock_config_entry, lambda e: added.extend(e))
 
         assert added[0].name is None
         assert added[1].name == "Aux"
 
-    async def test_all_entities_share_device(self, hass, mock_coordinator, mock_config_entry):
-        hass.data[DOMAIN] = {mock_config_entry.entry_id: mock_coordinator}
+    async def test_all_entities_share_device(
+        self, hass, mock_coordinator, mock_config_entry
+    ):
+        mock_config_entry.runtime_data = mock_coordinator
         added = []
         await async_setup_entry(hass, mock_config_entry, lambda e: added.extend(e))
 
-        assert added[0].device_info["identifiers"] == added[1].device_info["identifiers"]
+        assert (
+            added[0].device_info["identifiers"] == added[1].device_info["identifiers"]
+        )

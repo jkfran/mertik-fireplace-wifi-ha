@@ -36,21 +36,27 @@ class TestStatusParsing:
 
     def test_fireplace_off_when_flame_byte_low(self, mock_socket):
         """Flame byte <= 0x7B means burner off."""
-        mock_socket.recv.return_value = _build_status_bytes(on_flag="00", flame_byte=0x00)
+        mock_socket.recv.return_value = _build_status_bytes(
+            on_flag="00", flame_byte=0x00
+        )
         device = Mertik("192.168.1.100")
         assert device.is_on is False
         assert device.flame_on is False
 
     def test_fireplace_on_when_flame_byte_high(self, mock_socket):
         """Flame byte > 0x7B and on_flag=FF means fire is on."""
-        mock_socket.recv.return_value = _build_status_bytes(on_flag="FF", flame_byte=0x8F)
+        mock_socket.recv.return_value = _build_status_bytes(
+            on_flag="FF", flame_byte=0x8F
+        )
         device = Mertik("192.168.1.100")
         assert device.is_on is True
         assert device.flame_on is True
 
     def test_flame_byte_boundary(self, mock_socket):
         """0x7B=123 is exactly on the boundary — still off."""
-        mock_socket.recv.return_value = _build_status_bytes(on_flag="00", flame_byte=0x7B)
+        mock_socket.recv.return_value = _build_status_bytes(
+            on_flag="00", flame_byte=0x7B
+        )
         device = Mertik("192.168.1.100")
         assert device.flame_on is False
 
@@ -68,20 +74,26 @@ class TestStatusParsing:
 
     def test_status_bits_shutting_down(self, mock_socket):
         """Bit 7 -> shutting_down. 0x80|0x01=0x81 in high byte -> 0x0100 in 16-bit."""
-        mock_socket.recv.return_value = _build_status_bytes(status_hi="81", flame_byte=0x00)
+        mock_socket.recv.return_value = _build_status_bytes(
+            status_hi="81", flame_byte=0x00
+        )
         device = Mertik("192.168.1.100")
         assert device.is_shutting_down is True
 
     def test_status_bits_igniting(self, mock_socket):
         """Bit 11 -> igniting. 0x0010 in 16-bit value: carried in flame_byte=0x10."""
         # 16-bit field = (0x80 << 8) | 0x10 = 0x8010; bit[11] = 1
-        mock_socket.recv.return_value = _build_status_bytes(status_hi="80", flame_byte=0x10)
+        mock_socket.recv.return_value = _build_status_bytes(
+            status_hi="80", flame_byte=0x10
+        )
         device = Mertik("192.168.1.100")
         assert device.is_igniting is True
 
     def test_status_bits_all_clear(self, mock_socket):
         """All status bits clear -> all flags False."""
-        mock_socket.recv.return_value = _build_status_bytes(status_hi="80", flame_byte=0x00)
+        mock_socket.recv.return_value = _build_status_bytes(
+            status_hi="80", flame_byte=0x00
+        )
         device = Mertik("192.168.1.100")
         assert device.is_shutting_down is False
         assert device.is_igniting is False
@@ -106,14 +118,18 @@ class TestStatusParsing:
     def test_falling_edge_resets_local_state(self, mock_socket):
         """flame_on True->False (falling edge) resets _local_aux and flameHeight."""
         # Start with fire on
-        mock_socket.recv.return_value = _build_status_bytes(on_flag="FF", flame_byte=0x8F)
+        mock_socket.recv.return_value = _build_status_bytes(
+            on_flag="FF", flame_byte=0x8F
+        )
         device = Mertik("192.168.1.100")
         device._local_aux = True
         device.flameHeight = 8
         device.flame_on = True
         device._prev_flame_on = True
         # Now fire turns off (falling edge)
-        mock_socket.recv.return_value = _build_status_bytes(on_flag="00", flame_byte=0x00)
+        mock_socket.recv.return_value = _build_status_bytes(
+            on_flag="00", flame_byte=0x00
+        )
         device.refresh_status()
         assert device.flame_on is False
         assert device._local_aux is False
@@ -121,7 +137,9 @@ class TestStatusParsing:
 
     def test_no_reset_during_ignition_transitional(self, mock_socket):
         """Transitional low flame during ignition (False->False) preserves local state."""
-        mock_socket.recv.return_value = _build_status_bytes(on_flag="00", flame_byte=0x00)
+        mock_socket.recv.return_value = _build_status_bytes(
+            on_flag="00", flame_byte=0x00
+        )
         device = Mertik("192.168.1.100")
         # Simulate ignite having set local state
         device._local_aux = True
@@ -129,7 +147,9 @@ class TestStatusParsing:
         device.flame_on = False
         device._prev_flame_on = False
         # Transitional packet during ignition — flame still below threshold
-        mock_socket.recv.return_value = _build_status_bytes(on_flag="00", flame_byte=0x1F)
+        mock_socket.recv.return_value = _build_status_bytes(
+            on_flag="00", flame_byte=0x1F
+        )
         device.refresh_status()
         # Not a falling edge -> local state preserved
         assert device._local_aux is True
@@ -277,7 +297,7 @@ class TestLightBrightness:
         mock_socket.send.reset_mock()
         mertik_device.set_light_brightness(128)
         cmd_bytes = mock_socket.send.call_args[0][0]
-        payload = cmd_bytes.hex()[len(send_command_prefix):]
+        payload = cmd_bytes.hex()[len(send_command_prefix) :]
         device_code = payload[8:12]
         assert device_code == "4141"
 
@@ -286,7 +306,7 @@ class TestLightBrightness:
         mock_socket.send.reset_mock()
         mertik_device.set_light_brightness(96)
         cmd_bytes = mock_socket.send.call_args[0][0]
-        payload = cmd_bytes.hex()[len(send_command_prefix):]
+        payload = cmd_bytes.hex()[len(send_command_prefix) :]
         device_code = payload[8:12]
         assert device_code == "3939"
 
@@ -386,7 +406,9 @@ class TestNonStatusResponses:
 
     def test_non_matching_prefix_ignored(self, mock_socket):
         """Response with unknown prefix leaves state unchanged."""
-        mock_socket.recv.return_value = _build_status_bytes(on_flag="00", flame_byte=0x00)
+        mock_socket.recv.return_value = _build_status_bytes(
+            on_flag="00", flame_byte=0x00
+        )
         device = Mertik("192.168.1.100")
         assert device.is_on is False
 
@@ -404,7 +426,9 @@ class TestNonStatusResponses:
 
     def test_state_preserved_across_non_status(self, mock_socket):
         """Valid state survives a non-status response."""
-        mock_socket.recv.return_value = _build_status_bytes(on_flag="FF", flame_byte=0x8F)
+        mock_socket.recv.return_value = _build_status_bytes(
+            on_flag="FF", flame_byte=0x8F
+        )
         device = Mertik("192.168.1.100")
         assert device.is_on is True
 
@@ -417,21 +441,29 @@ class TestStateTransitions:
     """Test that state updates correctly across multiple status responses."""
 
     def test_off_to_on(self, mock_socket):
-        mock_socket.recv.return_value = _build_status_bytes(on_flag="00", flame_byte=0x00)
+        mock_socket.recv.return_value = _build_status_bytes(
+            on_flag="00", flame_byte=0x00
+        )
         device = Mertik("192.168.1.100")
         assert device.is_on is False
 
-        mock_socket.recv.return_value = _build_status_bytes(on_flag="FF", flame_byte=0x8F)
+        mock_socket.recv.return_value = _build_status_bytes(
+            on_flag="FF", flame_byte=0x8F
+        )
         device.refresh_status()
         assert device.is_on is True
         assert device.flame_on is True
 
     def test_on_to_off(self, mock_socket):
-        mock_socket.recv.return_value = _build_status_bytes(on_flag="FF", flame_byte=0x8F)
+        mock_socket.recv.return_value = _build_status_bytes(
+            on_flag="FF", flame_byte=0x8F
+        )
         device = Mertik("192.168.1.100")
         assert device.is_on is True
 
-        mock_socket.recv.return_value = _build_status_bytes(on_flag="00", flame_byte=0x00)
+        mock_socket.recv.return_value = _build_status_bytes(
+            on_flag="00", flame_byte=0x00
+        )
         device.refresh_status()
         assert device.is_on is False
         assert device.flame_on is False
@@ -450,9 +482,18 @@ class TestAllFlameHeightSteps:
     """Test every flame height step sends the correct hex code."""
 
     EXPECTED_STEPS = [
-        (1, "3830"), (2, "3842"), (3, "3937"), (4, "4132"),
-        (5, "4145"), (6, "4239"), (7, "4335"), (8, "4430"),
-        (9, "4443"), (10, "4537"), (11, "4633"), (12, "4646"),
+        (1, "3830"),
+        (2, "3842"),
+        (3, "3937"),
+        (4, "4132"),
+        (5, "4145"),
+        (6, "4239"),
+        (7, "4335"),
+        (8, "4430"),
+        (9, "4443"),
+        (10, "4537"),
+        (11, "4633"),
+        (12, "4646"),
     ]
 
     @pytest.mark.parametrize("step,hex_code", EXPECTED_STEPS)

@@ -1,0 +1,271 @@
+rules:
+  # ── Bronze ──────────────────────────────────────────────────────────────────
+  action_setup:
+    status: exempt
+    comment: Integration does not register any custom service actions.
+
+  appropriate_polling:
+    status: done
+    comment: >
+      Coordinator polls every 10 seconds over a local TCP connection (no cloud,
+      no rate limits). The interval is driven by two constraints: (1) the
+      thermostatic control loop runs on every poll and must react to temperature
+      changes promptly to avoid overshooting the setpoint; (2) the optimistic-on
+      window is 20 seconds, so a slower poll would leave the UI unresponsive for
+      a significant fraction of the ignition cycle. Device state (flame on/off,
+      igniting, ambient temperature) can change within seconds of a command, so
+      10 seconds balances responsiveness against unnecessary network traffic.
+
+  brands:
+    status: done
+    comment: icon.png and icon@2x.png are present in the brand/ directory.
+
+  common_modules:
+    status: done
+    comment: >
+      Coordinator is in coordinator.py and the shared base entity class is in
+      entity.py. All platform files import from these modules.
+
+  config_flow: done
+
+  config_flow_test_coverage:
+    status: done
+    comment: >
+      Options flow tests added: form display, valid threshold save, invalid
+      threshold validation, stale sensor fallback. _test_connection and
+      _temp_sensor_options helpers are also tested.
+
+  dependency_transparency:
+    status: done
+    comment: >
+      No external PyPI dependencies. Device communication is handled by the
+      bundled mertik.py using Python's stdlib socket module only.
+
+  docs_actions:
+    status: exempt
+    comment: Integration does not provide any service actions.
+
+  docs_high_level_description: done
+
+  docs_installation_instructions: done
+
+  docs_removal_instructions:
+    status: done
+    comment: >
+      README now has a Removal section under Installation explaining how to
+      remove via Settings → Devices & Services → Mertik Maxitrol → Delete.
+
+  entity_event_setup:
+    status: done
+    comment: >
+      All entities extend CoordinatorEntity, which manages subscription
+      lifecycle in async_added_to_hass / async_will_remove_from_hass. No
+      external event subscriptions are required.
+
+  entity_unique_id: done
+
+  has_entity_name: done
+
+  runtime_data:
+    status: done
+    comment: >
+      Coordinator is stored in entry.runtime_data in async_setup_entry.
+      All platform files and tests use entry.runtime_data to access it.
+
+  test_before_configure: done
+
+  test_before_setup:
+    status: done
+    comment: async_setup_entry raises ConfigEntryNotReady if the TCP connection fails.
+
+  unique_config_entry:
+    status: done
+    comment: Config flow uses async_set_unique_id(host) and _abort_if_unique_id_configured().
+
+  # ── Silver ──────────────────────────────────────────────────────────────────
+  action_exceptions:
+    status: exempt
+    comment: Integration does not provide any service actions.
+
+  config_entry_unloading:
+    status: done
+    comment: async_unload_entry is implemented and forwards to async_unload_platforms.
+
+  docs_configuration_parameters:
+    status: done
+    comment: >
+      README documents the low/high temperature thresholds and external sensor
+      selection available in Settings → Configure.
+
+  docs_installation_parameters:
+    status: done
+    comment: README documents the required IP address parameter.
+
+  entity_unavailable:
+    status: done
+    comment: >
+      _async_update_data raises UpdateFailed on communication errors.
+      CoordinatorEntity automatically marks all entities unavailable when the
+      coordinator enters a failed state.
+
+  integration_owner:
+    status: done
+    comment: "@DaveJesse is listed in the codeowners field of manifest.json."
+
+  log_when_unavailable:
+    status: done
+    comment: >
+      DataUpdateCoordinator base class logs once when updates start failing
+      and once when they recover, satisfying the log-once requirement.
+
+  parallel_updates:
+    status: todo
+    comment: >
+      No PARALLEL_UPDATES constant is defined in any platform module.
+      Each platform file must declare PARALLEL_UPDATES (typically 1, or 0
+      for read-only coordinator-driven platforms).
+
+  reauthentication_flow:
+    status: exempt
+    comment: Integration uses only an IP address with no credentials or tokens.
+
+  test_coverage:
+    status: todo
+    comment: >
+      Overall coverage is ~67%. climate.py and select.py have 0% coverage;
+      config_flow.py is at ~46%. Must exceed 95% across all modules.
+
+  # ── Gold ────────────────────────────────────────────────────────────────────
+  devices:
+    status: done
+    comment: >
+      All entities supply DeviceInfo with identifiers, name, and manufacturer,
+      grouping them under a single device per config entry.
+
+  diagnostics:
+    status: todo
+    comment: No diagnostics.py module has been implemented.
+
+  discovery:
+    status: exempt
+    comment: >
+      The Mertik Maxitrol WiFi box does not broadcast via mDNS, SSDP, DHCP,
+      or Bluetooth. Manual IP entry is the only available setup method.
+
+  discovery_update_info:
+    status: exempt
+    comment: No discovery mechanism is available to provide updated network information.
+
+  docs_data_update:
+    status: todo
+    comment: >
+      README mentions 10-second polling but does not document what data is
+      fetched, device-side limitations, or the optimistic state model.
+
+  docs_examples:
+    status: todo
+    comment: >
+      README includes one startup safety automation but lacks automation
+      blueprints or richer use-case examples (schedule-based control,
+      presence-based control, etc.).
+
+  docs_known_limitations: done
+
+  docs_supported_devices: done
+
+  docs_supported_functions: done
+
+  docs_troubleshooting:
+    status: todo
+    comment: >
+      No troubleshooting section exists. Common issues (handset not entering
+      APP mode, flame height not reflecting commands, temperature sensor not
+      appearing in the selector) should be documented with resolution steps.
+
+  docs_use_cases:
+    status: todo
+    comment: >
+      README explains features but does not include a dedicated use-cases
+      section with concrete automation scenarios.
+
+  dynamic_devices:
+    status: exempt
+    comment: >
+      Each config entry represents exactly one fireplace. There is no hub or
+      sub-device topology; additional fireplaces require separate config entries.
+
+  entity_category:
+    status: todo
+    comment: >
+      No EntityCategory is assigned to any entity. Ambient Temperature should
+      be DIAGNOSTIC; Flame Height and Heating Mode are candidates for CONFIG.
+
+  entity_device_class:
+    status: done
+    comment: >
+      Temperature sensor uses SensorDeviceClass.TEMPERATURE; climate entity uses
+      HVACMode; light uses ColorMode.BRIGHTNESS. No applicable device class
+      exists for the fireplace switch or flame height number entity.
+
+  entity_disabled_by_default:
+    status: todo
+    comment: >
+      No entities are disabled by default. Lower-visibility entities such as
+      Ambient Temperature (mainly used internally by the thermostat) and Flame
+      Height could reasonably be disabled by default.
+
+  entity_translations:
+    status: todo
+    comment: >
+      Entity names are hardcoded strings (e.g. "Heating Mode", "Flame Height").
+      They must be moved to strings.json and referenced via _attr_translation_key.
+
+  exception_translations:
+    status: todo
+    comment: >
+      Exceptions raised in the integration do not inherit HomeAssistantError
+      with translation_domain / translation_key and strings.json definitions.
+
+  icon_translations:
+    status: todo
+    comment: >
+      Icons are set via _attr_icon in code. An icons.json file must be
+      introduced and icons defined per entity translation key.
+
+  reconfiguration_flow:
+    status: todo
+    comment: >
+      No async_step_reconfigure is implemented. Users cannot update the
+      fireplace IP address without removing and re-adding the integration.
+
+  repair_issues:
+    status: todo
+    comment: >
+      No repair issues or flows are implemented. Persistent connection failures
+      or misconfiguration are not surfaced as actionable repair workflows.
+
+  stale_devices:
+    status: exempt
+    comment: >
+      Each config entry owns exactly one device. Removing the config entry
+      removes the device; there are no sub-devices that could become stale.
+
+  # ── Platinum ────────────────────────────────────────────────────────────────
+  async_dependency:
+    status: todo
+    comment: >
+      mertik.py uses blocking socket I/O (synchronous). Calls are correctly
+      offloaded via async_add_executor_job but a fully async implementation
+      using asyncio streams is required for Platinum.
+
+  inject_websession:
+    status: exempt
+    comment: >
+      Integration communicates via a raw TCP socket on port 2000, not HTTP.
+      Web session injection is not applicable.
+
+  strict_typing:
+    status: todo
+    comment: >
+      Mypy passes with no errors, but not all functions carry complete type
+      annotations and no py.typed marker file is present.
