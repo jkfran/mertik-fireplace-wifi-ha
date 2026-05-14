@@ -303,6 +303,38 @@ class TestThermostaticIgnitionGuard:
         coordinator_off.standby()
         assert coordinator_off._in_standby is True
 
+    async def test_standby_blocked_during_optimistic_off_window(self, coordinator, mock_mertik):
+        """standby() during the optimistic-off window must be a no-op.
+
+        A stale _do_standby task from the thermostatic logic can run after the
+        user presses the switch off.  guard_flame_off + mark_optimistic_off set
+        the window; standby() must respect it so it doesn't re-light the pilot.
+        """
+        coordinator.mark_optimistic_off()          # simulates guard_flame_off → mark_optimistic_off
+        coordinator.standby()
+        mock_mertik.standBy.assert_not_called()
+        assert coordinator._in_standby is False
+        assert coordinator._optimistic_off_until is not None  # window still set
+
+    async def test_standby_allowed_after_optimistic_off_window_expires(
+        self, coordinator, mock_mertik
+    ):
+        """standby() is allowed once the optimistic-off window has passed."""
+        coordinator._optimistic_off_until = dt_util.utcnow() - timedelta(seconds=1)
+        coordinator.standby()
+        mock_mertik.standBy.assert_called_once()
+        assert coordinator._in_standby is True
+
+    async def test_guard_flame_off_clears_pending_mode(self, coordinator, mock_mertik):
+        """guard_flame_off must discard any in-flight ignition sequence."""
+        coordinator._pending_mode = "Full Heat"
+        coordinator._pending_mode_since = dt_util.utcnow()
+        coordinator._flame_on_since = dt_util.utcnow()
+        coordinator.guard_flame_off()
+        assert coordinator._pending_mode is None
+        assert coordinator._pending_mode_since is None
+        assert coordinator._flame_on_since is None
+
 
 class TestSimpleDelegations:
     def test_heating_mode_property(self, coordinator):

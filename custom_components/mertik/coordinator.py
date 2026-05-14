@@ -91,6 +91,9 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         self._optimistic_off_until = None
         self.mertik.guard_flame_off()
         self._in_standby = False
+        self._pending_mode = None        # discard any in-flight ignition/mode sequence
+        self._pending_mode_since = None
+        self._flame_on_since = None
         # Signal light entity that fire turned off (device kills light too)
         self.fire_just_turned_off = True
         self._prev_is_on = False
@@ -101,6 +104,15 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         Does NOT set fire_just_turned_off because the device keeps the light
         on in standby mode (only guard_flame_off kills the light).
         """
+        # If guard_flame_off was called recently the optimistic-off window is
+        # active. A stale _do_standby task from a previous thermostatic poll
+        # must not re-light the pilot after the user has explicitly turned off.
+        if self._optimistic_off_until and dt_util.utcnow() < self._optimistic_off_until:
+            _LOGGER.debug(
+                "standby() skipped: optimistic-off window active "
+                "(guard_flame_off was called recently)"
+            )
+            return
         self._optimistic_on_until = None
         self._optimistic_off_until = None
         self._in_standby = True
