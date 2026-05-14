@@ -109,12 +109,14 @@
         "data": {
           "temperature_sensor": "Temperature sensor (leave blank to use the fireplace handset)",
           "low_threshold": "Low heat threshold (degrees C below setpoint)",
-          "high_threshold": "Full heat threshold (degrees C below setpoint, must be greater than Low)"
+          "high_threshold": "Full heat threshold (degrees C below setpoint, must be greater than Low)",
+          "temperature_step": "Thermostat setpoint step (degrees C)"
         }
       }
     },
     "error": {
-      "invalid_thresholds": "Thresholds must be positive numbers, and the Low threshold must be less than the Full threshold."
+      "invalid_thresholds": "Thresholds must be positive numbers, and the Low threshold must be less than the Full threshold.",
+      "invalid_temp_step": "Setpoint step must be a positive number."
     }
   }
 }

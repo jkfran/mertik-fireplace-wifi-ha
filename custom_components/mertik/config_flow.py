@@ -17,9 +17,11 @@ from .const import (
     CONF_LOW_THRESHOLD,
     CONF_HIGH_THRESHOLD,
     CONF_TEMP_SENSOR,
+    CONF_TEMP_STEP,
     DEFAULT_LOW_THRESHOLD,
     DEFAULT_HIGH_THRESHOLD,
     DEFAULT_TEMP_SENSOR,
+    DEFAULT_TEMP_STEP,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -168,12 +170,19 @@ class MertikOptionsFlow(config_entries.OptionsFlow):
             CONF_TEMP_SENSOR,
             self._entry.data.get(CONF_TEMP_SENSOR, DEFAULT_TEMP_SENSOR),
         )
+        current_step = float(self._entry.options.get(
+            CONF_TEMP_STEP,
+            self._entry.data.get(CONF_TEMP_STEP, DEFAULT_TEMP_STEP),
+        ))
 
         if user_input is not None:
             low = user_input.get(CONF_LOW_THRESHOLD, current_low)
             high = user_input.get(CONF_HIGH_THRESHOLD, current_high)
+            step = user_input.get(CONF_TEMP_STEP, current_step)
             if low <= 0 or high <= 0 or low >= high:
                 errors["base"] = "invalid_thresholds"
+            elif step <= 0:
+                errors[CONF_TEMP_STEP] = "invalid_temp_step"
             else:
                 return self.async_create_entry(title="", data=user_input)
 
@@ -192,6 +201,9 @@ class MertikOptionsFlow(config_entries.OptionsFlow):
                     float
                 ),
                 vol.Optional(CONF_HIGH_THRESHOLD, default=current_high): vol.Coerce(
+                    float
+                ),
+                vol.Optional(CONF_TEMP_STEP, default=current_step): vol.Coerce(
                     float
                 ),
             }

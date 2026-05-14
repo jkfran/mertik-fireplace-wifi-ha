@@ -19,8 +19,10 @@ from custom_components.mertik.const import (
     CONF_LOW_THRESHOLD,
     CONF_HIGH_THRESHOLD,
     CONF_TEMP_SENSOR,
+    CONF_TEMP_STEP,
     DEFAULT_LOW_THRESHOLD,
     DEFAULT_HIGH_THRESHOLD,
+    DEFAULT_TEMP_STEP,
     MODE_STANDBY,
     MODE_FULL,
     MODE_MEDIUM,
@@ -106,6 +108,13 @@ class TestClimateConfigOptions:
         mock_entry.options = {CONF_TEMP_SENSOR: "sensor.living_room"}
         assert climate._temp_sensor_entity_id == "sensor.living_room"
 
+    def test_temp_step_default(self, climate):
+        assert climate.target_temperature_step == DEFAULT_TEMP_STEP
+
+    def test_temp_step_from_options(self, climate, mock_entry):
+        mock_entry.options = {CONF_TEMP_STEP: 0.5}
+        assert climate.target_temperature_step == 0.5
+
 
 class TestClimateTemperatureReading:
     def test_uses_coordinator_when_no_sensor_set(self, climate, mock_coordinator):
@@ -185,10 +194,16 @@ class TestClimateCommands:
             await climate.async_set_temperature(**{ATTR_TEMPERATURE: 99.0})
         assert climate.target_temperature == MAX_TEMP_C
 
-    async def test_set_temperature_rounds_to_half_degree(self, climate):
+    async def test_set_temperature_rounds_to_configured_step(self, climate, mock_entry):
+        mock_entry.options = {CONF_TEMP_STEP: 0.5}
         with patch.object(climate, "async_write_ha_state"):
             await climate.async_set_temperature(**{ATTR_TEMPERATURE: 21.3})
         assert climate.target_temperature == 21.5
+
+    async def test_set_temperature_rounds_to_default_step(self, climate):
+        with patch.object(climate, "async_write_ha_state"):
+            await climate.async_set_temperature(**{ATTR_TEMPERATURE: 21.35})
+        assert climate.target_temperature == 21.4
 
     async def test_set_temperature_resets_last_applied_mode(self, climate):
         climate._last_applied_mode = MODE_LOW

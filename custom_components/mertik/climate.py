@@ -23,9 +23,11 @@ from .const import (
     CONF_LOW_THRESHOLD,
     CONF_HIGH_THRESHOLD,
     CONF_TEMP_SENSOR,
+    CONF_TEMP_STEP,
     DEFAULT_LOW_THRESHOLD,
     DEFAULT_HIGH_THRESHOLD,
     DEFAULT_TEMP_SENSOR,
+    DEFAULT_TEMP_STEP,
     MODE_STANDBY,
     MODE_FULL,
     MODE_MEDIUM,
@@ -40,7 +42,6 @@ _LOGGER = logging.getLogger(__name__)
 
 MIN_TEMP = 5.0
 MAX_TEMP_C = 36.0
-TEMP_STEP = 0.5
 DEFAULT_TARGET = 20.0
 
 
@@ -69,7 +70,6 @@ class MertikClimateEntity(MertikEntity, ClimateEntity, RestoreEntity):
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_min_temp = MIN_TEMP
     _attr_max_temp = MAX_TEMP_C
-    _attr_target_temperature_step = TEMP_STEP
     _attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT]
     _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
 
@@ -103,6 +103,10 @@ class MertikClimateEntity(MertikEntity, ClimateEntity, RestoreEntity):
     @property
     def _temp_sensor_entity_id(self) -> str:
         return self._get_option(CONF_TEMP_SENSOR, DEFAULT_TEMP_SENSOR)
+
+    @property
+    def target_temperature_step(self) -> float:
+        return float(self._get_option(CONF_TEMP_STEP, DEFAULT_TEMP_STEP))
 
     # ---- Temperature reading --------------------------------------------
 
@@ -149,7 +153,9 @@ class MertikClimateEntity(MertikEntity, ClimateEntity, RestoreEntity):
         temp = kwargs.get(ATTR_TEMPERATURE)
         if temp is None:
             return
-        self._target_temp = max(MIN_TEMP, min(MAX_TEMP_C, round(float(temp) * 2) / 2.0))
+        step = self.target_temperature_step
+        snapped = round(round(float(temp) / step) * step, 2)
+        self._target_temp = max(MIN_TEMP, min(MAX_TEMP_C, snapped))
         self._last_applied_mode = None  # force re-evaluation on next poll
         self.async_write_ha_state()
         _LOGGER.debug("Thermostat setpoint -> %.1f C", self._target_temp)

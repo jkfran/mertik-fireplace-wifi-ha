@@ -12,6 +12,10 @@ DEFAULT_LOW_THRESHOLD = 1.0  # within 1C below setpoint -> Low Heat
 DEFAULT_HIGH_THRESHOLD = 2.0  # more than 2C below setpoint -> Full Heat
 DEFAULT_TEMP_SENSOR = ""  # empty = use fireplace handset sensor
 
+# Thermostat setpoint step
+CONF_TEMP_STEP = "temperature_step"
+DEFAULT_TEMP_STEP = 0.1
+
 # Heating mode select options
 MODE_OFF = "Off"  # kept for compatibility, not shown in UI
 MODE_STANDBY = "Standby"  # pilot only; shown by thermostat when room is warm
