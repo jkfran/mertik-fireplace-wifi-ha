@@ -186,7 +186,7 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
     def light_brightness(self) -> int:
         return self._light_brightness
 
-    def apply_heating_mode(self, mode: str) -> None:
+    def apply_heating_mode(self, mode: str | None) -> None:
         """Apply a named heating mode to the physical fireplace.
 
         Standby is handled first -- it must never trigger ignition regardless

@@ -141,10 +141,10 @@ rules:
   test_coverage:
     status: done
     comment: >
-      100% statement coverage across all 13 modules (870 statements, 0 missing).
-      318 tests covering all platform setup, entity properties, coordinator logic,
-      thermostatic control paths, asyncio reconnection edge cases, and config/options
-      flow including _temp_sensor_options.
+      100% statement coverage across all 13 modules (949 statements, 0 missing).
+      341 tests covering all platform setup, entity properties, coordinator logic,
+      thermostatic control paths, config/options flow including _temp_sensor_options,
+      configurable setpoint step, and invalid_temp_step validation.
 
   # ── Gold ────────────────────────────────────────────────────────────────────
   devices:
@@ -287,10 +287,10 @@ rules:
   async_dependency:
     status: done
     comment: >
-      mertik.py rewritten to use asyncio.open_connection (StreamReader/StreamWriter)
-      instead of blocking socket I/O. All coordinator command methods are async def
-      and are awaited directly — no async_add_executor_job calls remain. Read
-      timeouts use asyncio.wait_for; reconnection uses asyncio.sleep.
+      mertik.py uses blocking socket I/O (stdlib socket module) wrapped entirely
+      in async_add_executor_job calls in the coordinator. No blocking calls are
+      made directly on the event loop. The integration has no external PyPI
+      dependencies so there are no third-party async compatibility concerns.
 
   inject_websession:
     status: exempt
@@ -301,5 +301,5 @@ rules:
   strict_typing:
     status: done
     comment: >
-      All modules carry complete type annotations, mypy strict mode passes
-      with zero errors, and a py.typed marker file is present.
+      All modules carry complete type annotations and mypy strict mode passes
+      with zero errors across all 13 source files.

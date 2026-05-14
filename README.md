@@ -182,6 +182,7 @@ so the IP does not change.
 | **Temperature sensor** | HA temperature sensor entity to use for thermostatic control. Leave empty to use the Mertik handset's built-in sensor. Any `sensor` entity with `device_class: temperature` appears in the dropdown. |
 | **Low Heat threshold** | See above. Can be adjusted without restarting HA. |
 | **Full Heat threshold** | See above. Can be adjusted without restarting HA. |
+| **Thermostat setpoint step** | Increment for the thermostat temperature slider (degrees °C). Default: `0.1`. Must be greater than 0. |
 
 ### Removing the integration
 

@@ -12,6 +12,7 @@ from custom_components.mertik.const import (
     CONF_LOW_THRESHOLD,
     CONF_HIGH_THRESHOLD,
     CONF_TEMP_SENSOR,
+    CONF_TEMP_STEP,
     DEFAULT_LOW_THRESHOLD,
     DEFAULT_HIGH_THRESHOLD,
 )
@@ -366,6 +367,25 @@ async def test_options_flow_rejects_invalid_thresholds(
     )
     assert result["type"] == FlowResultType.FORM
     assert result["errors"] == {"base": "invalid_thresholds"}
+
+
+async def test_options_flow_rejects_invalid_temp_step(
+    hass: HomeAssistant, mock_connection_success
+):
+    """Test that a zero or negative temperature step is rejected."""
+    entry = await _create_entry(hass, mock_connection_success)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_LOW_THRESHOLD: 1.0,
+            CONF_HIGH_THRESHOLD: 2.0,
+            CONF_TEMP_SENSOR: "",
+            CONF_TEMP_STEP: 0.0,
+        },
+    )
+    assert result["type"] == FlowResultType.FORM
+    assert result["errors"] == {CONF_TEMP_STEP: "invalid_temp_step"}
 
 
 async def test_options_flow_previous_sensor_gone_falls_back(
