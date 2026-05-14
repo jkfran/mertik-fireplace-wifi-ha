@@ -12,7 +12,9 @@ class MertikEntity(CoordinatorEntity[MertikDataCoordinator]):
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator: MertikDataCoordinator, entry_id: str, device_name: str) -> None:
+    def __init__(
+        self, coordinator: MertikDataCoordinator, entry_id: str, device_name: str
+    ) -> None:
         super().__init__(coordinator)
         self._dataservice: MertikDataCoordinator = coordinator
         self._attr_device_info = DeviceInfo(

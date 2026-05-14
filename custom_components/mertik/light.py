@@ -47,7 +47,9 @@ class MertikLightEntity(MertikEntity, LightEntity, RestoreEntity):
     _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
     _attr_assumed_state = True
 
-    def __init__(self, dataservice: MertikDataCoordinator, entry_id: str, device_name: str) -> None:
+    def __init__(
+        self, dataservice: MertikDataCoordinator, entry_id: str, device_name: str
+    ) -> None:
         super().__init__(dataservice, entry_id, device_name)
         self._attr_unique_id = entry_id + "-Light"
         self._is_on = False

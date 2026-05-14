@@ -333,7 +333,7 @@ class TestLightBrightness:
         mock_connection.send.reset_mock()
         mertik_device.set_light_brightness(128)
         cmd_bytes = mock_connection.send.call_args[0][0]
-        payload = cmd_bytes.hex()[len(send_command_prefix):]
+        payload = cmd_bytes.hex()[len(send_command_prefix) :]
         device_code = payload[8:12]
         assert device_code == "4141"
 
@@ -342,7 +342,7 @@ class TestLightBrightness:
         mock_connection.send.reset_mock()
         mertik_device.set_light_brightness(96)
         cmd_bytes = mock_connection.send.call_args[0][0]
-        payload = cmd_bytes.hex()[len(send_command_prefix):]
+        payload = cmd_bytes.hex()[len(send_command_prefix) :]
         device_code = payload[8:12]
         assert device_code == "3939"
 
@@ -382,11 +382,12 @@ class TestSocketReconnection:
         new_socket = MagicMock()
         new_socket.recv.return_value = _build_status_bytes()
 
-        with patch(
-            "custom_components.mertik.mertik.socket.socket",
-            return_value=new_socket,
-        ) as mock_cls, patch(
-            "custom_components.mertik.mertik.time.sleep"
+        with (
+            patch(
+                "custom_components.mertik.mertik.socket.socket",
+                return_value=new_socket,
+            ) as mock_cls,
+            patch("custom_components.mertik.mertik.time.sleep"),
         ):
             device = self._make_device(mock_socket)
             device.refresh_status()
@@ -408,11 +409,12 @@ class TestSocketReconnection:
         new_socket = MagicMock()
         new_socket.recv.return_value = _build_status_bytes()
 
-        with patch(
-            "custom_components.mertik.mertik.socket.socket",
-            return_value=new_socket,
-        ) as mock_cls, patch(
-            "custom_components.mertik.mertik.time.sleep"
+        with (
+            patch(
+                "custom_components.mertik.mertik.socket.socket",
+                return_value=new_socket,
+            ) as mock_cls,
+            patch("custom_components.mertik.mertik.time.sleep"),
         ):
             device = self._make_device(mock_socket)
             device.refresh_status()
@@ -477,9 +479,7 @@ class TestSendCommandEdgeCases:
         device._fault_code = 0
         return device
 
-    def test_timeout_on_recv_returns_gracefully(
-        self, mock_socket: MagicMock
-    ) -> None:
+    def test_timeout_on_recv_returns_gracefully(self, mock_socket: MagicMock) -> None:
         mock_socket.recv.side_effect = socket.timeout
         device = self._make_device(mock_socket)
         device.refresh_status()  # must not raise
@@ -493,16 +493,17 @@ class TestSendCommandEdgeCases:
         with patch.object(device, "_reconnect"):
             device.refresh_status()  # logs error and returns
 
-    def test_reconnect_close_exception_swallowed(
-        self, mock_socket: MagicMock
-    ) -> None:
+    def test_reconnect_close_exception_swallowed(self, mock_socket: MagicMock) -> None:
         mock_socket.close.side_effect = Exception("Close failed")
         new_socket = MagicMock()
         new_socket.recv.return_value = _build_status_bytes()
-        with patch(
-            "custom_components.mertik.mertik.socket.socket",
-            return_value=new_socket,
-        ), patch("custom_components.mertik.mertik.time.sleep"):
+        with (
+            patch(
+                "custom_components.mertik.mertik.socket.socket",
+                return_value=new_socket,
+            ),
+            patch("custom_components.mertik.mertik.time.sleep"),
+        ):
             device = self._make_device(mock_socket)
             device._reconnect()  # close exception must be swallowed
 
@@ -531,23 +532,41 @@ class TestStatusParsingEdgeCases:
 
     def test_invalid_flame_byte_no_crash(self, mertik_device):
         # "ZZ" at [18:20] is non-hex → ValueError caught
-        status_str = "303030300003" + "C6" + "FF" + "80" + "ZZ" + "00" + "040000006600" + "E6"
+        status_str = (
+            "303030300003" + "C6" + "FF" + "80" + "ZZ" + "00" + "040000006600" + "E6"
+        )
         mertik_device._process_status(status_str)  # must not raise
 
     def test_invalid_status_bits_no_crash(self, mertik_device):
         # "ZZ" at [16:18] means status_bits "ZZ8F" is non-hex → ValueError caught
-        status_str = "303030300003" + "C6" + "FF" + "ZZ" + "8F" + "00" + "040000006600" + "E6"
+        status_str = (
+            "303030300003" + "C6" + "FF" + "ZZ" + "8F" + "00" + "040000006600" + "E6"
+        )
         mertik_device._process_status(status_str)  # must not raise
 
     def test_invalid_temp_no_crash(self, mertik_device):
         # "ZZ" at [34:36] (ambient temp position) is non-hex → ValueError caught
-        status_str = "303030300003" + "C6" + "FF" + "80" + "8F" + "00" + "040000006600" + "ZZ"
+        status_str = (
+            "303030300003" + "C6" + "FF" + "80" + "8F" + "00" + "040000006600" + "ZZ"
+        )
         mertik_device._process_status(status_str)  # must not raise
 
     def test_invalid_handset_fault_no_crash(self, mertik_device):
         # "ZZ" at [28:30] (handset fault position) is non-hex → ValueError caught
         status_str = (
-            "303030300003" + "C6" + "FF" + "80" + "8F" + "00" + "04" + "00" + "00" + "ZZ" + "66" + "00" + "E6"
+            "303030300003"
+            + "C6"
+            + "FF"
+            + "80"
+            + "8F"
+            + "00"
+            + "04"
+            + "00"
+            + "00"
+            + "ZZ"
+            + "66"
+            + "00"
+            + "E6"
         )
         mertik_device._process_status(status_str)  # must not raise
 
@@ -666,7 +685,11 @@ class TestAllFlameHeightSteps:
 
     @pytest.mark.parametrize("step,hex_code", EXPECTED_STEPS)
     def test_flame_step(
-        self, mertik_device: Mertik, mock_connection: MagicMock, step: int, hex_code: str
+        self,
+        mertik_device: Mertik,
+        mock_connection: MagicMock,
+        step: int,
+        hex_code: str,
     ) -> None:
         mock_connection.send.reset_mock()
         mertik_device.set_flame_height(step)

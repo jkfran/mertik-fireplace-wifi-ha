@@ -47,7 +47,9 @@ def _temp_sensor_options(hass: HomeAssistant) -> dict[str, str]:
 class MertikConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Initial setup: name, host, thresholds."""
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
             host = user_input[CONF_HOST]
@@ -119,12 +121,8 @@ class MertikConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         schema = vol.Schema(
             {
-                vol.Required(
-                    CONF_NAME, default=entry.data.get(CONF_NAME, "")
-                ): str,
-                vol.Required(
-                    CONF_HOST, default=entry.data.get(CONF_HOST, "")
-                ): str,
+                vol.Required(CONF_NAME, default=entry.data.get(CONF_NAME, "")): str,
+                vol.Required(CONF_HOST, default=entry.data.get(CONF_HOST, "")): str,
                 vol.Optional(
                     CONF_LOW_THRESHOLD,
                     default=entry.data.get(CONF_LOW_THRESHOLD, DEFAULT_LOW_THRESHOLD),
@@ -140,7 +138,9 @@ class MertikConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     @staticmethod
-    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> "MertikOptionsFlow":
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> "MertikOptionsFlow":
         return MertikOptionsFlow(config_entry)
 
 
@@ -154,7 +154,9 @@ class MertikOptionsFlow(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._entry = config_entry
 
-    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
 
         # Current values (prefer options over data for previously set values)
@@ -170,10 +172,12 @@ class MertikOptionsFlow(config_entries.OptionsFlow):
             CONF_TEMP_SENSOR,
             self._entry.data.get(CONF_TEMP_SENSOR, DEFAULT_TEMP_SENSOR),
         )
-        current_step = float(self._entry.options.get(
-            CONF_TEMP_STEP,
-            self._entry.data.get(CONF_TEMP_STEP, DEFAULT_TEMP_STEP),
-        ))
+        current_step = float(
+            self._entry.options.get(
+                CONF_TEMP_STEP,
+                self._entry.data.get(CONF_TEMP_STEP, DEFAULT_TEMP_STEP),
+            )
+        )
 
         if user_input is not None:
             low = user_input.get(CONF_LOW_THRESHOLD, current_low)
@@ -203,9 +207,7 @@ class MertikOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(CONF_HIGH_THRESHOLD, default=current_high): vol.Coerce(
                     float
                 ),
-                vol.Optional(CONF_TEMP_STEP, default=current_step): vol.Coerce(
-                    float
-                ),
+                vol.Optional(CONF_TEMP_STEP, default=current_step): vol.Coerce(float),
             }
         )
         return self.async_show_form(

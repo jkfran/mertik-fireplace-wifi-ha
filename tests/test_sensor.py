@@ -1,7 +1,5 @@
 """Tests for sensor entities (temperature and fault code)."""
 
-from unittest.mock import MagicMock
-
 import pytest
 
 from homeassistant.components.sensor import SensorDeviceClass
@@ -117,7 +115,9 @@ class TestFaultCodeSensor:
 class TestSensorPlatformSetup:
     """Test sensor platform async_setup_entry."""
 
-    async def test_creates_two_entities(self, hass, mock_coordinator, mock_config_entry):
+    async def test_creates_two_entities(
+        self, hass, mock_coordinator, mock_config_entry
+    ):
         mock_coordinator.fault_code = 0
         mock_config_entry.runtime_data = mock_coordinator
         added = []

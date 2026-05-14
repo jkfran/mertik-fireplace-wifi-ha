@@ -38,7 +38,9 @@ class MertikFlameHeightEntity(MertikEntity, NumberEntity):
     _attr_native_max_value = 13
     _attr_native_step = 1
 
-    def __init__(self, dataservice: MertikDataCoordinator, entry_id: str, device_name: str) -> None:
+    def __init__(
+        self, dataservice: MertikDataCoordinator, entry_id: str, device_name: str
+    ) -> None:
         super().__init__(dataservice, entry_id, device_name)
         self._attr_unique_id = entry_id + "-FlameHeight"
 

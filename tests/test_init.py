@@ -26,11 +26,15 @@ PLATFORMS = ["switch", "number", "sensor", "light", "climate", "select"]
 @pytest.fixture
 def mock_config_entry_ha():
     """Config entry mock with HA-compatible attributes."""
-    entry = MagicMock()
-    entry.entry_id = "test_entry_abc"
-    entry.data = {"name": "Test Fire", "host": "192.168.1.55"}
-    entry.options = {}
-    return entry
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    return MockConfigEntry(
+        domain="mertik",
+        entry_id="test_entry_abc",
+        title="Test Fire",
+        data={"name": "Test Fire", "host": "192.168.1.55"},
+        options={},
+    )
 
 
 class TestAsyncSetup:
@@ -207,7 +211,9 @@ class TestAsyncUnloadEntry:
         result = await async_unload_entry(hass, entry_with_runtime_data)
         assert result is False
 
-    async def test_does_not_close_socket_on_failure(self, hass, entry_with_runtime_data):
+    async def test_does_not_close_socket_on_failure(
+        self, hass, entry_with_runtime_data
+    ):
         self.mock_unload.return_value = False
         await async_unload_entry(hass, entry_with_runtime_data)
         entry_with_runtime_data.runtime_data.mertik.close.assert_not_called()

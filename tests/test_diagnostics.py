@@ -1,11 +1,10 @@
 """Tests for diagnostics."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from custom_components.mertik.diagnostics import async_get_config_entry_diagnostics
-from custom_components.mertik.const import DOMAIN
 
 
 @pytest.fixture
@@ -34,7 +33,9 @@ async def test_diagnostics_redacts_host(hass, mock_entry, mock_coordinator):
     assert result["entry_data"]["name"] == "My Fireplace"
 
 
-async def test_diagnostics_includes_coordinator_state(hass, mock_entry, mock_coordinator):
+async def test_diagnostics_includes_coordinator_state(
+    hass, mock_entry, mock_coordinator
+):
     mock_coordinator.is_on = True
     mock_coordinator.is_aux_on = True
     mock_coordinator.ambient_temperature = 22.0

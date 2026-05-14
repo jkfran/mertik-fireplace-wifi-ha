@@ -46,7 +46,9 @@ class TestOnOffSwitch:
         mock_coordinator.is_on = True
         assert switch.is_on is True
 
-    async def test_turn_on_unknown_mode_calls_apply_heating_mode(self, switch, mock_coordinator):
+    async def test_turn_on_unknown_mode_calls_apply_heating_mode(
+        self, switch, mock_coordinator
+    ):
         """Fireplace On with no mode set calls apply_heating_mode(None) — graceful fallback."""
         mock_coordinator.heating_mode = None
         await switch.async_turn_on()
@@ -84,7 +86,12 @@ class TestOnOffSwitch:
         after ignition completes.  Calling ignite_fireplace() directly bypasses
         the settle timer and leaves the fire at the post-ignition default.
         """
-        from custom_components.mertik.const import MODE_FULL, MODE_MEDIUM, MODE_LOW, MODE_STANDBY
+        from custom_components.mertik.const import (
+            MODE_FULL,
+            MODE_MEDIUM,
+            MODE_LOW,
+            MODE_STANDBY,
+        )
 
         for mode in (MODE_FULL, MODE_MEDIUM, MODE_LOW, MODE_STANDBY):
             mock_coordinator.reset_mock()
@@ -92,8 +99,9 @@ class TestOnOffSwitch:
             await switch.async_turn_on()
             mock_coordinator.mark_optimistic_on.assert_called_once()
             mock_coordinator.apply_heating_mode.assert_called_once_with(mode)
-            mock_coordinator.ignite_fireplace.assert_not_called(), (
-                f"ignite_fireplace must not be called directly for mode={mode}"
+            (
+                mock_coordinator.ignite_fireplace.assert_not_called(),
+                (f"ignite_fireplace must not be called directly for mode={mode}"),
             )
 
     async def test_turn_off(self, switch, mock_coordinator):

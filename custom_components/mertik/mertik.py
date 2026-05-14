@@ -62,7 +62,7 @@ STATUS_FLAME_HEIGHT = slice(18, 20)
 STATUS_MODE_BYTE = slice(24, 26)
 STATUS_HANDSET_FAULT = slice(28, 30)  # 0x00=OK, 0x06=F44 (handset disconnected)
 STATUS_INTERNAL_TEMP = slice(30, 32)  # near-firebox sensor, ~10°C, not useful
-STATUS_AMBIENT_TEMP = slice(34, 36)   # actual room temperature
+STATUS_AMBIENT_TEMP = slice(34, 36)  # actual room temperature
 
 # Maps raw handset-fault byte values to Mertik F-code numbers.
 # The byte at STATUS_HANDSET_FAULT (position [28:30]) encodes handset errors
@@ -237,9 +237,7 @@ class Mertik:
         snapped = max(5.0, min(36.0, snapped))
         half_degrees = int(snapped * 2)
         hex_chars = f"{half_degrees:02X}"
-        self._send_command(
-            f"{CMD_THERMOSTAT_PREFIX}{hex_chars}{CMD_THERMOSTAT_SUFFIX}"
-        )
+        self._send_command(f"{CMD_THERMOSTAT_PREFIX}{hex_chars}{CMD_THERMOSTAT_SUFFIX}")
 
     def get_flame_height(self) -> int:
         """Return locally tracked flame height (command-based, not status-based).
@@ -264,7 +262,7 @@ class Mertik:
         return format(int(hex_str, 16), "b").zfill(len(hex_str) * 4)
 
     def _bit_at(self, hex_str: str, index: int) -> bool:
-        return self._hex_to_bin(hex_str)[index: index + 1] == "1"
+        return self._hex_to_bin(hex_str)[index : index + 1] == "1"
 
     def _reconnect(self) -> None:
         """Reconnect and re-run startup sequence."""

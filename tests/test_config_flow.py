@@ -13,8 +13,6 @@ from custom_components.mertik.const import (
     CONF_HIGH_THRESHOLD,
     CONF_TEMP_SENSOR,
     CONF_TEMP_STEP,
-    DEFAULT_LOW_THRESHOLD,
-    DEFAULT_HIGH_THRESHOLD,
 )
 
 from custom_components.mertik.const import DOMAIN
@@ -194,7 +192,10 @@ async def test_reconfigure_shows_form(hass: HomeAssistant, mock_connection_succe
     entry = await _create_entry(hass, mock_connection_success)
     result = await hass.config_entries.flow.async_init(
         DOMAIN,
-        context={"source": config_entries.SOURCE_RECONFIGURE, "entry_id": entry.entry_id},
+        context={
+            "source": config_entries.SOURCE_RECONFIGURE,
+            "entry_id": entry.entry_id,
+        },
     )
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "reconfigure"
@@ -207,7 +208,10 @@ async def test_reconfigure_updates_host_and_name(
     entry = await _create_entry(hass, mock_connection_success)
     result = await hass.config_entries.flow.async_init(
         DOMAIN,
-        context={"source": config_entries.SOURCE_RECONFIGURE, "entry_id": entry.entry_id},
+        context={
+            "source": config_entries.SOURCE_RECONFIGURE,
+            "entry_id": entry.entry_id,
+        },
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
@@ -226,7 +230,10 @@ async def test_reconfigure_same_host_name_change(
     entry = await _create_entry(hass, mock_connection_success)
     result = await hass.config_entries.flow.async_init(
         DOMAIN,
-        context={"source": config_entries.SOURCE_RECONFIGURE, "entry_id": entry.entry_id},
+        context={
+            "source": config_entries.SOURCE_RECONFIGURE,
+            "entry_id": entry.entry_id,
+        },
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
@@ -244,7 +251,10 @@ async def test_reconfigure_connection_failure(
     entry = await _create_entry(hass, mock_connection_success)
     result = await hass.config_entries.flow.async_init(
         DOMAIN,
-        context={"source": config_entries.SOURCE_RECONFIGURE, "entry_id": entry.entry_id},
+        context={
+            "source": config_entries.SOURCE_RECONFIGURE,
+            "entry_id": entry.entry_id,
+        },
     )
     with patch(
         "custom_components.mertik.config_flow._test_connection", return_value=False
@@ -264,7 +274,10 @@ async def test_reconfigure_invalid_thresholds(
     entry = await _create_entry(hass, mock_connection_success)
     result = await hass.config_entries.flow.async_init(
         DOMAIN,
-        context={"source": config_entries.SOURCE_RECONFIGURE, "entry_id": entry.entry_id},
+        context={
+            "source": config_entries.SOURCE_RECONFIGURE,
+            "entry_id": entry.entry_id,
+        },
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
@@ -296,7 +309,10 @@ async def test_reconfigure_duplicate_host(hass: HomeAssistant, mock_connection_s
     # Try to reconfigure entry1 to use entry2's host
     result = await hass.config_entries.flow.async_init(
         DOMAIN,
-        context={"source": config_entries.SOURCE_RECONFIGURE, "entry_id": entry1.entry_id},
+        context={
+            "source": config_entries.SOURCE_RECONFIGURE,
+            "entry_id": entry1.entry_id,
+        },
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
@@ -452,11 +468,13 @@ async def test_temp_sensor_options_with_registered_sensors(hass: HomeAssistant):
     from custom_components.mertik.const import DOMAIN
 
     hass.states.async_set(
-        "sensor.living_room", "22.5",
+        "sensor.living_room",
+        "22.5",
         {"device_class": SensorDeviceClass.TEMPERATURE, "friendly_name": "Living Room"},
     )
     hass.states.async_set(
-        "sensor.mertik_internal", "21.0",
+        "sensor.mertik_internal",
+        "21.0",
         {"device_class": SensorDeviceClass.TEMPERATURE},
     )
     # sensor.no_state intentionally has no state → exercises the `continue` branch

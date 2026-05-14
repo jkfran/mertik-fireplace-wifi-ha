@@ -1,6 +1,5 @@
 from datetime import datetime, timedelta
 import logging
-from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -17,7 +16,9 @@ OPTIMISTIC_OFF_SECONDS = 20
 
 
 class MertikDataCoordinator(DataUpdateCoordinator[None]):
-    def __init__(self, hass: HomeAssistant, mertik: Mertik, entry: ConfigEntry | None = None) -> None:
+    def __init__(
+        self, hass: HomeAssistant, mertik: Mertik, entry: ConfigEntry | None = None
+    ) -> None:
         super().__init__(
             hass,
             _LOGGER,
@@ -29,15 +30,25 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         self._optimistic_on_until: datetime | None = None
         self._optimistic_off_until: datetime | None = None
         self._prev_is_on: bool = False
-        self.fire_just_turned_off: bool = False  # set True for one cycle when fire turns off
+        self.fire_just_turned_off: bool = (
+            False  # set True for one cycle when fire turns off
+        )
         self._in_standby: bool = False  # True when thermostatic standby is active
         self._pending_mode: str | None = None  # mode to apply once ignition completes
-        self._pending_mode_since: datetime | None = None  # when _pending_mode was set (for timeout)
-        self._heating_mode: str | None = None  # current mode set by the Heating Mode select entity
+        self._pending_mode_since: datetime | None = (
+            None  # when _pending_mode was set (for timeout)
+        )
+        self._heating_mode: str | None = (
+            None  # current mode set by the Heating Mode select entity
+        )
         self._was_igniting: bool = False  # tracks igniting falling edge
-        self._flame_on_since: datetime | None = None  # timestamp when flame first lit after ignite
+        self._flame_on_since: datetime | None = (
+            None  # timestamp when flame first lit after ignite
+        )
         self._settle_seconds: int = 35  # seconds to wait after flame_on before aux_off
-        self._ignition_timeout_seconds: int = 120  # abandon pending mode after this many seconds
+        self._ignition_timeout_seconds: int = (
+            120  # abandon pending mode after this many seconds
+        )
         self._is_light_on: bool = False
         self._light_brightness: int = 0
 
@@ -91,7 +102,7 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         self._optimistic_off_until = None
         self.mertik.guard_flame_off()
         self._in_standby = False
-        self._pending_mode = None        # discard any in-flight ignition/mode sequence
+        self._pending_mode = None  # discard any in-flight ignition/mode sequence
         self._pending_mode_since = None
         self._flame_on_since = None
         # Signal light entity that fire turned off (device kills light too)

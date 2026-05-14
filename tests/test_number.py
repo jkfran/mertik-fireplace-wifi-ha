@@ -1,7 +1,5 @@
 """Tests for number entity (flame height)."""
 
-from unittest.mock import MagicMock
-
 import pytest
 
 from homeassistant.helpers.entity import EntityCategory

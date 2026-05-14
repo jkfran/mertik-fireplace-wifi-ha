@@ -3,7 +3,9 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.mertik.const import DOMAIN
 from custom_components.mertik.mertik import Mertik
 
 
@@ -40,12 +42,15 @@ def mock_coordinator():
 
 
 @pytest.fixture
-def mock_config_entry():
-    """Return a mock config entry."""
-    entry = MagicMock()
-    entry.entry_id = "test_entry_123"
-    entry.data = {"name": "My Fireplace", "host": "192.168.1.100"}
-    return entry
+def mock_config_entry() -> MockConfigEntry:
+    """Return a MockConfigEntry for entity unit tests."""
+    return MockConfigEntry(
+        domain=DOMAIN,
+        entry_id="test_entry_123",
+        title="My Fireplace",
+        data={"name": "My Fireplace", "host": "192.168.1.100"},
+        options={},
+    )
 
 
 @pytest.fixture

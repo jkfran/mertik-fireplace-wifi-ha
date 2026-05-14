@@ -1,7 +1,7 @@
 """Tests for the MertikDataCoordinator."""
 
 from datetime import timedelta
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -313,12 +313,16 @@ class TestThermostaticIgnitionGuard:
         self, coordinator_standby, mock_mertik
     ):
         """standby() sets _in_standby (and sends CMD_STANDBY) when fire is on."""
-        coordinator_standby._in_standby = False  # fire physically on but not in standby yet
+        coordinator_standby._in_standby = (
+            False  # fire physically on but not in standby yet
+        )
         coordinator_standby.standby()
         mock_mertik.standBy.assert_called_once()
         assert coordinator_standby._in_standby is True
 
-    async def test_standby_blocked_during_optimistic_off_window(self, coordinator, mock_mertik):
+    async def test_standby_blocked_during_optimistic_off_window(
+        self, coordinator, mock_mertik
+    ):
         """standby() during the optimistic-off window must be a no-op.
 
         A stale _do_standby task from the thermostatic logic can run after the
@@ -342,7 +346,9 @@ class TestThermostaticIgnitionGuard:
         mock_mertik.standBy.assert_not_called()
         assert coordinator._in_standby is False
 
-    async def test_standby_allowed_when_fire_physically_on(self, coordinator, mock_mertik):
+    async def test_standby_allowed_when_fire_physically_on(
+        self, coordinator, mock_mertik
+    ):
         """standby() proceeds when the device reports the fire is running."""
         mock_mertik.is_flame_on = True
         coordinator.standby()
@@ -359,7 +365,9 @@ class TestThermostaticIgnitionGuard:
         assert coordinator._pending_mode_since is None
         assert coordinator._flame_on_since is None
 
-    async def test_arm_thermostatic_works_from_fully_off(self, coordinator_off, mock_mertik):
+    async def test_arm_thermostatic_works_from_fully_off(
+        self, coordinator_off, mock_mertik
+    ):
         """arm_thermostatic() must send CMD_STANDBY even when fire is off.
 
         standby() refuses to send CMD_STANDBY when is_on=False (to prevent
@@ -536,7 +544,12 @@ class TestThermostaticScenarios:
         The Fireplace switch being off takes precedence over the thermostat at
         all times. All three heat modes and Standby are checked.
         """
-        from custom_components.mertik.const import MODE_LOW, MODE_MEDIUM, MODE_FULL, MODE_STANDBY
+        from custom_components.mertik.const import (
+            MODE_LOW,
+            MODE_MEDIUM,
+            MODE_FULL,
+            MODE_STANDBY,
+        )
 
         mock_mertik.is_flame_on = False
         mock_mertik.is_igniting = False
@@ -545,8 +558,11 @@ class TestThermostaticScenarios:
         for mode in (MODE_FULL, MODE_MEDIUM, MODE_LOW, MODE_STANDBY):
             mock_mertik.reset_mock()
             coord.apply_heating_mode(mode)
-            mock_mertik.ignite_fireplace.assert_not_called(), (
-                f"ignite_fireplace must not be called when fire is off and mode={mode}"
+            (
+                mock_mertik.ignite_fireplace.assert_not_called(),
+                (
+                    f"ignite_fireplace must not be called when fire is off and mode={mode}"
+                ),
             )
 
     # ── Scenario 1: above setpoint -> Standby, no ignition ───────────────────
@@ -663,9 +679,7 @@ class TestThermostaticScenarios:
         assert coord._pending_mode == "Low Heat"
 
     # ── Scenario 6: previously ignited (standby/pilot), temp drops -> Low Heat ─
-    async def test_scenario_06_from_standby_pilot_to_low_heat(
-        self, coord, mock_mertik
-    ):
+    async def test_scenario_06_from_standby_pilot_to_low_heat(self, coord, mock_mertik):
         """Fire in standby (pilot lit). 0.1C drop -> Low Heat, no re-ignition."""
         mock_mertik.is_flame_on = True  # pilot keeps flame_on True
         mock_mertik.is_igniting = False
@@ -682,9 +696,7 @@ class TestThermostaticScenarios:
         mock_mertik.set_flame_height.assert_called_with(FLAME_MIN)
 
     # ── Scenario 6b: standby with dead pilot -> re-ignite ────────────────────
-    async def test_scenario_06b_standby_pilot_died_reignites(
-        self, coord, mock_mertik
-    ):
+    async def test_scenario_06b_standby_pilot_died_reignites(self, coord, mock_mertik):
         """Standby mode but pilot has gone out: must re-ignite, not send flame commands.
 
         is_flame_on=False while _in_standby=True means the device extinguished while
@@ -707,9 +719,7 @@ class TestThermostaticScenarios:
         assert coord._in_standby is False
 
     # ── Scenario 7: Low Heat, temp rises above setpoint -> Standby ───────────
-    async def test_scenario_07_low_heat_to_standby_on_warmup(
-        self, coord, mock_mertik
-    ):
+    async def test_scenario_07_low_heat_to_standby_on_warmup(self, coord, mock_mertik):
         """Room warms above setpoint from Low Heat -> Standby. Pilot stays lit."""
         mock_mertik.is_flame_on = True
         coord._in_standby = False

@@ -101,7 +101,10 @@ class TestLightEntity:
         last_state = MagicMock()
         last_state.attributes = {ATTR_BRIGHTNESS: 200}
         with patch.object(
-            light, "async_get_last_state", new_callable=AsyncMock, return_value=last_state
+            light,
+            "async_get_last_state",
+            new_callable=AsyncMock,
+            return_value=last_state,
         ):
             await light.async_added_to_hass()
         assert light.brightness == 200
@@ -112,7 +115,10 @@ class TestLightEntity:
         last_state = MagicMock()
         last_state.attributes = {}
         with patch.object(
-            light, "async_get_last_state", new_callable=AsyncMock, return_value=last_state
+            light,
+            "async_get_last_state",
+            new_callable=AsyncMock,
+            return_value=last_state,
         ):
             await light.async_added_to_hass()
         assert light.brightness == 128
@@ -144,9 +150,7 @@ class TestLightEntity:
         mock_coordinator.fire_just_turned_off = True
         # _restore_light is scheduled as a task via async_create_task.
         # We patch it to avoid the entity_id requirement in unit tests.
-        with patch.object(
-            light, "_restore_light", new_callable=AsyncMock
-        ) as mock_restore:
+        with patch.object(light, "_restore_light", new_callable=AsyncMock):
             with patch.object(light, "async_write_ha_state"):
                 light._handle_coordinator_update()
         # The task was scheduled (hass.async_create_task called with _restore_light)

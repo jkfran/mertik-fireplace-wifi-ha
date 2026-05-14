@@ -52,7 +52,10 @@ class TestHeatingModeSelect:
         last_state = MagicMock()
         last_state.state = "Full Heat"
         with patch.object(
-            select, "async_get_last_state", new_callable=AsyncMock, return_value=last_state
+            select,
+            "async_get_last_state",
+            new_callable=AsyncMock,
+            return_value=last_state,
         ):
             await select.async_added_to_hass()
 
@@ -63,7 +66,10 @@ class TestHeatingModeSelect:
         last_state = MagicMock()
         last_state.state = "not_a_mode"
         with patch.object(
-            select, "async_get_last_state", new_callable=AsyncMock, return_value=last_state
+            select,
+            "async_get_last_state",
+            new_callable=AsyncMock,
+            return_value=last_state,
         ):
             await select.async_added_to_hass()
 
@@ -100,7 +106,9 @@ class TestHeatingModeSelect:
         mock_coordinator.apply_heating_mode.assert_not_called()
         mock_coordinator.async_set_updated_data.assert_called_once_with(None)
 
-    async def test_select_full_heat_calls_apply_heating_mode(self, select, mock_coordinator):
+    async def test_select_full_heat_calls_apply_heating_mode(
+        self, select, mock_coordinator
+    ):
         with patch.object(select, "async_write_ha_state"):
             await select.async_select_option("Full Heat")
 

@@ -32,7 +32,9 @@ class MertikHeatingModeSelect(MertikEntity, SelectEntity, RestoreEntity):
     _attr_options = HEATING_MODES
     _attr_entity_category = EntityCategory.CONFIG
 
-    def __init__(self, dataservice: MertikDataCoordinator, entry_id: str, device_name: str) -> None:
+    def __init__(
+        self, dataservice: MertikDataCoordinator, entry_id: str, device_name: str
+    ) -> None:
         super().__init__(dataservice, entry_id, device_name)
         self._attr_unique_id = entry_id + "-HeatingMode"
         self._current_mode = "Standby"

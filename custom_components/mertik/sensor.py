@@ -58,7 +58,9 @@ class MertikAmbientTemperatureSensorEntity(MertikEntity, SensorEntity):
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, dataservice: MertikDataCoordinator, entry_id: str, device_name: str) -> None:
+    def __init__(
+        self, dataservice: MertikDataCoordinator, entry_id: str, device_name: str
+    ) -> None:
         super().__init__(dataservice, entry_id, device_name)
         self._attr_unique_id = entry_id + "-AmbientTemperature"
 
@@ -73,7 +75,9 @@ class MertikFaultCodeSensorEntity(MertikEntity, SensorEntity):
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_options = ["none"] + list(FAULT_CODE_MAP.values())
 
-    def __init__(self, dataservice: MertikDataCoordinator, entry_id: str, device_name: str) -> None:
+    def __init__(
+        self, dataservice: MertikDataCoordinator, entry_id: str, device_name: str
+    ) -> None:
         super().__init__(dataservice, entry_id, device_name)
         self._attr_unique_id = entry_id + "-FaultCode"
 

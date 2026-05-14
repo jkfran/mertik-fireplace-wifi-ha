@@ -30,7 +30,9 @@ class MertikOnOffSwitchEntity(MertikEntity, SwitchEntity):
     _attr_name = None
     _attr_icon = "mdi:fireplace"
 
-    def __init__(self, dataservice: MertikDataCoordinator, entry_id: str, device_name: str) -> None:
+    def __init__(
+        self, dataservice: MertikDataCoordinator, entry_id: str, device_name: str
+    ) -> None:
         super().__init__(dataservice, entry_id, device_name)
         self._attr_unique_id = entry_id + "-OnOff"
 
@@ -59,7 +61,9 @@ class MertikOnOffSwitchEntity(MertikEntity, SwitchEntity):
 class MertikAuxOnOffSwitchEntity(MertikEntity, SwitchEntity):
     _attr_translation_key = "aux"
 
-    def __init__(self, dataservice: MertikDataCoordinator, entry_id: str, device_name: str) -> None:
+    def __init__(
+        self, dataservice: MertikDataCoordinator, entry_id: str, device_name: str
+    ) -> None:
         super().__init__(dataservice, entry_id, device_name)
         self._attr_unique_id = entry_id + "-AuxOnOff"
 

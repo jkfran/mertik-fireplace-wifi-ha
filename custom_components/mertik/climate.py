@@ -1,10 +1,9 @@
 """Climate entity -- thermostat setpoint display and thermostatic control logic."""
 
 from __future__ import annotations
+
 import logging
 from typing import Any, TypeVar
-
-_T = TypeVar("_T")
 
 from homeassistant.components.climate import (
     ClimateEntity,
@@ -35,6 +34,8 @@ from .const import (
     MODE_THERMO,
 )
 from .entity import MertikEntity
+
+_T = TypeVar("_T")
 
 PARALLEL_UPDATES = 1
 
@@ -73,12 +74,20 @@ class MertikClimateEntity(MertikEntity, ClimateEntity, RestoreEntity):
     _attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT]
     _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
 
-    def __init__(self, dataservice: MertikDataCoordinator, entry_id: str, device_name: str, entry: Any) -> None:
+    def __init__(
+        self,
+        dataservice: MertikDataCoordinator,
+        entry_id: str,
+        device_name: str,
+        entry: Any,
+    ) -> None:
         super().__init__(dataservice, entry_id, device_name)
         self._entry = entry
         self._attr_unique_id = entry_id + "-Thermostat"
         self._target_temp = DEFAULT_TARGET
-        self._last_applied_mode: str | None = None  # prevent re-sending same command every poll
+        self._last_applied_mode: str | None = (
+            None  # prevent re-sending same command every poll
+        )
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -200,15 +209,22 @@ class MertikClimateEntity(MertikEntity, ClimateEntity, RestoreEntity):
         if current is None:
             # Handset fault with no external sensor: the device cannot read room
             # temperature. Force standby rather than leaving burners at any heat level.
-            if not self._temp_sensor_entity_id and not self._dataservice.is_handset_connected:
+            if (
+                not self._temp_sensor_entity_id
+                and not self._dataservice.is_handset_connected
+            ):
                 _LOGGER.warning(
                     "Thermostatic: handset fault (F%d), no external sensor — forcing standby",
                     self._dataservice.fault_code,
                 )
                 if self._last_applied_mode != MODE_STANDBY:
                     self._last_applied_mode = MODE_STANDBY
+
                     async def _do_standby_fault() -> None:
-                        await self.hass.async_add_executor_job(self._dataservice.standby)
+                        await self.hass.async_add_executor_job(
+                            self._dataservice.standby
+                        )
+
                     self.hass.async_create_task(_do_standby_fault())
             else:
                 _LOGGER.debug("Thermostatic: no temperature reading, skipping")
@@ -249,10 +265,12 @@ class MertikClimateEntity(MertikEntity, ClimateEntity, RestoreEntity):
                     current,
                     self._target_temp,
                 )
+
                 # Do NOT call mark_optimistic_off here -- _in_standby keeps is_on
                 # True so the Fireplace switch stays on while in thermostatic standby.
                 async def _do_standby() -> None:
                     await self.hass.async_add_executor_job(self._dataservice.standby)
+
                 self.hass.async_create_task(_do_standby())
         else:
             # Reset _last_applied_mode when fire is off so we re-evaluate as
@@ -267,8 +285,10 @@ class MertikClimateEntity(MertikEntity, ClimateEntity, RestoreEntity):
                 diff,
                 sensor_id,
             )
+
             async def _do_apply(mode: str = target_mode) -> None:
                 await self.hass.async_add_executor_job(
                     self._dataservice.apply_heating_mode, mode
                 )
+
             self.hass.async_create_task(_do_apply())
