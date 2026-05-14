@@ -60,7 +60,16 @@ STATUS_FLAME_HEIGHT = slice(18, 20)
 # (handset out of range for 1.5 h), then look for unusual "no status packet"
 # entries in the log that appear when the app shows the error code.
 STATUS_MODE_BYTE = slice(24, 26)
-STATUS_AMBIENT_TEMP = slice(30, 32)
+STATUS_HANDSET_FAULT = slice(28, 30)  # 0x00=OK, 0x06=F44 (handset disconnected)
+STATUS_INTERNAL_TEMP = slice(30, 32)  # near-firebox sensor, ~10°C, not useful
+STATUS_AMBIENT_TEMP = slice(34, 36)   # actual room temperature
+
+# Maps raw handset-fault byte values to Mertik F-code numbers.
+# The byte at STATUS_HANDSET_FAULT (position [28:30]) encodes handset errors
+# using device-internal values that don't equal the public F-code numbers.
+HANDSET_FAULT_TO_FCODE: dict[int, int] = {
+    0x06: 44,  # F44: handset not in range or low battery
+}
 
 FLAME_OFF_THRESHOLD = 123
 
@@ -91,7 +100,7 @@ class Mertik:
         self._guard_flame_on = False
         self._igniting = False
         self._prev_flame_on = False
-        self._fault_code = 0  # 0 = no fault; F-code number when active
+        self._handset_fault = 0  # 0 = OK, 0x06 = F44 (handset not connected)
 
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client.settimeout(SOCKET_TIMEOUT)
@@ -145,7 +154,12 @@ class Mertik:
 
     @property
     def fault_code(self) -> int:
-        return self._fault_code
+        """Return the active fault as an F-code number (e.g. 44 for F44), or 0."""
+        return HANDSET_FAULT_TO_FCODE.get(self._handset_fault, 0)
+
+    @property
+    def is_handset_connected(self) -> bool:
+        return self._handset_fault == 0
 
     @property
     def ambient_temperature(self) -> float:
@@ -357,17 +371,16 @@ class Mertik:
             pass
 
         # [24:26] = mode byte — 0x00 manual, 0x20 thermostatic active.
-        # Fault codes are NOT in the regular status packet; they arrive in a
-        # separate packet type. Log unparsed bytes to help identify that packet
-        # when it eventually appears alongside an app-reported error code.
+        # [28:30] = handset fault — 0x00=OK, 0x06=F44 (handset not connected).
         _LOGGER.debug(
-            "Status extras — mode_byte=%s unknown[26:28]=%s unknown[28:30]=%s",
+            "Status extras — mode_byte=%s unknown[26:28]=%s handset_fault=%s internal_temp=%s",
             status_str[24:26],
             status_str[26:28],
             status_str[28:30],
+            status_str[30:32],
         )
         try:
-            self._fault_code = int(status_str[STATUS_MODE_BYTE], 16)
+            self._handset_fault = int(status_str[STATUS_HANDSET_FAULT], 16)
         except (ValueError, IndexError):
             pass
 

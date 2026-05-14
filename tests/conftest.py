@@ -31,6 +31,8 @@ def mock_coordinator():
     coordinator.check_pending_mode = MagicMock(return_value=False)
     coordinator.heating_mode = None
     coordinator.fire_just_turned_off = False
+    coordinator.is_handset_connected = True
+    coordinator.fault_code = 0
     coordinator.async_add_listener = MagicMock(return_value=MagicMock())
     coordinator.data = None
     return coordinator
@@ -89,7 +91,8 @@ def _build_status_bytes(
     status_hi: str = "80",
     light_level: int = 0x00,
     ambient_temp: int = 0xE6,
-    fault_code: int = 0x00,
+    mode_byte: int = 0x00,
+    handset_fault: int = 0x00,
 ) -> bytes:
     """Build a raw status response matching the B6R-H8TV4PB packet layout.
 
@@ -101,11 +104,14 @@ def _build_status_bytes(
         [14:16]  on_flag: "FF"=on, "00"=off
         [16:20]  status bits (4 hex chars); [18:20] is the flame byte
         [20:22]  light level
-        [22:24]  unknown (always 0x04 in all observed packets)
-        [24:26]  mode byte: 0x00=manual, 0x20=thermostatic active.
-                 NOT the fault code — fault codes travel in a separate packet type.
-        [26:30]  unknown (always 0x00 in observed packets)
-        [30:32]  ambient temperature (raw/10 = degrees C)
+        [22:24]  "04" (constant, purpose unknown)
+        [24:26]  mode byte: 0x00=manual, 0x20=thermostatic active
+        [26:28]  "00" (unknown, always 0x00)
+        [28:30]  handset_fault: 0x00=OK, 0x06=F44 (handset not connected)
+        [30:32]  internal temp (~10°C, near-firebox sensor, not used)
+        [32:34]  "00" (unknown)
+        [34:36]  ambient temperature (raw/10 = degrees C)
+        [36:]    room name in ASCII hex
 
     Confirmed bit positions within the 16-bit status field [16:20]:
         bit 7  = shutting down  -> set status_hi to include 0x01
@@ -123,22 +129,26 @@ def _build_status_bytes(
         Aux on:       status_hi="C0", flame_byte=0x8F  -> bits=0xC08F, bit9=1
 
     Args:
-        on_flag:     "FF" when fire is on, "00" when off.
-        flame_byte:  Raw flame level. >0x7B means burner running.
-                     Also carries igniting flag (0x10) and other low bits.
-        status_hi:   High byte of 4-char status field, e.g. "80".
-        light_level: Raw light level byte (not parsed by current code).
-        ambient_temp: Raw temperature byte; value/10 = degrees C.
-        fault_code:  Mode byte value (0x00=manual, 0x20=thermostatic active).
+        on_flag:       "FF" when fire is on, "00" when off.
+        flame_byte:    Raw flame level. >0x7B means burner running.
+                       Also carries igniting flag (0x10) and other low bits.
+        status_hi:     High byte of 4-char status field, e.g. "80".
+        light_level:   Raw light level byte (not parsed by current code).
+        ambient_temp:  Room temperature byte; value/10 = degrees C (at [34:36]).
+        mode_byte:     0x00=manual, 0x20=thermostatic active (at [24:26]).
+        handset_fault: 0x00=OK, 0x06=F44 handset not connected (at [28:30]).
     """
     prefix = "303030300003"
     config = "C6"
     status_bits = f"{status_hi}{flame_byte:02X}"
     light = f"{light_level:02X}"
-    filler = f"04{fault_code:02X}0000"
+    # [22:24] constant, [24:26] mode, [26:28] unknown, [28:30] handset fault
+    filler = f"04{mode_byte:02X}00{handset_fault:02X}"
+    # [30:32] internal temp (always 0x66 = 10.2°C), [32:34] unknown
+    internal = "6600"
     temp = f"{ambient_temp:02X}"
-    room = "DC" + "4C6976696E6720526F6F6D20" + "FF" * 20 + "043001"
+    room = "4C6976696E6720526F6F6D20" + "FF" * 20 + "043001"
 
-    body = config + on_flag + status_bits + light + filler + temp + room
+    body = config + on_flag + status_bits + light + filler + internal + temp + room
     raw = "\x02" + prefix + body
     return raw.encode("ascii")

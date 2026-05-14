@@ -100,9 +100,10 @@ class TestStatusParsing:
         on_flag = "FF"
         status_bits = "808F"
         light = "00"
-        filler = "04000000"
-        temp = "E6"
-        room = "DC" + "4C6976696E6720526F6F6D20" + "FF" * 20 + "043001"
+        # [22:24]=04 [24:26]=mode [26:28]=00 [28:30]=handset_fault [30:32]=internal [32:34]=00
+        filler = "04" + "00" + "00" + "00" + "66" + "00"
+        temp = "E6"  # ambient at [34:36]
+        room = "4C6976696E6720526F6F6D20" + "FF" * 20 + "043001"
         body = config + on_flag + status_bits + light + filler + temp + room
         raw = "\x02" + prefix + body
         mock_connection.recv.return_value = raw.encode("ascii")
@@ -151,36 +152,40 @@ class TestStatusParsing:
         assert device.flameHeight == 1
 
 
-class TestModeByteAndFaultCodeParsing:
-    """Test mode byte parsing from the status packet.
+class TestHandsetFaultParsing:
+    """Test handset fault detection from byte at [28:30].
 
-    The fault_code property currently reflects the mode byte at [24:26]
-    (0x00=manual, 0x20=thermostatic active). Fault codes proper are not yet
-    located — they appear to arrive in a separate packet type.
+    The handset_fault byte at position [28:30] encodes handset connectivity:
+    0x00 = OK, 0x06 = F44 (handset not in range or low battery).
+    fault_code translates the raw byte to the public Mertik F-code number.
+    is_handset_connected returns True when fault_code == 0.
     """
 
-    async def test_mode_byte_zero_by_default(self, mock_connection):
-        mock_connection.recv.return_value = _build_status_bytes(fault_code=0x00)
+    async def test_no_fault_by_default(self, mock_connection):
+        mock_connection.recv.return_value = _build_status_bytes(handset_fault=0x00)
+        device = await Mertik.async_connect("192.168.1.100")
+        assert device.fault_code == 0
+        assert device.is_handset_connected is True
+
+    async def test_f44_handset_not_connected(self, mock_connection):
+        mock_connection.recv.return_value = _build_status_bytes(handset_fault=0x06)
+        device = await Mertik.async_connect("192.168.1.100")
+        assert device.fault_code == 44
+        assert device.is_handset_connected is False
+
+    async def test_unknown_fault_byte_returns_zero(self, mock_connection):
+        mock_connection.recv.return_value = _build_status_bytes(handset_fault=0x99)
         device = await Mertik.async_connect("192.168.1.100")
         assert device.fault_code == 0
 
-    async def test_mode_byte_thermostatic_active(self, mock_connection):
-        mock_connection.recv.return_value = _build_status_bytes(fault_code=0x20)
+    async def test_fault_clears_on_subsequent_packet(self, mock_connection):
+        mock_connection.recv.return_value = _build_status_bytes(handset_fault=0x06)
         device = await Mertik.async_connect("192.168.1.100")
-        assert device.fault_code == 0x20
-
-    async def test_mode_byte_arbitrary_value(self, mock_connection):
-        mock_connection.recv.return_value = _build_status_bytes(fault_code=0x04)
-        device = await Mertik.async_connect("192.168.1.100")
-        assert device.fault_code == 4
-
-    async def test_mode_byte_updates_on_subsequent_packet(self, mock_connection):
-        mock_connection.recv.return_value = _build_status_bytes(fault_code=0x20)
-        device = await Mertik.async_connect("192.168.1.100")
-        assert device.fault_code == 0x20
-        mock_connection.recv.return_value = _build_status_bytes(fault_code=0x00)
+        assert device.fault_code == 44
+        mock_connection.recv.return_value = _build_status_bytes(handset_fault=0x00)
         device.refresh_status()
         assert device.fault_code == 0
+        assert device.is_handset_connected is True
 
 
 class TestCommands:
@@ -526,23 +531,23 @@ class TestStatusParsingEdgeCases:
 
     def test_invalid_flame_byte_no_crash(self, mertik_device):
         # "ZZ" at [18:20] is non-hex → ValueError caught
-        status_str = "303030300003" + "C6" + "FF" + "80" + "ZZ" + "00" + "04000000" + "E6"
+        status_str = "303030300003" + "C6" + "FF" + "80" + "ZZ" + "00" + "040000006600" + "E6"
         mertik_device._process_status(status_str)  # must not raise
 
     def test_invalid_status_bits_no_crash(self, mertik_device):
         # "ZZ" at [16:18] means status_bits "ZZ8F" is non-hex → ValueError caught
-        status_str = "303030300003" + "C6" + "FF" + "ZZ" + "8F" + "00" + "04000000" + "E6"
+        status_str = "303030300003" + "C6" + "FF" + "ZZ" + "8F" + "00" + "040000006600" + "E6"
         mertik_device._process_status(status_str)  # must not raise
 
     def test_invalid_temp_no_crash(self, mertik_device):
-        # "ZZ" at [30:32] is non-hex → ValueError caught
-        status_str = "303030300003" + "C6" + "FF" + "80" + "8F" + "00" + "04000000" + "ZZ"
+        # "ZZ" at [34:36] (ambient temp position) is non-hex → ValueError caught
+        status_str = "303030300003" + "C6" + "FF" + "80" + "8F" + "00" + "040000006600" + "ZZ"
         mertik_device._process_status(status_str)  # must not raise
 
-    def test_invalid_fault_code_no_crash(self, mertik_device):
-        # "ZZ" at [24:26] is non-hex → ValueError caught
+    def test_invalid_handset_fault_no_crash(self, mertik_device):
+        # "ZZ" at [28:30] (handset fault position) is non-hex → ValueError caught
         status_str = (
-            "303030300003" + "C6" + "FF" + "80" + "8F" + "00" + "04" + "ZZ" + "00" + "00" + "E6"
+            "303030300003" + "C6" + "FF" + "80" + "8F" + "00" + "04" + "00" + "00" + "ZZ" + "66" + "00" + "E6"
         )
         mertik_device._process_status(status_str)  # must not raise
 

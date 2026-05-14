@@ -60,6 +60,7 @@ ITALKERO, Signi, SAFIRE, attika, Ortal, and Fire Connects.
 | Flame Height | Number | Steps 1–13; shows 0 when fire is off |
 | Light | Light | Dimmable; stays on when fire is turned off |
 | Ambient Temperature | Sensor | Room temperature from paired handset |
+| Fault Code | Sensor | Active Mertik fault, e.g. F44 (handset out of range). Shows "No fault" when all clear. |
 | Heating Mode | Select | Standby / Full Heat / Medium Heat / Low Heat / Thermostatic |
 | Thermostat | Climate | Setpoint display and thermostatic control |
 
@@ -116,6 +117,15 @@ own handset sensor. You can select any other HA temperature sensor via
 > APP mode (indicated by "APP" on the handset display). If no temperature
 > appears, configure an external sensor — any HA `sensor` with
 > `device_class: temperature` appears in the dropdown.
+
+**Handset fault (F44) behaviour** — when the handset is out of range or has a
+low battery, the device reports fault F44. In this state, the device cannot
+reliably measure room temperature. If no external sensor is configured, the
+integration automatically switches thermostatic mode to **Standby** (pilot
+flame only) rather than running on a meaningless temperature reading. Normal
+thermostatic control resumes automatically once the handset reconnects and the
+fault clears. If an external HA temperature sensor is configured, it is used
+instead and thermostatic control continues unaffected by the handset fault.
 
 ---
 
@@ -282,6 +292,20 @@ are met. Controls work correctly regardless of whether "APP" is displayed.
 2. If `device_class` is missing, add it via a `template` sensor or customize the entity in `configuration.yaml`.
 3. If the sensor is from a custom integration, ensure it is currently available (not `unavailable` or `unknown`).
 4. After confirming the sensor is valid, return to **Settings → Devices & Services → Mertik Maxitrol → Configure** and the sensor should appear.
+
+---
+
+### Fault Code sensor shows F44 — Handset not in range or low battery
+
+**Symptom:** The Fault Code sensor shows "F44 – Handset not in range or low battery". In Thermostatic mode, the fire may drop to Standby even though the room is cold.
+
+**Description:** The myfire handset communicates with the WiFi receiver via 868 MHz RF. When the handset is out of range, has a low battery, or is turned off, the receiver loses contact and reports F44. Because the handset is also the device's temperature sensor, the integration cannot trust any temperature reading the device reports in this state. When no external HA sensor is configured, the integration automatically falls back to Standby to avoid heating based on a meaningless temperature value.
+
+**Resolution:**
+1. Check handset battery — replace if low.
+2. Ensure the handset is within RF range of the receiver (typically the same room).
+3. If the handset cannot be kept in range, configure an independent HA temperature sensor via **Settings → Devices & Services → Mertik → Configure** — thermostatic control then operates independently of the handset.
+4. The fault clears automatically once the handset reconnects; thermostatic control resumes without any manual intervention.
 
 ---
 

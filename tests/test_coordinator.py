@@ -331,6 +331,14 @@ class TestSimpleDelegations:
         mock_mertik.fault_code = 0
         assert coordinator.fault_code == 0
 
+    def test_is_handset_connected_true(self, coordinator, mock_mertik):
+        mock_mertik.is_handset_connected = True
+        assert coordinator.is_handset_connected is True
+
+    def test_is_handset_connected_false(self, coordinator, mock_mertik):
+        mock_mertik.is_handset_connected = False
+        assert coordinator.is_handset_connected is False
+
 
 class TestCheckPendingMode:
     async def test_returns_false_when_no_pending_mode(self, coordinator):
@@ -372,6 +380,17 @@ class TestCheckPendingMode:
         coordinator._flame_on_since = dt_util.utcnow()
         result = coordinator.check_pending_mode()
         assert result is True
+
+    async def test_ignition_timeout_clears_pending_mode(self, coordinator, mock_mertik):
+        # Ignition has been stuck for longer than _ignition_timeout_seconds.
+        coordinator._pending_mode = "Full Heat"
+        coordinator._pending_mode_since = dt_util.utcnow() - timedelta(seconds=200)
+        mock_mertik.is_igniting = True  # stuck True (e.g. failed ignition)
+        result = coordinator.check_pending_mode()
+        assert result is False
+        assert coordinator._pending_mode is None
+        assert coordinator._pending_mode_since is None
+        assert coordinator._flame_on_since is None
 
 
 class TestThermostaticScenarios:

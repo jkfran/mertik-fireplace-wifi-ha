@@ -145,7 +145,13 @@ characters as pairs of hex digits at these offsets:
 | [16:20] | Status bits | 16-bit big-endian | See bit table below |
 | [18:20] | Flame byte | raw value | `>0x7B` = burner running |
 | [20:22] | Light byte | — | `0xCC` constant on B6R-H8TV4PB; not used |
-| [30:32] | Temperature | raw / 10 = °C | e.g. `F5` = 245 → 24.5 °C |
+| [22:24] | Constant | — | Always `04`; purpose unknown |
+| [24:26] | Mode byte | — | `00`=manual, `20`=thermostatic active |
+| [26:28] | Unknown | — | Always `00` in observed packets |
+| [28:30] | Handset fault | — | `00`=OK, `06`=F44 (handset not connected) |
+| [30:32] | Internal temp | raw / 10 = °C | Near-firebox sensor (~10 °C); **unreliable for room temp** |
+| [32:34] | Unknown | — | Always `00` in observed packets |
+| [34:36] | Room temp | raw / 10 = °C | e.g. `C8` = 200 → 20.0 °C; unreliable when handset has a fault |
 | [36:60] | Room name | ASCII | Name set in myfire app, padded with `0xFF` |
 
 ### Status bit field [16:20] (16 bits, numbered from MSB=0)
@@ -173,9 +179,28 @@ not on any off reading, to avoid spuriously resetting during ignition.
 
 ### Temperature
 
-Room temperature at [30:32] is only populated when the handset is
-transmitting via 868 MHz RF (which requires it to be in APP mode). If the
-handset shows "OFF" rather than "APP", this field reads 0x00.
+Two temperature fields exist in the status packet:
+
+- **[30:32] Internal temp** — a near-firebox sensor that reads approximately
+  10 °C regardless of room temperature. Not useful for thermostatic control.
+
+- **[34:36] Room temp** — populated via the 868 MHz RF link to the handset.
+  Reads 0x00 if the handset is not in APP mode. When the handset has a fault
+  (e.g. F44 — out of range or low battery), this field may report a meaningless
+  value and should not be trusted. The integration discards this value whenever
+  `handset_fault [28:30]` is non-zero and no external HA sensor is configured.
+
+### Handset fault
+
+The byte at [28:30] reports handset connectivity:
+
+| Value | Meaning |
+|-------|---------|
+| `00` | Handset OK |
+| `06` | F44 — handset not in range or low battery |
+
+This field does not clear immediately when the handset returns to range; it
+reflects the device's internal RF pairing state and may persist for some time.
 
 ---
 

@@ -32,10 +32,12 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         self.fire_just_turned_off: bool = False  # set True for one cycle when fire turns off
         self._in_standby: bool = False  # True when thermostatic standby is active
         self._pending_mode: str | None = None  # mode to apply once ignition completes
+        self._pending_mode_since: datetime | None = None  # when _pending_mode was set (for timeout)
         self._heating_mode: str | None = None  # current mode set by the Heating Mode select entity
         self._was_igniting: bool = False  # tracks igniting falling edge
         self._flame_on_since: datetime | None = None  # timestamp when flame first lit after ignite
         self._settle_seconds: int = 35  # seconds to wait after flame_on before aux_off
+        self._ignition_timeout_seconds: int = 120  # abandon pending mode after this many seconds
         self._is_light_on: bool = False
         self._light_brightness: int = 0
 
@@ -125,6 +127,10 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         return self.mertik.fault_code
 
     @property
+    def is_handset_connected(self) -> bool:
+        return self.mertik.is_handset_connected
+
+    @property
     def ambient_temperature(self) -> float:
         return self.mertik.ambient_temperature
 
@@ -169,6 +175,7 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         # Standby never ignites -- handle it unconditionally before ignition logic.
         if mode == MODE_STANDBY:
             self._pending_mode = None
+            self._pending_mode_since = None
             self.standby()
             return
 
@@ -185,6 +192,7 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
             # mark_optimistic_on clears any pending opt-off timer and bridges the gap
             # between ignition and the next poll confirming is_flame_on=True.
             self._pending_mode = mode
+            self._pending_mode_since = dt_util.utcnow()
             self._in_standby = False
             self.mark_optimistic_on()
             self.mertik.ignite_fireplace()
@@ -193,6 +201,7 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         # Fire is physically on (flame_on or igniting): apply mode directly.
         self._in_standby = False
         self._pending_mode = None
+        self._pending_mode_since = None
         if mode == MODE_FULL:
             self.mertik.set_flame_height(FLAME_MAX)
             self.mertik.aux_on()
@@ -217,6 +226,20 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         """
         if not self._pending_mode:
             return False
+        # Abandon pending mode if ignition has taken too long (e.g. failed ignition
+        # leaves is_igniting stuck True indefinitely via flame_byte bit 4).
+        if self._pending_mode_since is not None:
+            elapsed = (dt_util.utcnow() - self._pending_mode_since).total_seconds()
+            if elapsed > self._ignition_timeout_seconds:
+                _LOGGER.warning(
+                    "Ignition timeout after %.0fs — abandoning pending mode %s",
+                    elapsed,
+                    self._pending_mode,
+                )
+                self._pending_mode = None
+                self._pending_mode_since = None
+                self._flame_on_since = None
+                return False
         # Still igniting -- wait
         if self.mertik.is_igniting:
             _LOGGER.debug(
@@ -254,6 +277,7 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         )
         mode = self._pending_mode
         self._pending_mode = None
+        self._pending_mode_since = None
         self._flame_on_since = None
         self.apply_heating_mode(mode)
         return True

@@ -117,6 +117,15 @@ class MertikClimateEntity(MertikEntity, ClimateEntity, RestoreEntity):
                     _LOGGER.warning(
                         "Temp sensor %s: non-numeric value %s", sensor_id, state.state
                     )
+            # External sensor configured but unavailable — return None rather than
+            # falling back to the device value (user explicitly chose the sensor).
+            return None
+        # No external sensor — fall back to device-reported ambient temperature.
+        # When the handset has a fault (e.g. F44: out of range / low battery),
+        # the device cannot measure room temperature; the reported value is
+        # meaningless. Return None so thermostatic control can react safely.
+        if not self._dataservice.is_handset_connected:
+            return None
         t = self._dataservice.ambient_temperature
         return t if t else None
 
@@ -183,7 +192,20 @@ class MertikClimateEntity(MertikEntity, ClimateEntity, RestoreEntity):
 
         current = self._get_current_temperature()
         if current is None:
-            _LOGGER.debug("Thermostatic: no temperature reading, skipping")
+            # Handset fault with no external sensor: the device cannot read room
+            # temperature. Force standby rather than leaving burners at any heat level.
+            if not self._temp_sensor_entity_id and not self._dataservice.is_handset_connected:
+                _LOGGER.warning(
+                    "Thermostatic: handset fault (F%d), no external sensor — forcing standby",
+                    self._dataservice.fault_code,
+                )
+                if self._last_applied_mode != MODE_STANDBY:
+                    self._last_applied_mode = MODE_STANDBY
+                    async def _do_standby_fault() -> None:
+                        await self.hass.async_add_executor_job(self._dataservice.standby)
+                    self.hass.async_create_task(_do_standby_fault())
+            else:
+                _LOGGER.debug("Thermostatic: no temperature reading, skipping")
             return
 
         diff = self._target_temp - current

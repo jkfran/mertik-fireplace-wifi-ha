@@ -123,21 +123,21 @@ class TestClimateTemperatureReading:
         hass.states.async_set("sensor.room", "21.5", {})
         assert climate.current_temperature == 21.5
 
-    async def test_skips_unavailable_sensor_state(
-        self, climate, mock_entry, hass, mock_coordinator
+    async def test_returns_none_when_sensor_unavailable(
+        self, climate, mock_entry, hass
     ):
+        # When the external sensor is configured but unavailable, do not fall
+        # back to the device value — return None so thermostatic logic can skip.
         mock_entry.options = {CONF_TEMP_SENSOR: "sensor.room"}
         hass.states.async_set("sensor.room", "unavailable", {})
-        mock_coordinator.ambient_temperature = 20.0
-        assert climate.current_temperature == 20.0
+        assert climate.current_temperature is None
 
-    async def test_skips_non_numeric_sensor_state(
-        self, climate, mock_entry, hass, mock_coordinator
+    async def test_returns_none_when_sensor_non_numeric(
+        self, climate, mock_entry, hass
     ):
         mock_entry.options = {CONF_TEMP_SENSOR: "sensor.room"}
         hass.states.async_set("sensor.room", "not_a_number", {})
-        mock_coordinator.ambient_temperature = 20.0
-        assert climate.current_temperature == 20.0
+        assert climate.current_temperature is None
 
     def test_returns_none_when_sensor_entity_missing(
         self, climate, mock_entry, mock_coordinator
@@ -145,6 +145,28 @@ class TestClimateTemperatureReading:
         mock_entry.options = {CONF_TEMP_SENSOR: "sensor.nonexistent"}
         mock_coordinator.ambient_temperature = 0
         assert climate.current_temperature is None
+
+    def test_returns_none_when_handset_faulty_and_no_external_sensor(
+        self, climate, mock_coordinator
+    ):
+        mock_coordinator.is_handset_connected = False
+        mock_coordinator.ambient_temperature = 10.2
+        assert climate.current_temperature is None
+
+    def test_returns_device_temp_when_handset_ok_and_no_external_sensor(
+        self, climate, mock_coordinator
+    ):
+        mock_coordinator.is_handset_connected = True
+        mock_coordinator.ambient_temperature = 21.5
+        assert climate.current_temperature == 21.5
+
+    async def test_uses_external_sensor_even_when_handset_faulty(
+        self, climate, mock_entry, mock_coordinator, hass
+    ):
+        mock_entry.options = {CONF_TEMP_SENSOR: "sensor.room"}
+        mock_coordinator.is_handset_connected = False
+        hass.states.async_set("sensor.room", "19.0", {})
+        assert climate.current_temperature == 19.0
 
 
 class TestClimateCommands:
@@ -260,14 +282,76 @@ class TestThermostaticLogic:
             climate._run_thermostatic_logic()
         assert climate._last_applied_mode is None  # reset when leaving thermo mode
 
-    async def test_skips_when_no_temperature(self, hass, mock_coordinator, mock_entry):
+    async def test_skips_when_no_temperature_handset_ok(self, hass, mock_coordinator, mock_entry):
+        # No temperature but handset connected → skip silently, don't call standby.
         mock_coordinator.check_pending_mode.return_value = False
+        mock_coordinator.is_handset_connected = True
         climate = self._make_climate(hass, mock_coordinator, mock_entry)
         hass.states.async_set("select.mode", MODE_THERMO)
         with patch.object(climate, "_select_entity_id", return_value="select.mode"), patch.object(
             climate, "_get_current_temperature", return_value=None
         ):
             climate._run_thermostatic_logic()
+        await hass.async_block_till_done()
+        mock_coordinator.standby.assert_not_called()
+
+    async def test_standby_when_handset_faulty_and_no_external_sensor(
+        self, hass, mock_coordinator, mock_entry
+    ):
+        # Handset fault (F44) with no external sensor → force standby.
+        mock_coordinator.check_pending_mode.return_value = False
+        mock_coordinator.is_on = True
+        mock_coordinator.is_handset_connected = False
+        mock_coordinator.fault_code = 44
+        mock_coordinator.ambient_temperature = 10.2  # unreliable value from device
+        mock_entry.options = {}
+        mock_entry.data = {"name": "My Fireplace", "host": "192.168.1.100"}
+        hass.states.async_set("select.mode", MODE_THERMO)
+        climate = self._make_climate(hass, mock_coordinator, mock_entry, target=22.0)
+        with patch.object(climate, "_select_entity_id", return_value="select.mode"):
+            climate._run_thermostatic_logic()
+        await hass.async_block_till_done()
+        assert climate._last_applied_mode == MODE_STANDBY
+        mock_coordinator.standby.assert_called_once()
+
+    async def test_standby_not_repeated_when_already_in_standby_due_to_handset_fault(
+        self, hass, mock_coordinator, mock_entry
+    ):
+        # Already in standby from a previous cycle → don't call standby again.
+        mock_coordinator.check_pending_mode.return_value = False
+        mock_coordinator.is_on = True
+        mock_coordinator.is_handset_connected = False
+        mock_coordinator.fault_code = 44
+        mock_coordinator.ambient_temperature = 10.2
+        mock_entry.options = {}
+        mock_entry.data = {"name": "My Fireplace", "host": "192.168.1.100"}
+        hass.states.async_set("select.mode", MODE_THERMO)
+        climate = self._make_climate(hass, mock_coordinator, mock_entry, target=22.0)
+        climate._last_applied_mode = MODE_STANDBY  # already in standby
+        with patch.object(climate, "_select_entity_id", return_value="select.mode"):
+            climate._run_thermostatic_logic()
+        await hass.async_block_till_done()
+        mock_coordinator.standby.assert_not_called()
+
+    async def test_no_forced_standby_when_external_sensor_configured_and_handset_faulty(
+        self, hass, mock_coordinator, mock_entry
+    ):
+        # External sensor is configured — thermostatic logic proceeds normally
+        # even if the handset has a fault (sensor provides the temperature).
+        mock_coordinator.check_pending_mode.return_value = False
+        mock_coordinator.is_on = True
+        mock_coordinator.is_handset_connected = False
+        mock_entry.options = {"temperature_sensor": "sensor.room"}
+        mock_entry.data = {"name": "My Fireplace", "host": "192.168.1.100"}
+        hass.states.async_set("select.mode", MODE_THERMO)
+        hass.states.async_set("sensor.room", "20.0", {})
+        climate = self._make_climate(hass, mock_coordinator, mock_entry, target=20.0)
+        with patch.object(climate, "_select_entity_id", return_value="select.mode"):
+            climate._run_thermostatic_logic()
+        await hass.async_block_till_done()
+        # Room at setpoint → standby from normal thermostatic logic (not the fault path)
+        assert climate._last_applied_mode == MODE_STANDBY
+        mock_coordinator.standby.assert_called_once()
 
     async def test_same_mode_not_resent(self, hass, mock_coordinator, mock_entry):
         mock_coordinator.check_pending_mode.return_value = False
