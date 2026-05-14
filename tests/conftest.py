@@ -21,6 +21,7 @@ def mock_coordinator():
     coordinator.ignite_fireplace = MagicMock()
     coordinator.guard_flame_off = MagicMock()
     coordinator.standby = MagicMock()
+    coordinator.arm_thermostatic = MagicMock()
     coordinator.aux_on = MagicMock()
     coordinator.aux_off = MagicMock()
     coordinator.light_on = MagicMock()

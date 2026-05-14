@@ -53,20 +53,21 @@ class TestOnOffSwitch:
         mock_coordinator.mark_optimistic_on.assert_called_once()
         mock_coordinator.async_set_updated_data.assert_called_once_with(None)
 
-    async def test_turn_on_thermostatic_mode_arms_standby(
+    async def test_turn_on_thermostatic_mode_arms_thermostatic(
         self, switch, mock_coordinator
     ):
-        """Fireplace switch On in Thermostatic mode arms pilot, never ignites main burner.
+        """Fireplace switch On in Thermostatic mode calls arm_thermostatic, not standby.
 
-        Real-life bug: room=21C, setpoint=19C, Thermostatic mode active.
-        Turning on the switch must light the pilot (standby) so the switch stays on
-        and the climate loop can decide when to ignite the main burner.
+        arm_thermostatic() lights the pilot from any state (including fully off).
+        standby() has an is_on guard that makes it a no-op when fire is off,
+        which previously caused the switch to snap back to Off immediately.
         """
         from custom_components.mertik.const import MODE_THERMO
 
         mock_coordinator.heating_mode = MODE_THERMO
         await switch.async_turn_on()
-        mock_coordinator.standby.assert_called_once()
+        mock_coordinator.arm_thermostatic.assert_called_once()
+        mock_coordinator.standby.assert_not_called()
         mock_coordinator.ignite_fireplace.assert_not_called()
         mock_coordinator.mark_optimistic_on.assert_not_called()
         mock_coordinator.async_set_updated_data.assert_called_once_with(None)

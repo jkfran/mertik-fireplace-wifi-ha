@@ -118,6 +118,26 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         self._in_standby = True
         self.mertik.standBy()
 
+    def arm_thermostatic(self) -> None:
+        """Arm thermostatic mode from the Fireplace switch.
+
+        Sends CMD_STANDBY to light the pilot flame, then the climate entity's
+        poll loop will ignite the main burner or leave the pilot running
+        depending on whether the room needs heat.
+
+        Unlike standby(), this works from a fully-off state -- it is only
+        called when the user explicitly presses the Fireplace switch On while
+        thermostatic mode is selected.  standby() keeps its is_on guard to
+        prevent the Heating Mode select and the thermostatic loop from
+        re-lighting the pilot after the user has turned the fire off.
+        """
+        self._optimistic_on_until = None
+        self._optimistic_off_until = None
+        self._pending_mode = None
+        self._pending_mode_since = None
+        self._in_standby = True
+        self.mertik.standBy()
+
     @property
     def is_aux_on(self) -> bool:
         return self.mertik.is_aux_on  # already gated on flame_on in mertik.py

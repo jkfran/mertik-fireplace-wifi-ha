@@ -40,10 +40,7 @@ class MertikOnOffSwitchEntity(MertikEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         if self._dataservice.heating_mode == MODE_THERMO:
-            # Arm thermostatic control: light pilot only so the switch stays on
-            # and the climate loop can ignite the main burner when heat is needed.
-            # Never ignite here -- room may already be above setpoint.
-            await self.hass.async_add_executor_job(self._dataservice.standby)
+            await self.hass.async_add_executor_job(self._dataservice.arm_thermostatic)
         else:
             self._dataservice.mark_optimistic_on()
             await self.hass.async_add_executor_job(self._dataservice.ignite_fireplace)

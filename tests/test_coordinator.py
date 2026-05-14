@@ -359,6 +359,37 @@ class TestThermostaticIgnitionGuard:
         assert coordinator._pending_mode_since is None
         assert coordinator._flame_on_since is None
 
+    async def test_arm_thermostatic_works_from_fully_off(self, coordinator_off, mock_mertik):
+        """arm_thermostatic() must send CMD_STANDBY even when fire is off.
+
+        standby() refuses to send CMD_STANDBY when is_on=False (to prevent
+        the Heating Mode select from re-lighting the pilot). arm_thermostatic()
+        has no such guard -- it is only called from the Fireplace switch On
+        action and must always arm the pilot so the thermostatic loop can take over.
+        """
+        assert coordinator_off._in_standby is False
+        coordinator_off.arm_thermostatic()
+        mock_mertik.standBy.assert_called_once()
+        assert coordinator_off._in_standby is True
+
+    async def test_arm_thermostatic_clears_pending_mode(self, coordinator, mock_mertik):
+        """arm_thermostatic() discards any stale pending ignition sequence."""
+        coordinator._pending_mode = "Full Heat"
+        coordinator._pending_mode_since = dt_util.utcnow()
+        coordinator.arm_thermostatic()
+        assert coordinator._pending_mode is None
+        assert coordinator._pending_mode_since is None
+        assert coordinator._in_standby is True
+
+    async def test_arm_thermostatic_works_when_fire_already_on(
+        self, coordinator_standby, mock_mertik
+    ):
+        """arm_thermostatic() also works when fire is already running."""
+        coordinator_standby._in_standby = False  # fire physically on, not in standby
+        coordinator_standby.arm_thermostatic()
+        mock_mertik.standBy.assert_called_once()
+        assert coordinator_standby._in_standby is True
+
 
 class TestSimpleDelegations:
     def test_heating_mode_property(self, coordinator):
