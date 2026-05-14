@@ -1,0 +1,4 @@
+# GitHub code owners — automatically requested as reviewers on pull requests.
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+custom_components/mertik/ @DaveJesse
