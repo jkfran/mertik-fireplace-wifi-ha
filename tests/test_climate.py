@@ -476,6 +476,29 @@ class TestThermostaticLogic:
         assert climate._last_applied_mode == MODE_STANDBY
         mock_coordinator.apply_heating_mode.assert_not_called()
 
+    async def test_setpoint_change_does_not_ignite_when_fire_off(
+        self, hass, mock_coordinator, mock_entry
+    ):
+        """Raising the setpoint while fire is off must not trigger ignition.
+
+        async_set_temperature resets _last_applied_mode to None. The next
+        poll must still block ignition even though the mode-dedup check
+        sees None != Full Heat and proceeds past the early-return.
+        """
+        mock_coordinator.check_pending_mode.return_value = False
+        mock_coordinator.is_on = False
+        mock_coordinator._in_standby = False
+        climate = self._make_climate(hass, mock_coordinator, mock_entry, target=25.0)
+        climate._last_applied_mode = None  # simulates setpoint just changed
+        hass.states.async_set("select.mode", MODE_THERMO)
+        # Room 20°C, setpoint 25°C → diff=5 → would be Full Heat, but fire is off
+        with patch.object(climate, "_select_entity_id", return_value="select.mode"), \
+             patch.object(climate, "_get_current_temperature", return_value=20.0):
+            climate._run_thermostatic_logic()
+        await hass.async_block_till_done()
+        mock_coordinator.apply_heating_mode.assert_not_called()
+        assert climate._last_applied_mode == MODE_STANDBY
+
 
 class TestHandleCoordinatorUpdate:
     def test_calls_thermostatic_logic(self, climate):

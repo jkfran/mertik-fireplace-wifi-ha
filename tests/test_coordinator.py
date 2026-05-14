@@ -297,30 +297,54 @@ class TestThermostaticIgnitionGuard:
         coordinator_standby.guard_flame_off()
         assert coordinator_standby._in_standby is False
 
-    async def test_standby_sets_in_standby_flag(self, coordinator_off):
-        """standby() must set _in_standby so thermostat can re-ignite."""
+    async def test_standby_no_op_when_fire_off(self, coordinator_off, mock_mertik):
+        """standby() must be a no-op when the fire is off.
+
+        CMD_STANDBY re-lights the pilot even from a fully-off state.
+        Selecting "Standby" from the Heating Mode select with fire off must
+        not turn the fireplace back on.
+        """
         assert coordinator_off._in_standby is False
         coordinator_off.standby()
-        assert coordinator_off._in_standby is True
+        mock_mertik.standBy.assert_not_called()
+        assert coordinator_off._in_standby is False
+
+    async def test_standby_sets_in_standby_flag_when_fire_on(
+        self, coordinator_standby, mock_mertik
+    ):
+        """standby() sets _in_standby (and sends CMD_STANDBY) when fire is on."""
+        coordinator_standby._in_standby = False  # fire physically on but not in standby yet
+        coordinator_standby.standby()
+        mock_mertik.standBy.assert_called_once()
+        assert coordinator_standby._in_standby is True
 
     async def test_standby_blocked_during_optimistic_off_window(self, coordinator, mock_mertik):
         """standby() during the optimistic-off window must be a no-op.
 
         A stale _do_standby task from the thermostatic logic can run after the
         user presses the switch off.  guard_flame_off + mark_optimistic_off set
-        the window; standby() must respect it so it doesn't re-light the pilot.
+        the window; is_on returns False so standby() is blocked.
         """
-        coordinator.mark_optimistic_off()          # simulates guard_flame_off → mark_optimistic_off
+        coordinator.mark_optimistic_off()
         coordinator.standby()
         mock_mertik.standBy.assert_not_called()
         assert coordinator._in_standby is False
-        assert coordinator._optimistic_off_until is not None  # window still set
 
-    async def test_standby_allowed_after_optimistic_off_window_expires(
+    async def test_standby_blocked_when_fire_physically_off_after_opt_window(
         self, coordinator, mock_mertik
     ):
-        """standby() is allowed once the optimistic-off window has passed."""
+        """standby() stays blocked once the optimistic-off window has expired
+        if the device confirms the fire is physically off."""
         coordinator._optimistic_off_until = dt_util.utcnow() - timedelta(seconds=1)
+        mock_mertik.is_flame_on = False
+        mock_mertik.is_igniting = False
+        coordinator.standby()
+        mock_mertik.standBy.assert_not_called()
+        assert coordinator._in_standby is False
+
+    async def test_standby_allowed_when_fire_physically_on(self, coordinator, mock_mertik):
+        """standby() proceeds when the device reports the fire is running."""
+        mock_mertik.is_flame_on = True
         coordinator.standby()
         mock_mertik.standBy.assert_called_once()
         assert coordinator._in_standby is True
@@ -474,6 +498,26 @@ class TestThermostaticScenarios:
         else:
             return MODE_FULL
 
+    # ── Scenario 0: fire explicitly off -> no mode change ignites ────────────
+    async def test_scenario_00_fire_off_no_mode_ignites(self, coord, mock_mertik):
+        """Fire explicitly off: no heating mode or setpoint change must ignite.
+
+        The Fireplace switch being off takes precedence over the thermostat at
+        all times. All three heat modes and Standby are checked.
+        """
+        from custom_components.mertik.const import MODE_LOW, MODE_MEDIUM, MODE_FULL, MODE_STANDBY
+
+        mock_mertik.is_flame_on = False
+        mock_mertik.is_igniting = False
+        coord._in_standby = False  # user switched off
+
+        for mode in (MODE_FULL, MODE_MEDIUM, MODE_LOW, MODE_STANDBY):
+            mock_mertik.reset_mock()
+            coord.apply_heating_mode(mode)
+            mock_mertik.ignite_fireplace.assert_not_called(), (
+                f"ignite_fireplace must not be called when fire is off and mode={mode}"
+            )
+
     # ── Scenario 1: above setpoint -> Standby, no ignition ───────────────────
     async def test_scenario_01_above_setpoint_goes_standby_no_ignition(
         self, coord, mock_mertik
@@ -487,7 +531,7 @@ class TestThermostaticScenarios:
         coord.apply_heating_mode(mode)
 
         mock_mertik.ignite_fireplace.assert_not_called()
-        mock_mertik.standBy.assert_called_once()
+        mock_mertik.standBy.assert_not_called()
 
     # ── Scenario 2: 0.5C below -> cold start ignition, Low Heat ─────────────
     async def test_scenario_02_cold_start_low_heat(self, coord, mock_mertik):

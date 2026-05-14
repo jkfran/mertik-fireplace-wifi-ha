@@ -104,14 +104,14 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         Does NOT set fire_just_turned_off because the device keeps the light
         on in standby mode (only guard_flame_off kills the light).
         """
-        # If guard_flame_off was called recently the optimistic-off window is
-        # active. A stale _do_standby task from a previous thermostatic poll
-        # must not re-light the pilot after the user has explicitly turned off.
-        if self._optimistic_off_until and dt_util.utcnow() < self._optimistic_off_until:
-            _LOGGER.debug(
-                "standby() skipped: optimistic-off window active "
-                "(guard_flame_off was called recently)"
-            )
+        # CMD_STANDBY re-lights the pilot even from a fully-off state, so only
+        # send it when the fire is currently on. This prevents two problems:
+        # 1. User selects "Standby" from the Heating Mode select with fire off.
+        # 2. A stale _do_standby task from a previous thermostatic poll runs
+        #    after guard_flame_off + mark_optimistic_off (is_on = False during
+        #    the optimistic-off window).
+        if not self.is_on:
+            _LOGGER.debug("standby() skipped: fire is not on")
             return
         self._optimistic_on_until = None
         self._optimistic_off_until = None
