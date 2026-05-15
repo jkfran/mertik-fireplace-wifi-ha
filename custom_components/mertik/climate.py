@@ -1,7 +1,5 @@
 """Climate entity -- thermostat setpoint display and thermostatic control logic."""
 
-from __future__ import annotations
-
 import logging
 from typing import Any, TypeVar
 
@@ -12,7 +10,7 @@ from homeassistant.components.climate import (
 )
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import MertikConfigEntry
@@ -49,12 +47,13 @@ DEFAULT_TARGET = 20.0
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: MertikConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
+    """Set up Mertik climate entity."""
     dataservice = entry.runtime_data
     async_add_entities(
         [
-            MertikClimateEntity(dataservice, entry.entry_id, entry.data["name"], entry),
+            MertikClimateEntity(dataservice, entry.entry_id, entry.title, entry),
         ]
     )
 
@@ -81,6 +80,7 @@ class MertikClimateEntity(MertikEntity, ClimateEntity, RestoreEntity):
         device_name: str,
         entry: Any,
     ) -> None:
+        """Initialize thermostat entity."""
         super().__init__(dataservice, entry_id, device_name)
         self._entry = entry
         self._attr_unique_id = entry_id + "-Thermostat"
@@ -90,6 +90,7 @@ class MertikClimateEntity(MertikEntity, ClimateEntity, RestoreEntity):
         )
 
     async def async_added_to_hass(self) -> None:
+        """Restore target temperature from last known state."""
         await super().async_added_to_hass()
         last = await self.async_get_last_state()
         if last is not None and last.attributes.get(ATTR_TEMPERATURE) is not None:
@@ -98,8 +99,8 @@ class MertikClimateEntity(MertikEntity, ClimateEntity, RestoreEntity):
     # ---- Config helpers --------------------------------------------------
 
     def _get_option(self, key: str, default: _T) -> _T:
-        result = self._entry.options.get(key, self._entry.data.get(key, default))
-        return result  # type: ignore[no-any-return]
+        """Return option value, falling back to data then the supplied default."""
+        return self._entry.options.get(key, self._entry.data.get(key, default))
 
     @property
     def _low_thresh(self) -> float:
@@ -115,6 +116,7 @@ class MertikClimateEntity(MertikEntity, ClimateEntity, RestoreEntity):
 
     @property
     def target_temperature_step(self) -> float:
+        """Return the setpoint increment configured by the user."""
         return float(self._get_option(CONF_TEMP_STEP, DEFAULT_TEMP_STEP))
 
     # ---- Temperature reading --------------------------------------------
@@ -146,10 +148,12 @@ class MertikClimateEntity(MertikEntity, ClimateEntity, RestoreEntity):
 
     @property
     def current_temperature(self) -> float | None:
+        """Return current temperature from sensor or device handset."""
         return self._get_current_temperature()
 
     @property
     def target_temperature(self) -> float:
+        """Return the current setpoint temperature."""
         return self._target_temp
 
     @property

@@ -63,12 +63,11 @@ async def test_user_flow_creates_entry(hass: HomeAssistant, mock_connection_succ
 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        user_input={"name": "My Fireplace", "host": "192.168.1.100"},
+        user_input={"host": "192.168.1.100"},
     )
 
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["title"] == "Mertik Maxitrol"
-    assert result["data"]["name"] == "My Fireplace"
     assert result["data"]["host"] == "192.168.1.100"
 
 
@@ -80,7 +79,7 @@ async def test_user_flow_connection_error(hass: HomeAssistant, mock_connection_f
 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        user_input={"name": "My Fireplace", "host": "192.168.1.100"},
+        user_input={"host": "192.168.1.100"},
     )
 
     assert result["type"] == FlowResultType.FORM
@@ -98,7 +97,7 @@ async def test_user_flow_recover_after_error(
     # First attempt fails
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        user_input={"name": "My Fireplace", "host": "192.168.1.100"},
+        user_input={"host": "192.168.1.100"},
     )
     assert result["type"] == FlowResultType.FORM
     assert result["errors"] == {"base": "cannot_connect"}
@@ -109,7 +108,7 @@ async def test_user_flow_recover_after_error(
     ):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            user_input={"name": "My Fireplace", "host": "192.168.1.100"},
+            user_input={"host": "192.168.1.100"},
         )
 
     assert result["type"] == FlowResultType.CREATE_ENTRY
@@ -123,7 +122,7 @@ async def test_user_flow_duplicate_host(hass: HomeAssistant, mock_connection_suc
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        user_input={"name": "My Fireplace", "host": "192.168.1.100"},
+        user_input={"host": "192.168.1.100"},
     )
     assert result["type"] == FlowResultType.CREATE_ENTRY
 
@@ -133,7 +132,7 @@ async def test_user_flow_duplicate_host(hass: HomeAssistant, mock_connection_suc
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        user_input={"name": "Another Name", "host": "192.168.1.100"},
+        user_input={"host": "192.168.1.100"},
     )
     assert result["type"] == FlowResultType.ABORT
     assert result["reason"] == "already_configured"
@@ -148,7 +147,7 @@ async def test_user_flow_different_hosts_allowed(
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        user_input={"name": "Fireplace 1", "host": "192.168.1.100"},
+        user_input={"host": "192.168.1.100"},
     )
     assert result["type"] == FlowResultType.CREATE_ENTRY
 
@@ -157,7 +156,7 @@ async def test_user_flow_different_hosts_allowed(
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        user_input={"name": "Fireplace 2", "host": "192.168.1.101"},
+        user_input={"host": "192.168.1.101"},
     )
     assert result["type"] == FlowResultType.CREATE_ENTRY
 
@@ -172,7 +171,6 @@ async def test_user_flow_invalid_thresholds(
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
         user_input={
-            "name": "My Fireplace",
             "host": "192.168.1.100",
             CONF_LOW_THRESHOLD: 5.0,
             CONF_HIGH_THRESHOLD: 5.0,  # equal: invalid
@@ -201,10 +199,10 @@ async def test_reconfigure_shows_form(hass: HomeAssistant, mock_connection_succe
     assert result["step_id"] == "reconfigure"
 
 
-async def test_reconfigure_updates_host_and_name(
+async def test_reconfigure_updates_host(
     hass: HomeAssistant, mock_connection_success
 ):
-    """Successful reconfigure updates the entry and reloads."""
+    """Successful reconfigure updates the entry host and reloads."""
     entry = await _create_entry(hass, mock_connection_success)
     result = await hass.config_entries.flow.async_init(
         DOMAIN,
@@ -215,18 +213,17 @@ async def test_reconfigure_updates_host_and_name(
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        user_input={"name": "Renamed Fireplace", "host": "192.168.1.200"},
+        user_input={"host": "192.168.1.200"},
     )
     assert result["type"] == FlowResultType.ABORT
     assert result["reason"] == "reconfigure_successful"
-    assert entry.data["name"] == "Renamed Fireplace"
     assert entry.data["host"] == "192.168.1.200"
 
 
-async def test_reconfigure_same_host_name_change(
+async def test_reconfigure_same_host_succeeds(
     hass: HomeAssistant, mock_connection_success
 ):
-    """Reconfiguring with the same host (e.g. just renaming) succeeds."""
+    """Reconfiguring with the same host succeeds."""
     entry = await _create_entry(hass, mock_connection_success)
     result = await hass.config_entries.flow.async_init(
         DOMAIN,
@@ -237,11 +234,10 @@ async def test_reconfigure_same_host_name_change(
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        user_input={"name": "Living Room Fire", "host": "192.168.1.100"},
+        user_input={"host": "192.168.1.100"},
     )
     assert result["type"] == FlowResultType.ABORT
     assert result["reason"] == "reconfigure_successful"
-    assert entry.data["name"] == "Living Room Fire"
 
 
 async def test_reconfigure_connection_failure(
@@ -261,7 +257,7 @@ async def test_reconfigure_connection_failure(
     ):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"],
-            user_input={"name": "My Fireplace", "host": "192.168.1.99"},
+            user_input={"host": "192.168.1.99"},
         )
     assert result["type"] == FlowResultType.FORM
     assert result["errors"] == {"base": "cannot_connect"}
@@ -282,7 +278,6 @@ async def test_reconfigure_invalid_thresholds(
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
         user_input={
-            "name": "My Fireplace",
             "host": "192.168.1.100",
             CONF_LOW_THRESHOLD: 5.0,
             CONF_HIGH_THRESHOLD: 5.0,
@@ -302,7 +297,7 @@ async def test_reconfigure_duplicate_host(hass: HomeAssistant, mock_connection_s
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        user_input={"name": "Second Fireplace", "host": "192.168.1.101"},
+        user_input={"host": "192.168.1.101"},
     )
     assert result["type"] == FlowResultType.CREATE_ENTRY
 
@@ -316,7 +311,7 @@ async def test_reconfigure_duplicate_host(hass: HomeAssistant, mock_connection_s
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        user_input={"name": "My Fireplace", "host": "192.168.1.101"},
+        user_input={"host": "192.168.1.101"},
     )
     assert result["type"] == FlowResultType.FORM
     assert result["errors"] == {"base": "already_configured"}
@@ -334,7 +329,7 @@ async def _create_entry(hass, mock_connection_success):
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        user_input={"name": "My Fireplace", "host": "192.168.1.100"},
+        user_input={"host": "192.168.1.100"},
     )
     assert result["type"] == FlowResultType.CREATE_ENTRY
     return hass.config_entries.async_entries(DOMAIN)[0]

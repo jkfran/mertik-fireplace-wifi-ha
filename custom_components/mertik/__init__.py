@@ -1,11 +1,13 @@
+"""Mertik Maxitrol fireplace integration."""
+
 import logging
-from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN
 from .coordinator import MertikDataCoordinator
@@ -13,7 +15,7 @@ from .mertik import Mertik
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["switch", "number", "sensor", "light", "climate", "select"]
+PLATFORMS = ["climate", "light", "number", "select", "sensor", "switch"]
 
 type MertikConfigEntry = ConfigEntry[MertikDataCoordinator]
 
@@ -37,7 +39,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: MertikConfigEntry) -> bo
     return True
 
 
-async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Set up Mertik integration from YAML (unused)."""
     return True
 
 

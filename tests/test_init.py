@@ -20,7 +20,7 @@ _FIRST_REFRESH = (
     "MertikDataCoordinator.async_config_entry_first_refresh"
 )
 
-PLATFORMS = ["switch", "number", "sensor", "light", "climate", "select"]
+PLATFORMS = ["climate", "light", "number", "select", "sensor", "switch"]
 
 
 @pytest.fixture
@@ -32,7 +32,7 @@ def mock_config_entry_ha():
         domain="mertik",
         entry_id="test_entry_abc",
         title="Test Fire",
-        data={"name": "Test Fire", "host": "192.168.1.55"},
+        data={"host": "192.168.1.55"},
         options={},
     )
 

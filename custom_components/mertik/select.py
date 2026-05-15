@@ -1,9 +1,9 @@
 """Heating mode selector for Mertik Maxitrol fireplace."""
 
 from homeassistant.components.select import SelectEntity
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import EntityCategory
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import MertikConfigEntry
@@ -17,12 +17,13 @@ PARALLEL_UPDATES = 1
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: MertikConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
+    """Set up Mertik heating mode select entity."""
     dataservice = entry.runtime_data
     async_add_entities(
         [
-            MertikHeatingModeSelect(dataservice, entry.entry_id, entry.data["name"]),
+            MertikHeatingModeSelect(dataservice, entry.entry_id, entry.title),
         ]
     )
 

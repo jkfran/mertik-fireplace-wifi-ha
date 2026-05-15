@@ -48,7 +48,7 @@ def mock_config_entry() -> MockConfigEntry:
         domain=DOMAIN,
         entry_id="test_entry_123",
         title="My Fireplace",
-        data={"name": "My Fireplace", "host": "192.168.1.100"},
+        data={"host": "192.168.1.100"},
         options={},
     )
 

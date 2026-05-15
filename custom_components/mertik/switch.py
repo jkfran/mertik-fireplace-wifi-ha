@@ -1,8 +1,10 @@
+"""Switch entities for Mertik Maxitrol fireplace (on/off and aux)."""
+
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import MertikConfigEntry
 from .const import MODE_THERMO
@@ -15,13 +17,14 @@ PARALLEL_UPDATES = 1
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: MertikConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
+    """Set up Mertik switch entities."""
     dataservice = entry.runtime_data
     async_add_entities(
         [
-            MertikOnOffSwitchEntity(dataservice, entry.entry_id, entry.data["name"]),
-            MertikAuxOnOffSwitchEntity(dataservice, entry.entry_id, entry.data["name"]),
+            MertikOnOffSwitchEntity(dataservice, entry.entry_id, entry.title),
+            MertikAuxOnOffSwitchEntity(dataservice, entry.entry_id, entry.title),
         ]
     )
 

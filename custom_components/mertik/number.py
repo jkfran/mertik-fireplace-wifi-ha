@@ -1,7 +1,9 @@
+"""Number entity for Mertik Maxitrol fireplace flame height control."""
+
 from homeassistant.components.number import NumberEntity
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import EntityCategory
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import MertikConfigEntry
 from .coordinator import MertikDataCoordinator
@@ -13,12 +15,13 @@ PARALLEL_UPDATES = 1
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: MertikConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
+    """Set up Mertik flame height entity."""
     dataservice = entry.runtime_data
     async_add_entities(
         [
-            MertikFlameHeightEntity(dataservice, entry.entry_id, entry.data["name"]),
+            MertikFlameHeightEntity(dataservice, entry.entry_id, entry.title),
         ]
     )
 

@@ -1,8 +1,9 @@
+"""Sensor entities for Mertik Maxitrol fireplace (ambient temperature, fault code)."""
+
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import EntityCategory, UnitOfTemperature
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import EntityCategory
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import MertikConfigEntry
 from .coordinator import MertikDataCoordinator
@@ -37,16 +38,17 @@ FAULT_CODE_MAP: dict[int, str] = {
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: MertikConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
+    """Set up Mertik sensor entities."""
     dataservice = entry.runtime_data
     async_add_entities(
         [
             MertikAmbientTemperatureSensorEntity(
-                dataservice, entry.entry_id, entry.data["name"]
+                dataservice, entry.entry_id, entry.title
             ),
             MertikFaultCodeSensorEntity(
-                dataservice, entry.entry_id, entry.data["name"]
+                dataservice, entry.entry_id, entry.title
             ),
         ]
     )

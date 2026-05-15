@@ -16,7 +16,7 @@ from typing import Any
 
 from homeassistant.components.light import ATTR_BRIGHTNESS, ColorMode, LightEntity
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import MertikConfigEntry
@@ -31,12 +31,13 @@ DEFAULT_BRIGHTNESS = 128
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: MertikConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
+    """Set up Mertik light entity."""
     dataservice = entry.runtime_data
     async_add_entities(
         [
-            MertikLightEntity(dataservice, entry.entry_id, entry.data["name"]),
+            MertikLightEntity(dataservice, entry.entry_id, entry.title),
         ]
     )
 

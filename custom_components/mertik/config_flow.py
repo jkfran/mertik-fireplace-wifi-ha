@@ -7,7 +7,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
-from homeassistant.const import CONF_NAME, CONF_HOST
+from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.components.sensor import SensorDeviceClass
@@ -73,7 +73,6 @@ class MertikConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_NAME): str,
                 vol.Required(CONF_HOST): str,
                 vol.Optional(
                     CONF_LOW_THRESHOLD, default=DEFAULT_LOW_THRESHOLD
@@ -121,7 +120,6 @@ class MertikConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_NAME, default=entry.data.get(CONF_NAME, "")): str,
                 vol.Required(CONF_HOST, default=entry.data.get(CONF_HOST, "")): str,
                 vol.Optional(
                     CONF_LOW_THRESHOLD,
@@ -140,7 +138,8 @@ class MertikConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
-    ) -> "MertikOptionsFlow":
+    ) -> config_entries.OptionsFlow:
+        """Return the options flow handler."""
         return MertikOptionsFlow(config_entry)
 
 

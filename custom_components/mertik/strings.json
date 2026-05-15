@@ -5,7 +5,6 @@
         "title": "Mertik Maxitrol Fireplace",
         "description": "Enter the IP address of your myfire WiFi box and thermostatic control thresholds.",
         "data": {
-          "name": "Fireplace name",
           "host": "IP address of the WiFi box",
           "low_threshold": "Low heat threshold (degrees C below setpoint)",
           "high_threshold": "Full heat threshold (degrees C below setpoint, must be greater than Low)"
@@ -13,9 +12,8 @@
       },
       "reconfigure": {
         "title": "Reconfigure Mertik Maxitrol",
-        "description": "Update the IP address or name of your fireplace.",
+        "description": "Update the IP address of your fireplace WiFi box.",
         "data": {
-          "name": "Fireplace name",
           "host": "IP address of the WiFi box",
           "low_threshold": "Low heat threshold (degrees C below setpoint)",
           "high_threshold": "Full heat threshold (degrees C below setpoint, must be greater than Low)"

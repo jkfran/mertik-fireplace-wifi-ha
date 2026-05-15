@@ -19,7 +19,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.mertik.const import DOMAIN
 
-ENTRY_DATA = {"name": "My Fireplace", "host": "192.168.1.100"}
+ENTRY_DATA = {"host": "192.168.1.100"}
 
 # (platform, unique-id suffix) for every entity the integration creates
 ALL_ENTITIES = [
