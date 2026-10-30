@@ -34,7 +34,7 @@ class MertikDataCoordinator(DataUpdateCoordinator):
         now = dt_util.utcnow()
         if self._optimistic_off_until is not None and now < self._optimistic_off_until:
             return False
-        if self.mertik.is_on or self.mertik.is_igniting:
+        if self.is_pilot_on or self.mertik.is_igniting:
             return True
         if self._optimistic_on_until is None:
             return False
@@ -62,7 +62,7 @@ class MertikDataCoordinator(DataUpdateCoordinator):
 
     @property
     def is_aux_on(self) -> bool:
-        return self.mertik.is_on and self.mertik.is_aux_on
+        return self.is_pilot_on and self.mertik.is_aux_on
 
     def aux_on(self):
         self.mertik.aux_on()
@@ -93,7 +93,13 @@ class MertikDataCoordinator(DataUpdateCoordinator):
 
     @property
     def is_pilot_on(self) -> bool:
-        """Pilot burns, with or without the main burner (on or standby)."""
+        """Pilot burns, with or without the main burner (on or standby).
+
+        The thermostat drops to the pilot when the room is warm; the fireplace
+        is still on then. The pilot also burns while shutting down, which isn't.
+        """
+        if self.mertik.is_shutting_down:
+            return False
         return self.mertik.is_guard_flame_on or self.mertik.is_on
 
     @property
