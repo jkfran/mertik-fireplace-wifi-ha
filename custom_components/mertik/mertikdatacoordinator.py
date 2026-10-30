@@ -83,6 +83,34 @@ class MertikDataCoordinator(DataUpdateCoordinator):
         return self.mertik.ambient_temperature
 
     @property
+    def is_igniting(self) -> bool:
+        return self.mertik.is_igniting
+
+    @property
+    def is_burning(self) -> bool:
+        """Main burner is lit (not just the pilot)."""
+        return self.mertik.is_on
+
+    @property
+    def is_pilot_on(self) -> bool:
+        """Pilot burns, with or without the main burner (on or standby)."""
+        return self.mertik.is_guard_flame_on or self.mertik.is_on
+
+    @property
+    def is_thermostat_on(self) -> bool:
+        return self.mertik.is_thermostat_mode and self.is_pilot_on
+
+    @property
+    def target_temperature(self) -> float | None:
+        return self.mertik.target_temperature
+
+    def set_thermostat(self, temperature) -> None:
+        self.mertik.set_thermostat(temperature)
+
+    def set_manual(self) -> None:
+        self.mertik.set_manual()
+
+    @property
     def is_light_on(self) -> bool:
         return self.mertik.is_light_on
 

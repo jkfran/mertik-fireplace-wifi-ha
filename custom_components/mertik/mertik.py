@@ -2,6 +2,7 @@
 
 import logging
 import socket
+import time
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,6 +24,10 @@ CMD_LIGHT_ON = "3330303103"
 CMD_LIGHT_OFF = "3330303003"
 CMD_SET_ECO = "4233303103"
 CMD_SET_MANUAL = "423003"
+CMD_SET_THERMOSTAT = "4232303103"
+# "B2FD" + temperature x10 as 4 ASCII hex chars, e.g. 21.5 C -> "00D7"
+CMD_THERMOSTAT_TEMP_PREFIX = "42324644"
+CMD_THERMOSTAT_TEMP_SUFFIX = "03"
 CMD_FLAME_PREFIX = "3136"
 CMD_FLAME_SUFFIX = "03"
 CMD_BRIGHTNESS_PREFIX = "33304645"
@@ -47,12 +52,18 @@ FLAME_HEIGHT_STEPS = [
 #   [20:22]  light level (2 hex chars)
 #   [22:24]  padding
 #   [24:25]  mode
-#   [25:30]  padding
-#   [30:32]  ambient temperature (2 hex chars)
+#   [25:28]  padding
+#   [28:32]  ambient temperature x10 (4 hex chars)
+#   [32:36]  thermostat target temperature x10 (4 hex chars)
 STATUS_FLAME_HEIGHT = slice(14, 16)
 STATUS_BITS = slice(16, 20)
 STATUS_LIGHT_LEVEL = slice(20, 22)
-STATUS_AMBIENT_TEMP = slice(30, 32)
+STATUS_MODE = slice(24, 25)
+STATUS_AMBIENT_TEMP = slice(28, 32)
+STATUS_TARGET_TEMP = slice(32, 36)
+
+# Mode character: "0" manual, "1" thermostat, "2" eco
+MODE_THERMOSTAT = "1"
 
 # Status bit indices (within the binary representation of the 4-char hex status)
 BIT_SHUTTING_DOWN = 7
@@ -67,6 +78,10 @@ FLAME_OFF_THRESHOLD = 123
 # Light level range from the device
 DEVICE_LIGHT_MIN = 100
 DEVICE_LIGHT_MAX = 251
+
+# Pause between switching to thermostat mode and sending the target temperature;
+# other clients wait too, as the module can drop a command sent right after another
+THERMOSTAT_COMMAND_DELAY = 1
 
 
 class Mertik:
@@ -92,6 +107,18 @@ class Mertik:
     @property
     def is_igniting(self) -> bool:
         return self._igniting
+
+    @property
+    def is_guard_flame_on(self) -> bool:
+        return self._guard_flame_on
+
+    @property
+    def is_thermostat_mode(self) -> bool:
+        return self._thermostat_mode
+
+    @property
+    def target_temperature(self) -> float | None:
+        return self._target_temperature
 
     @property
     def ambient_temperature(self) -> float:
@@ -153,6 +180,15 @@ class Mertik:
 
     def set_manual(self):
         self._send_command(CMD_SET_MANUAL)
+        self.refresh_status()
+
+    def set_thermostat(self, temperature) -> None:
+        """Switch to thermostat mode, regulating towards temperature (C)."""
+        self._send_command(CMD_SET_THERMOSTAT)
+        time.sleep(THERMOSTAT_COMMAND_DELAY)
+        value = f"{round(temperature * 10):04X}".encode("ascii").hex()
+        self._send_command(f"{CMD_THERMOSTAT_TEMP_PREFIX}{value}{CMD_THERMOSTAT_TEMP_SUFFIX}")
+        self.refresh_status()
 
     def get_flame_height(self) -> int:
         return self.flameHeight
@@ -163,7 +199,7 @@ class Mertik:
         self.refresh_status()
 
     def _hex_to_bin(self, hex_str):
-        return format(int(hex_str, 16), "b").zfill(8)
+        return format(int(hex_str, 16), "b").zfill(len(hex_str) * 4)
 
     def _bit_at(self, hex_str, index):
         return self._hex_to_bin(hex_str)[index : index + 1] == "1"
@@ -220,4 +256,13 @@ class Mertik:
         if self._light_brightness < 0 or not self._light_on:
             self._light_brightness = 0
 
-        self._ambient_temperature = int(status_str[STATUS_AMBIENT_TEMP], 16) / 10
+        self._thermostat_mode = status_str[STATUS_MODE] == MODE_THERMOSTAT
+        self._ambient_temperature = _parse_temperature(status_str[STATUS_AMBIENT_TEMP])
+        self._target_temperature = _parse_temperature(status_str[STATUS_TARGET_TEMP])
+
+
+def _parse_temperature(hex_str):
+    try:
+        return int(hex_str, 16) / 10
+    except ValueError:
+        return None

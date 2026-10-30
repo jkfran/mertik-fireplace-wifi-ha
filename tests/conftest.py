@@ -17,6 +17,11 @@ def mock_coordinator():
     coordinator.is_light_on = False
     coordinator.light_brightness = 0
     coordinator.ambient_temperature = 21.5
+    coordinator.target_temperature = None
+    coordinator.is_igniting = False
+    coordinator.is_burning = False
+    coordinator.is_pilot_on = False
+    coordinator.is_thermostat_on = False
     coordinator.get_flame_height.return_value = 0
     coordinator.async_set_updated_data = MagicMock()
     coordinator.mark_optimistic_on = MagicMock()
@@ -29,6 +34,8 @@ def mock_coordinator():
     coordinator.light_off = MagicMock()
     coordinator.set_light_brightness = MagicMock()
     coordinator.set_flame_height = MagicMock()
+    coordinator.set_thermostat = MagicMock()
+    coordinator.set_manual = MagicMock()
     # DataUpdateCoordinator attributes needed by CoordinatorEntity
     coordinator.async_add_listener = MagicMock(return_value=MagicMock())
     coordinator.data = None
@@ -60,6 +67,7 @@ def _build_status_bytes(
     light_level: int = 0x64,
     mode: str = "0",
     ambient_temp: int = 0xE6,
+    target_temp: int = 0x00,
 ) -> bytes:
     """Build a raw status response matching the Mertik protocol.
 
@@ -73,8 +81,9 @@ def _build_status_bytes(
         [20:22]  light level (2 hex chars)
         [22:24]  padding
         [24:25]  mode (1 char)
-        [25:30]  padding
-        [30:32]  ambient temperature (2 hex chars)
+        [25:28]  padding
+        [28:32]  ambient temperature x10 (4 hex chars)
+        [32:36]  target temperature x10 (4 hex chars)
     """
     prefix = "303030300003"
     body = (
@@ -84,8 +93,9 @@ def _build_status_bytes(
         f"{light_level:02X}"        # [20:22] light level
         "00"                        # [22:24] padding
         f"{mode}"                   # [24:25] mode
-        "00000"                     # [25:30] padding
-        f"{ambient_temp:02X}"       # [30:32] ambient temp
+        "000"                       # [25:28] padding
+        f"{ambient_temp:04X}"       # [28:32] ambient temp
+        f"{target_temp:04X}"        # [32:36] target temp
     )
     # __sendCommand strips the first byte, so prepend a dummy
     raw = "\x02" + prefix + body
