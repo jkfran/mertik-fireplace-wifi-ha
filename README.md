@@ -48,6 +48,9 @@ After installation by either method, proceed to configure the integration:
 2. Click the **+ Add Integration** button and search for **Mertik Maxitrol**.
 3. Select the integration and Home Assistant will automatically search your local network for the module, adding the entities to your system. If auto discovery is not working for you, figure out the IP (look in the WLAN client list on your Internet Router) and fill it in manually.
 
+### **Dual-burner fireplaces**
+If your fireplace has a second burner, use the **Secondary burner** switch to control it. Turn it off to run the fireplace on the primary burner only. The switch shows as off while the fireplace itself is off.
+
 ## **Disclaimer**
 
 Please use this integration at your own risk. The developers take no responsibility for any issues that may arise from the use of this software.

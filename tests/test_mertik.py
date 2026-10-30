@@ -177,13 +177,25 @@ class TestCommands:
         mock_socket.send.reset_mock()
         mertik_device.aux_on()
         expected = bytearray.fromhex(send_command_prefix + "32303031030a")
-        mock_socket.send.assert_called_with(expected)
+        assert mock_socket.send.call_args_list[0] == call(expected)
+
+    def test_aux_on_calls_refresh(self, mertik_device, mock_socket):
+        mock_socket.send.reset_mock()
+        mertik_device.aux_on()
+        refresh_cmd = bytearray.fromhex(send_command_prefix + "303303")
+        assert mock_socket.send.call_args_list[1] == call(refresh_cmd)
 
     def test_aux_off_sends_correct_command(self, mertik_device, mock_socket):
         mock_socket.send.reset_mock()
         mertik_device.aux_off()
         expected = bytearray.fromhex(send_command_prefix + "32303030030a")
-        mock_socket.send.assert_called_with(expected)
+        assert mock_socket.send.call_args_list[0] == call(expected)
+
+    def test_aux_off_calls_refresh(self, mertik_device, mock_socket):
+        mock_socket.send.reset_mock()
+        mertik_device.aux_off()
+        refresh_cmd = bytearray.fromhex(send_command_prefix + "303303")
+        assert mock_socket.send.call_args_list[1] == call(refresh_cmd)
 
     def test_light_on_sends_correct_command(self, mertik_device, mock_socket):
         mock_socket.send.reset_mock()

@@ -109,10 +109,14 @@ class Mertik:
         self._send_command(CMD_STANDBY)
 
     def aux_on(self):
+        """Enable the secondary (aux) burner on dual-burner fireplaces."""
         self._send_command(CMD_AUX_ON)
+        self.refresh_status()
 
     def aux_off(self):
+        """Disable the secondary (aux) burner so only the primary burner runs."""
         self._send_command(CMD_AUX_OFF)
+        self.refresh_status()
 
     def ignite_fireplace(self):
         self._send_command(CMD_IGNITE)

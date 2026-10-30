@@ -48,13 +48,19 @@ class MertikOnOffSwitchEntity(CoordinatorEntity, SwitchEntity):
 
 
 class MertikAuxOnOffSwitchEntity(CoordinatorEntity, SwitchEntity):
+    """Secondary burner on dual-burner fireplaces (the module's aux output).
+
+    Turn off to run on the primary burner only.
+    """
+
     _attr_has_entity_name = True
-    _attr_name = "Aux"
-    _attr_icon = "mdi:light"
+    _attr_name = "Secondary burner"
+    _attr_icon = "mdi:fire"
 
     def __init__(self, dataservice, entry_id, device_name):
         super().__init__(dataservice)
         self._dataservice = dataservice
+        # Keep the original "Aux" unique_id so existing entity_ids don't change
         self._attr_unique_id = entry_id + "-AuxOnOff"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry_id)},
