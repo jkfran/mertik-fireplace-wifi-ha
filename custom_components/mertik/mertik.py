@@ -2,6 +2,7 @@
 
 import logging
 import socket
+import threading
 import time
 
 _LOGGER = logging.getLogger(__name__)
@@ -91,6 +92,9 @@ THERMOSTAT_COMMAND_DELAY = 1
 class Mertik:
     def __init__(self, ip):
         self.ip = ip
+        # The status poll and service calls run in different threads but share
+        # one socket; the lock keeps their commands and replies from mixing
+        self._lock = threading.RLock()
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client.settimeout(SOCKET_TIMEOUT)
         self.client.connect((self.ip, TCP_PORT))
@@ -189,11 +193,14 @@ class Mertik:
 
     def set_thermostat(self, temperature) -> None:
         """Switch to thermostat mode, regulating towards temperature (C)."""
-        self._send_command(CMD_SET_THERMOSTAT)
-        time.sleep(THERMOSTAT_COMMAND_DELAY)
         value = f"{round(temperature * 10):04X}".encode("ascii").hex()
-        self._send_command(f"{CMD_THERMOSTAT_TEMP_PREFIX}{value}{CMD_THERMOSTAT_TEMP_SUFFIX}")
-        self.refresh_status()
+        # Held for the whole sequence: a status poll sent during the pause could
+        # make the module drop the temperature command
+        with self._lock:
+            self._send_command(CMD_SET_THERMOSTAT)
+            time.sleep(THERMOSTAT_COMMAND_DELAY)
+            self._send_command(f"{CMD_THERMOSTAT_TEMP_PREFIX}{value}{CMD_THERMOSTAT_TEMP_SUFFIX}")
+            self.refresh_status()
 
     def get_flame_height(self) -> int:
         return self.flameHeight
@@ -219,23 +226,24 @@ class Mertik:
     def _send_command(self, msg):
         payload = bytearray.fromhex(COMMAND_PREFIX + msg)
 
-        try:
-            self.client.send(payload)
-        except socket.error:
-            _LOGGER.warning("Send failed, reconnecting to %s", self.ip)
-            self._reconnect()
-            self.client.send(payload)
+        with self._lock:
+            try:
+                self.client.send(payload)
+            except socket.error:
+                _LOGGER.warning("Send failed, reconnecting to %s", self.ip)
+                self._reconnect()
+                self.client.send(payload)
 
-        data = self.client.recv(RECV_BUFFER)
-        if len(data) == 0:
-            _LOGGER.warning("Empty response, reconnecting to %s", self.ip)
-            self._reconnect()
-            self.client.send(payload)
             data = self.client.recv(RECV_BUFFER)
+            if len(data) == 0:
+                _LOGGER.warning("Empty response, reconnecting to %s", self.ip)
+                self._reconnect()
+                self.client.send(payload)
+                data = self.client.recv(RECV_BUFFER)
 
-        response = data.decode("ascii")[1:]
-        if response.startswith(STATUS_PREFIXES):
-            self._process_status(response)
+            response = data.decode("ascii")[1:]
+            if response.startswith(STATUS_PREFIXES):
+                self._process_status(response)
 
     def _process_status(self, status_str):
         raw_flame = int(status_str[STATUS_FLAME_HEIGHT], 16)

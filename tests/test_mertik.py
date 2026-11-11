@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch, call
 
 import pytest
 import socket
+import threading
 
 from custom_components.mertik.mertik import (
     Mertik,
@@ -397,6 +398,7 @@ class TestSocketReconnection:
 
             device = Mertik.__new__(Mertik)
             device.ip = "192.168.1.100"
+            device._lock = threading.RLock()
             device.client = mock_socket
             device.refresh_status()
 
@@ -422,6 +424,7 @@ class TestSocketReconnection:
 
             device = Mertik.__new__(Mertik)
             device.ip = "192.168.1.100"
+            device._lock = threading.RLock()
             device.client = mock_socket
             device.refresh_status()
 
@@ -641,6 +644,28 @@ class TestThermostat:
     def test_set_thermostat_pauses_between_commands(self, mertik_device):
         mertik_device.set_thermostat(20)
         self.mock_sleep.assert_called_once_with(1)
+
+    def test_status_poll_waits_for_thermostat_sequence(self, mertik_device, mock_socket):
+        """A poll from another thread can't land between the mode and temperature commands."""
+        mock_socket.send.reset_mock()
+        poll = threading.Thread(target=mertik_device.refresh_status)
+
+        def poll_during_pause(_seconds):
+            poll.start()
+            poll.join(timeout=0.2)
+
+        self.mock_sleep.side_effect = poll_during_pause
+        mertik_device.set_thermostat(21.5)
+        poll.join(timeout=2)
+
+        assert not poll.is_alive()
+        refresh = call(bytearray.fromhex(send_command_prefix + "303303"))
+        assert mock_socket.send.call_args_list == [
+            call(bytearray.fromhex(send_command_prefix + "4232303103")),
+            call(bytearray.fromhex(send_command_prefix + "423246443030443703")),
+            refresh,  # the sequence's own status refresh
+            refresh,  # the poll, once the sequence is done
+        ]
 
     def test_set_thermostat_temperature_encoding(self, mertik_device, mock_socket):
         """Temperatures are sent as 4 uppercase ASCII hex chars of the value x10."""
