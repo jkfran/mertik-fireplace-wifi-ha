@@ -2,6 +2,8 @@
 
 import logging
 import socket
+import threading
+import time
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,6 +25,10 @@ CMD_LIGHT_ON = "3330303103"
 CMD_LIGHT_OFF = "3330303003"
 CMD_SET_ECO = "4233303103"
 CMD_SET_MANUAL = "423003"
+CMD_SET_THERMOSTAT = "4232303103"
+# "B2FD" + temperature x10 as 4 ASCII hex chars, e.g. 21.5 C -> "00D7"
+CMD_THERMOSTAT_TEMP_PREFIX = "42324644"
+CMD_THERMOSTAT_TEMP_SUFFIX = "03"
 CMD_FLAME_PREFIX = "3136"
 CMD_FLAME_SUFFIX = "03"
 CMD_BRIGHTNESS_PREFIX = "33304645"
@@ -47,12 +53,22 @@ FLAME_HEIGHT_STEPS = [
 #   [20:22]  light level (2 hex chars)
 #   [22:24]  padding
 #   [24:25]  mode
-#   [25:30]  padding
-#   [30:32]  ambient temperature (2 hex chars)
+#   [25:28]  padding
+#   [28:32]  ambient temperature x10 (4 hex chars)
+#   [32:36]  thermostat target temperature x10 (4 hex chars)
 STATUS_FLAME_HEIGHT = slice(14, 16)
 STATUS_BITS = slice(16, 20)
 STATUS_LIGHT_LEVEL = slice(20, 22)
-STATUS_AMBIENT_TEMP = slice(30, 32)
+STATUS_MODE = slice(24, 25)
+STATUS_AMBIENT_TEMP = slice(28, 32)
+STATUS_TARGET_TEMP = slice(32, 36)
+
+# Mode character: "0" manual, "1" thermostat, "2" eco
+MODE_THERMOSTAT = "1"
+
+# Sent in the ambient temperature field while no handset reports a room
+# temperature. It is a placeholder, not a reading (it would decode to 163.8 C)
+NO_HANDSET_TEMPERATURE = "0666"
 
 # Status bit indices (within the binary representation of the 4-char hex status)
 BIT_SHUTTING_DOWN = 7
@@ -68,10 +84,17 @@ FLAME_OFF_THRESHOLD = 123
 DEVICE_LIGHT_MIN = 100
 DEVICE_LIGHT_MAX = 251
 
+# Pause between switching to thermostat mode and sending the target temperature;
+# other clients wait too, as the module can drop a command sent right after another
+THERMOSTAT_COMMAND_DELAY = 1
+
 
 class Mertik:
     def __init__(self, ip):
         self.ip = ip
+        # The status poll and service calls run in different threads but share
+        # one socket; the lock keeps their commands and replies from mixing
+        self._lock = threading.RLock()
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client.settimeout(SOCKET_TIMEOUT)
         self.client.connect((self.ip, TCP_PORT))
@@ -94,7 +117,20 @@ class Mertik:
         return self._igniting
 
     @property
-    def ambient_temperature(self) -> float:
+    def is_guard_flame_on(self) -> bool:
+        return self._guard_flame_on
+
+    @property
+    def is_thermostat_mode(self) -> bool:
+        return self._thermostat_mode
+
+    @property
+    def target_temperature(self) -> float | None:
+        return self._target_temperature
+
+    @property
+    def ambient_temperature(self) -> float | None:
+        """Room temperature from the handset, None while no handset reports one."""
         return self._ambient_temperature
 
     @property
@@ -109,10 +145,14 @@ class Mertik:
         self._send_command(CMD_STANDBY)
 
     def aux_on(self):
+        """Enable the secondary (aux) burner on dual-burner fireplaces."""
         self._send_command(CMD_AUX_ON)
+        self.refresh_status()
 
     def aux_off(self):
+        """Disable the secondary (aux) burner so only the primary burner runs."""
         self._send_command(CMD_AUX_OFF)
+        self.refresh_status()
 
     def ignite_fireplace(self):
         self._send_command(CMD_IGNITE)
@@ -149,6 +189,18 @@ class Mertik:
 
     def set_manual(self):
         self._send_command(CMD_SET_MANUAL)
+        self.refresh_status()
+
+    def set_thermostat(self, temperature) -> None:
+        """Switch to thermostat mode, regulating towards temperature (C)."""
+        value = f"{round(temperature * 10):04X}".encode("ascii").hex()
+        # Held for the whole sequence: a status poll sent during the pause could
+        # make the module drop the temperature command
+        with self._lock:
+            self._send_command(CMD_SET_THERMOSTAT)
+            time.sleep(THERMOSTAT_COMMAND_DELAY)
+            self._send_command(f"{CMD_THERMOSTAT_TEMP_PREFIX}{value}{CMD_THERMOSTAT_TEMP_SUFFIX}")
+            self.refresh_status()
 
     def get_flame_height(self) -> int:
         return self.flameHeight
@@ -159,7 +211,7 @@ class Mertik:
         self.refresh_status()
 
     def _hex_to_bin(self, hex_str):
-        return format(int(hex_str, 16), "b").zfill(8)
+        return format(int(hex_str, 16), "b").zfill(len(hex_str) * 4)
 
     def _bit_at(self, hex_str, index):
         return self._hex_to_bin(hex_str)[index : index + 1] == "1"
@@ -174,23 +226,24 @@ class Mertik:
     def _send_command(self, msg):
         payload = bytearray.fromhex(COMMAND_PREFIX + msg)
 
-        try:
-            self.client.send(payload)
-        except socket.error:
-            _LOGGER.warning("Send failed, reconnecting to %s", self.ip)
-            self._reconnect()
-            self.client.send(payload)
+        with self._lock:
+            try:
+                self.client.send(payload)
+            except socket.error:
+                _LOGGER.warning("Send failed, reconnecting to %s", self.ip)
+                self._reconnect()
+                self.client.send(payload)
 
-        data = self.client.recv(RECV_BUFFER)
-        if len(data) == 0:
-            _LOGGER.warning("Empty response, reconnecting to %s", self.ip)
-            self._reconnect()
-            self.client.send(payload)
             data = self.client.recv(RECV_BUFFER)
+            if len(data) == 0:
+                _LOGGER.warning("Empty response, reconnecting to %s", self.ip)
+                self._reconnect()
+                self.client.send(payload)
+                data = self.client.recv(RECV_BUFFER)
 
-        response = data.decode("ascii")[1:]
-        if response.startswith(STATUS_PREFIXES):
-            self._process_status(response)
+            response = data.decode("ascii")[1:]
+            if response.startswith(STATUS_PREFIXES):
+                self._process_status(response)
 
     def _process_status(self, status_str):
         raw_flame = int(status_str[STATUS_FLAME_HEIGHT], 16)
@@ -216,4 +269,16 @@ class Mertik:
         if self._light_brightness < 0 or not self._light_on:
             self._light_brightness = 0
 
-        self._ambient_temperature = int(status_str[STATUS_AMBIENT_TEMP], 16) / 10
+        self._thermostat_mode = status_str[STATUS_MODE] == MODE_THERMOSTAT
+        ambient = status_str[STATUS_AMBIENT_TEMP]
+        self._ambient_temperature = (
+            None if ambient == NO_HANDSET_TEMPERATURE else _parse_temperature(ambient)
+        )
+        self._target_temperature = _parse_temperature(status_str[STATUS_TARGET_TEMP])
+
+
+def _parse_temperature(hex_str):
+    try:
+        return int(hex_str, 16) / 10
+    except ValueError:
+        return None

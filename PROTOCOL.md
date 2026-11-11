@@ -136,6 +136,28 @@ Each decimal value is encoded to the `xx xx` value by first encoding it to ASCII
 |---|---|---|
 | [...] | `xx` | [...] |
 
+## Thermostat
+
+Matches [tritter/homebridge-mertik-fireplace](https://github.com/tritter/homebridge-mertik-fireplace), [omarshahine/valor-fireplace-cli](https://github.com/omarshahine/valor-fireplace-cli) and [diederikm/mertik-fireplace-wifi-ha](https://github.com/diederikm/mertik-fireplace-wifi-ha).
+
+| Command | ASCII | HEX | Description |
+|---|---|---|---|
+| Thermostat mode | `B201` | `42 32 30 31` | Let the fireplace regulate its flame |
+| Target temperature | `B2FD` + `xxxx` | `42 32 46 44` + `xx xx xx xx` | Temperature x10 as 4 uppercase hex characters, e.g. 21.5 °C → `00D7` |
+| Manual mode | `B0` | `42 30` | Back to manual flame height |
+| Eco mode | `B301` | `42 33 30 31` | |
+
+Send the target temperature about a second after the mode command; the module can drop a command that follows another immediately.
+
+Status fields (offsets after stripping STX):
+
+| Chars | Field |
+|---|---|
+| 16-19 | Status word, 16 bits MSB first. Pad to 16 bits: bit 0 drops during ignition, and padding to 8 shifts every index |
+| 24 | Mode: `0` manual, `1` thermostat, `2` eco |
+| 28-31 | Room temperature x10, from the handset's sensor. `0666` while no handset reports one |
+| 32-35 | Target temperature x10 |
+
 # Todo
 - Add more commands
   - Set fireplace to on/off/eco/manual

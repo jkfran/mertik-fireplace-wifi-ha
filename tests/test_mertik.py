@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch, call
 
 import pytest
 import socket
+import threading
 
 from custom_components.mertik.mertik import (
     Mertik,
@@ -79,6 +80,35 @@ class TestStatusParsing:
         device = Mertik("192.168.1.100")
         assert device.ambient_temperature == 20.0
 
+    def test_ambient_temperature_above_25_5(self, mock_socket):
+        """The field is 16 bits: 0x0104=260 -> 26.0 C, not 0.4 C."""
+        mock_socket.recv.return_value = _build_status_bytes(ambient_temp=0x0104)
+        device = Mertik("192.168.1.100")
+        assert device.ambient_temperature == 26.0
+
+    def test_ambient_temperature_without_handset(self, mock_socket):
+        """0666 is a placeholder for "no handset reading", not 163.8 C."""
+        mock_socket.recv.return_value = _build_status_bytes(ambient_temp=0x0666)
+        device = Mertik("192.168.1.100")
+        assert device.ambient_temperature is None
+
+    def test_frame_from_fireplace_without_handset(self, mock_socket):
+        """A status frame captured from a module: fireplace off, no handset reading."""
+        mock_socket.recv.return_value = (
+            b"\x020303000000034700800300000000066600C8" + b"0" * 64 + b"043E01\x03"
+        )
+        device = Mertik("192.168.1.100")
+        assert device.is_on is False
+        assert device.get_flame_height() == 0
+        assert device.is_guard_flame_on is False
+        assert device.is_igniting is False
+        assert device.is_shutting_down is False
+        assert device.is_aux_on is False
+        assert device.is_light_on is False
+        assert device.is_thermostat_mode is False
+        assert device.ambient_temperature is None
+        assert device.target_temperature == 20.0
+
     def test_light_brightness_max(self, mock_socket):
         """light_level 0xFB=251 with light on -> round(((251-100)/151)*255) = 255."""
         # Use status_bits with bit 13 set (light_on) — need 16-bit value for stable indexing
@@ -129,6 +159,14 @@ class TestStatusParsing:
         device = Mertik("192.168.1.100")
         assert device.is_light_on is True
 
+    def test_status_bits_top_bit_clear(self, mock_socket):
+        """Bits keep their position when the receiver-link bit (MSB) is clear."""
+        mock_socket.recv.return_value = _build_status_bytes(status_bits="0018")
+        device = Mertik("192.168.1.100")
+        assert device.is_igniting is True
+        assert device.is_aux_on is True
+        assert device.is_light_on is False
+
     def test_status_bits_all_clear(self, mock_socket):
         """All status bits clear -> all flags False."""
         mock_socket.recv.return_value = _build_status_bytes(status_bits="0000")
@@ -177,13 +215,25 @@ class TestCommands:
         mock_socket.send.reset_mock()
         mertik_device.aux_on()
         expected = bytearray.fromhex(send_command_prefix + "32303031030a")
-        mock_socket.send.assert_called_with(expected)
+        assert mock_socket.send.call_args_list[0] == call(expected)
+
+    def test_aux_on_calls_refresh(self, mertik_device, mock_socket):
+        mock_socket.send.reset_mock()
+        mertik_device.aux_on()
+        refresh_cmd = bytearray.fromhex(send_command_prefix + "303303")
+        assert mock_socket.send.call_args_list[1] == call(refresh_cmd)
 
     def test_aux_off_sends_correct_command(self, mertik_device, mock_socket):
         mock_socket.send.reset_mock()
         mertik_device.aux_off()
         expected = bytearray.fromhex(send_command_prefix + "32303030030a")
-        mock_socket.send.assert_called_with(expected)
+        assert mock_socket.send.call_args_list[0] == call(expected)
+
+    def test_aux_off_calls_refresh(self, mertik_device, mock_socket):
+        mock_socket.send.reset_mock()
+        mertik_device.aux_off()
+        refresh_cmd = bytearray.fromhex(send_command_prefix + "303303")
+        assert mock_socket.send.call_args_list[1] == call(refresh_cmd)
 
     def test_light_on_sends_correct_command(self, mertik_device, mock_socket):
         mock_socket.send.reset_mock()
@@ -219,7 +269,13 @@ class TestCommands:
         mock_socket.send.reset_mock()
         mertik_device.set_manual()
         expected = bytearray.fromhex(send_command_prefix + "423003")
-        mock_socket.send.assert_called_with(expected)
+        assert mock_socket.send.call_args_list[0] == call(expected)
+
+    def test_set_manual_calls_refresh(self, mertik_device, mock_socket):
+        mock_socket.send.reset_mock()
+        mertik_device.set_manual()
+        refresh_cmd = bytearray.fromhex(send_command_prefix + "303303")
+        assert mock_socket.send.call_args_list[1] == call(refresh_cmd)
 
 
 class TestFlameHeight:
@@ -342,6 +398,7 @@ class TestSocketReconnection:
 
             device = Mertik.__new__(Mertik)
             device.ip = "192.168.1.100"
+            device._lock = threading.RLock()
             device.client = mock_socket
             device.refresh_status()
 
@@ -367,6 +424,7 @@ class TestSocketReconnection:
 
             device = Mertik.__new__(Mertik)
             device.ip = "192.168.1.100"
+            device._lock = threading.RLock()
             device.client = mock_socket
             device.refresh_status()
 
@@ -381,6 +439,11 @@ class TestHelperMethods:
         assert mertik_device._hex_to_bin("00") == "00000000"
         assert mertik_device._hex_to_bin("80") == "10000000"
         assert mertik_device._hex_to_bin("01") == "00000001"
+
+    def test_hex_to_bin_pads_to_full_width(self, mertik_device):
+        """A 4-char status word always gives 16 bits, even with the top bit clear."""
+        assert mertik_device._hex_to_bin("0008") == "0000000000001000"
+        assert mertik_device._hex_to_bin("8008") == "1000000000001000"
 
     def test_bit_at(self, mertik_device):
         assert mertik_device._bit_at("FF", 0) is True
@@ -557,3 +620,91 @@ class TestStateTransitions:
         assert device.is_light_on is False
         assert device.light_brightness == 0
         assert device.ambient_temperature == 20.0
+
+
+class TestThermostat:
+    """Test thermostat mode commands and status fields."""
+
+    @pytest.fixture(autouse=True)
+    def no_sleep(self):
+        with patch("custom_components.mertik.mertik.time.sleep") as mock_sleep:
+            self.mock_sleep = mock_sleep
+            yield
+
+    def test_set_thermostat_sends_mode_then_temperature(self, mertik_device, mock_socket):
+        mock_socket.send.reset_mock()
+        mertik_device.set_thermostat(21.5)
+        # "B201", then "B2FD" + "00D7" (215 = 21.5 C x10), then a status refresh
+        assert mock_socket.send.call_args_list == [
+            call(bytearray.fromhex(send_command_prefix + "4232303103")),
+            call(bytearray.fromhex(send_command_prefix + "423246443030443703")),
+            call(bytearray.fromhex(send_command_prefix + "303303")),
+        ]
+
+    def test_set_thermostat_pauses_between_commands(self, mertik_device):
+        mertik_device.set_thermostat(20)
+        self.mock_sleep.assert_called_once_with(1)
+
+    def test_status_poll_waits_for_thermostat_sequence(self, mertik_device, mock_socket):
+        """A poll from another thread can't land between the mode and temperature commands."""
+        mock_socket.send.reset_mock()
+        poll = threading.Thread(target=mertik_device.refresh_status)
+
+        def poll_during_pause(_seconds):
+            poll.start()
+            poll.join(timeout=0.2)
+
+        self.mock_sleep.side_effect = poll_during_pause
+        mertik_device.set_thermostat(21.5)
+        poll.join(timeout=2)
+
+        assert not poll.is_alive()
+        refresh = call(bytearray.fromhex(send_command_prefix + "303303"))
+        assert mock_socket.send.call_args_list == [
+            call(bytearray.fromhex(send_command_prefix + "4232303103")),
+            call(bytearray.fromhex(send_command_prefix + "423246443030443703")),
+            refresh,  # the sequence's own status refresh
+            refresh,  # the poll, once the sequence is done
+        ]
+
+    def test_set_thermostat_temperature_encoding(self, mertik_device, mock_socket):
+        """Temperatures are sent as 4 uppercase ASCII hex chars of the value x10."""
+        for temperature, ascii_value in [(5, "0032"), (20, "00C8"), (20.5, "00CD"), (36, "0168")]:
+            mock_socket.send.reset_mock()
+            mertik_device.set_thermostat(temperature)
+            expected = bytearray.fromhex(
+                send_command_prefix + "42324644" + ascii_value.encode("ascii").hex() + "03"
+            )
+            assert mock_socket.send.call_args_list[1] == call(expected)
+
+    def test_thermostat_mode(self, mock_socket):
+        mock_socket.recv.return_value = _build_status_bytes(mode="1")
+        device = Mertik("192.168.1.100")
+        assert device.is_thermostat_mode is True
+
+    def test_manual_mode(self, mock_socket):
+        mock_socket.recv.return_value = _build_status_bytes(mode="0")
+        device = Mertik("192.168.1.100")
+        assert device.is_thermostat_mode is False
+
+    def test_eco_mode_is_not_thermostat(self, mock_socket):
+        mock_socket.recv.return_value = _build_status_bytes(mode="2")
+        device = Mertik("192.168.1.100")
+        assert device.is_thermostat_mode is False
+
+    def test_target_temperature(self, mock_socket):
+        """0x00D7=215 -> 21.5 C."""
+        mock_socket.recv.return_value = _build_status_bytes(target_temp=0xD7)
+        device = Mertik("192.168.1.100")
+        assert device.target_temperature == 21.5
+
+    def test_target_temperature_missing_from_short_frame(self, mock_socket):
+        raw = _build_status_bytes()[:-4]
+        mock_socket.recv.return_value = raw
+        device = Mertik("192.168.1.100")
+        assert device.target_temperature is None
+
+    def test_guard_flame_property(self, mock_socket):
+        mock_socket.recv.return_value = _build_status_bytes(status_bits="8080")
+        device = Mertik("192.168.1.100")
+        assert device.is_guard_flame_on is True

@@ -62,7 +62,7 @@ class TestOnOffSwitch:
 
 
 class TestAuxSwitch:
-    """Test the aux on/off switch entity."""
+    """Test the secondary burner (aux) switch entity."""
 
     @pytest.fixture
     def switch(self, hass, mock_coordinator):
@@ -76,13 +76,13 @@ class TestAuxSwitch:
         assert switch.unique_id == "test_entry-AuxOnOff"
 
     def test_name(self, switch):
-        assert switch.name == "Aux"
+        assert switch.name == "Secondary burner"
 
     def test_has_entity_name(self, switch):
         assert switch.has_entity_name is True
 
     def test_icon(self, switch):
-        assert switch.icon == "mdi:light"
+        assert switch.icon == "mdi:fire"
 
     def test_device_info(self, switch):
         info = switch.device_info
@@ -128,7 +128,7 @@ class TestSwitchPlatformSetup:
         await async_setup_entry(hass, mock_config_entry, lambda e: added.extend(e))
 
         assert added[0].name is None
-        assert added[1].name == "Aux"
+        assert added[1].name == "Secondary burner"
 
     async def test_all_entities_share_device(self, hass, mock_coordinator, mock_config_entry):
         hass.data[DOMAIN] = {mock_config_entry.entry_id: mock_coordinator}

@@ -21,6 +21,10 @@ def mock_mertik():
     mertik.is_on = False
     mertik.is_igniting = False
     mertik.is_aux_on = False
+    mertik.is_guard_flame_on = False
+    mertik.is_shutting_down = False
+    mertik.is_thermostat_mode = False
+    mertik.target_temperature = None
     mertik.is_light_on = False
     mertik.light_brightness = 0
     mertik.ambient_temperature = 20.0
@@ -46,6 +50,18 @@ class TestOptimisticState:
         """When device reports on, is_on should be True."""
         mock_mertik.is_on = True
         assert coordinator.is_on is True
+
+    def test_is_on_true_on_pilot_only(self, coordinator, mock_mertik):
+        """Thermostat dropped to the pilot because the room is warm: still on."""
+        mock_mertik.is_on = False
+        mock_mertik.is_guard_flame_on = True
+        assert coordinator.is_on is True
+
+    def test_is_on_false_while_shutting_down(self, coordinator, mock_mertik):
+        """The pilot still burns while shutting down, but the fireplace is going off."""
+        mock_mertik.is_guard_flame_on = True
+        mock_mertik.is_shutting_down = True
+        assert coordinator.is_on is False
 
     def test_is_on_true_when_igniting(self, coordinator, mock_mertik):
         """When device is igniting, is_on should be True."""
@@ -161,6 +177,12 @@ class TestCoordinatorDelegation:
         mock_mertik.is_on = True
         assert coordinator.is_aux_on is True
 
+    def test_is_aux_on_with_pilot_only(self, coordinator, mock_mertik):
+        """The secondary burner setting still shows while the thermostat idles on the pilot."""
+        mock_mertik.is_guard_flame_on = True
+        mock_mertik.is_aux_on = True
+        assert coordinator.is_aux_on is True
+
     def test_light_brightness(self, coordinator, mock_mertik):
         mock_mertik.light_brightness = 200
         assert coordinator.light_brightness == 200
@@ -168,6 +190,61 @@ class TestCoordinatorDelegation:
     def test_is_light_on(self, coordinator, mock_mertik):
         mock_mertik.is_light_on = True
         assert coordinator.is_light_on is True
+
+
+class TestThermostatDelegation:
+    """Test the coordinator's thermostat state and commands."""
+
+    def test_set_thermostat(self, coordinator, mock_mertik):
+        coordinator.set_thermostat(21.5)
+        mock_mertik.set_thermostat.assert_called_once_with(21.5)
+
+    def test_set_manual(self, coordinator, mock_mertik):
+        coordinator.set_manual()
+        mock_mertik.set_manual.assert_called_once()
+
+    def test_target_temperature(self, coordinator, mock_mertik):
+        mock_mertik.target_temperature = 21.5
+        assert coordinator.target_temperature == 21.5
+
+    def test_is_igniting(self, coordinator, mock_mertik):
+        mock_mertik.is_igniting = True
+        assert coordinator.is_igniting is True
+
+    def test_is_burning_follows_main_burner(self, coordinator, mock_mertik):
+        mock_mertik.is_on = True
+        assert coordinator.is_burning is True
+
+    def test_is_pilot_on_in_standby(self, coordinator, mock_mertik):
+        """Pilot only (standby): guard flame set, main burner off."""
+        mock_mertik.is_guard_flame_on = True
+        assert coordinator.is_pilot_on is True
+
+    def test_is_pilot_on_when_burning(self, coordinator, mock_mertik):
+        mock_mertik.is_on = True
+        assert coordinator.is_pilot_on is True
+
+    def test_is_pilot_off_while_shutting_down(self, coordinator, mock_mertik):
+        mock_mertik.is_guard_flame_on = True
+        mock_mertik.is_shutting_down = True
+        assert coordinator.is_pilot_on is False
+
+    def test_is_pilot_off(self, coordinator):
+        assert coordinator.is_pilot_on is False
+
+    def test_is_thermostat_on(self, coordinator, mock_mertik):
+        mock_mertik.is_thermostat_mode = True
+        mock_mertik.is_guard_flame_on = True
+        assert coordinator.is_thermostat_on is True
+
+    def test_is_thermostat_on_requires_lit_fireplace(self, coordinator, mock_mertik):
+        """The mode character alone doesn't count while the fireplace is out."""
+        mock_mertik.is_thermostat_mode = True
+        assert coordinator.is_thermostat_on is False
+
+    def test_is_thermostat_on_requires_thermostat_mode(self, coordinator, mock_mertik):
+        mock_mertik.is_on = True
+        assert coordinator.is_thermostat_on is False
 
 
 class TestAsyncUpdateData:

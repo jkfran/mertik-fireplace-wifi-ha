@@ -71,7 +71,7 @@ class TestAsyncSetupEntry:
     async def test_forwards_platforms(self, hass, mock_config_entry_ha):
         await async_setup_entry(hass, mock_config_entry_ha)
         self.mock_forward.assert_called_once_with(
-            mock_config_entry_ha, ["switch", "number", "sensor", "light"]
+            mock_config_entry_ha, ["switch", "number", "sensor", "light", "climate"]
         )
 
     async def test_returns_true(self, hass, mock_config_entry_ha):
@@ -145,7 +145,7 @@ class TestAsyncUnloadEntry:
         hass.data[DOMAIN] = {mock_config_entry_ha.entry_id: MagicMock()}
         await async_unload_entry(hass, mock_config_entry_ha)
         self.mock_unload.assert_called_once_with(
-            mock_config_entry_ha, ["switch", "number", "sensor", "light"]
+            mock_config_entry_ha, ["switch", "number", "sensor", "light", "climate"]
         )
 
     async def test_removes_data_on_success(self, hass, mock_config_entry_ha):

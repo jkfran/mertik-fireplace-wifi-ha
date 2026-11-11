@@ -48,6 +48,17 @@ After installation by either method, proceed to configure the integration:
 2. Click the **+ Add Integration** button and search for **Mertik Maxitrol**.
 3. Select the integration and Home Assistant will automatically search your local network for the module, adding the entities to your system. If auto discovery is not working for you, figure out the IP (look in the WLAN client list on your Internet Router) and fill it in manually.
 
+### **Dual-burner fireplaces**
+If your fireplace has a second burner, use the **Secondary burner** switch to control it. Turn it off to run the fireplace on the primary burner only. The switch shows as off while the fireplace itself is off.
+
+### **Thermostat**
+The **Thermostat** entity uses the fireplace's own thermostat mode, the same one you set on the remote. Set a target temperature and the fireplace adjusts its flame to reach it, measuring the room temperature with the remote's sensor.
+
+- The fireplace must be lit first. The thermostat doesn't ignite it.
+- Setting a temperature switches the fireplace to thermostat mode.
+- Turning the thermostat off switches back to manual flame height. The fire keeps burning; use the main fireplace switch to turn it off.
+- Without a remote reporting to the fireplace there is no room temperature, and Home Assistant shows it as unknown.
+
 ## **Disclaimer**
 
 Please use this integration at your own risk. The developers take no responsibility for any issues that may arise from the use of this software.

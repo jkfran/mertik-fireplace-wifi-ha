@@ -54,6 +54,11 @@ class TestTemperatureSensor:
         mock_coordinator.ambient_temperature = 5.0
         assert sensor.native_value == 5.0
 
+    def test_native_value_without_handset(self, sensor, mock_coordinator):
+        """No handset reading: unknown rather than a made-up number."""
+        mock_coordinator.ambient_temperature = None
+        assert sensor.native_value is None
+
 
 class TestSensorPlatformSetup:
     """Test sensor platform async_setup_entry."""
