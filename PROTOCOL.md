@@ -155,7 +155,7 @@ Status fields (offsets after stripping STX):
 |---|---|
 | 16-19 | Status word, 16 bits MSB first. Pad to 16 bits: bit 0 drops during ignition, and padding to 8 shifts every index |
 | 24 | Mode: `0` manual, `1` thermostat, `2` eco |
-| 28-31 | Room temperature x10, from the handset's sensor |
+| 28-31 | Room temperature x10, from the handset's sensor. `0666` while no handset reports one |
 | 32-35 | Target temperature x10 |
 
 # Todo

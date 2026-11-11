@@ -57,6 +57,7 @@ The **Thermostat** entity uses the fireplace's own thermostat mode, the same one
 - The fireplace must be lit first. The thermostat doesn't ignite it.
 - Setting a temperature switches the fireplace to thermostat mode.
 - Turning the thermostat off switches back to manual flame height. The fire keeps burning; use the main fireplace switch to turn it off.
+- Without a remote reporting to the fireplace there is no room temperature, and Home Assistant shows it as unknown.
 
 ## **Disclaimer**
 

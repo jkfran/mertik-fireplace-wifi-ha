@@ -85,6 +85,29 @@ class TestStatusParsing:
         device = Mertik("192.168.1.100")
         assert device.ambient_temperature == 26.0
 
+    def test_ambient_temperature_without_handset(self, mock_socket):
+        """0666 is a placeholder for "no handset reading", not 163.8 C."""
+        mock_socket.recv.return_value = _build_status_bytes(ambient_temp=0x0666)
+        device = Mertik("192.168.1.100")
+        assert device.ambient_temperature is None
+
+    def test_frame_from_fireplace_without_handset(self, mock_socket):
+        """A status frame captured from a module: fireplace off, no handset reading."""
+        mock_socket.recv.return_value = (
+            b"\x020303000000034700800300000000066600C8" + b"0" * 64 + b"043E01\x03"
+        )
+        device = Mertik("192.168.1.100")
+        assert device.is_on is False
+        assert device.get_flame_height() == 0
+        assert device.is_guard_flame_on is False
+        assert device.is_igniting is False
+        assert device.is_shutting_down is False
+        assert device.is_aux_on is False
+        assert device.is_light_on is False
+        assert device.is_thermostat_mode is False
+        assert device.ambient_temperature is None
+        assert device.target_temperature == 20.0
+
     def test_light_brightness_max(self, mock_socket):
         """light_level 0xFB=251 with light on -> round(((251-100)/151)*255) = 255."""
         # Use status_bits with bit 13 set (light_on) — need 16-bit value for stable indexing

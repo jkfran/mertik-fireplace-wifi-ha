@@ -86,6 +86,10 @@ class TestThermostat:
         mock_coordinator.ambient_temperature = 21.5
         assert thermostat.current_temperature == 21.5
 
+    def test_current_temperature_without_handset(self, thermostat, mock_coordinator):
+        mock_coordinator.ambient_temperature = None
+        assert thermostat.current_temperature is None
+
     def test_target_temperature(self, thermostat, mock_coordinator):
         mock_coordinator.target_temperature = 22.0
         assert thermostat.target_temperature == 22.0

@@ -65,6 +65,10 @@ STATUS_TARGET_TEMP = slice(32, 36)
 # Mode character: "0" manual, "1" thermostat, "2" eco
 MODE_THERMOSTAT = "1"
 
+# Sent in the ambient temperature field while no handset reports a room
+# temperature. It is a placeholder, not a reading (it would decode to 163.8 C)
+NO_HANDSET_TEMPERATURE = "0666"
+
 # Status bit indices (within the binary representation of the 4-char hex status)
 BIT_SHUTTING_DOWN = 7
 BIT_GUARD_FLAME = 8
@@ -121,7 +125,8 @@ class Mertik:
         return self._target_temperature
 
     @property
-    def ambient_temperature(self) -> float:
+    def ambient_temperature(self) -> float | None:
+        """Room temperature from the handset, None while no handset reports one."""
         return self._ambient_temperature
 
     @property
@@ -257,7 +262,10 @@ class Mertik:
             self._light_brightness = 0
 
         self._thermostat_mode = status_str[STATUS_MODE] == MODE_THERMOSTAT
-        self._ambient_temperature = _parse_temperature(status_str[STATUS_AMBIENT_TEMP])
+        ambient = status_str[STATUS_AMBIENT_TEMP]
+        self._ambient_temperature = (
+            None if ambient == NO_HANDSET_TEMPERATURE else _parse_temperature(ambient)
+        )
         self._target_temperature = _parse_temperature(status_str[STATUS_TARGET_TEMP])
 
 
