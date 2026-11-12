@@ -1,0 +1,140 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Mertik Maxitrol-haard",
+        "description": "Kies de wifi-module van je haard of typ het IP-adres. Gevonden in je netwerk: {found}",
+        "data": {
+          "name": "Naam van de haard",
+          "host": "IP-adres van de wifi-module"
+        }
+      },
+      "reconfigure": {
+        "title": "Adres wijzigen",
+        "description": "Huidig adres: {current}. Gevonden in je netwerk: {found}",
+        "data": {
+          "host": "IP-adres van de wifi-module"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Kan geen verbinding maken met de haard. Controleer het IP-adres en of het apparaat aan staat.",
+      "wrong_device": "Op dat adres antwoordt een andere haard."
+    },
+    "abort": {
+      "already_configured": "Deze haard is al ingesteld.",
+      "reconfigure_successful": "Het adres is gewijzigd.",
+      "not_configured": "Deze haard is nog niet ingesteld."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Thermostaat",
+        "description": "De eigen thermostaat van de haard meet de kamertemperatuur met de afstandsbediening. Kies je hier een temperatuursensor, dan regelt Home Assistant de vlam op die sensor. De haard wordt nooit ontstoken: is de kamer warm genoeg, dan gaat de vlam terug naar de waakvlam, en weer omhoog als er warmte nodig is.",
+        "data": {
+          "temperature_sensor": "Kamertemperatuursensor"
+        },
+        "data_description": {
+          "temperature_sensor": "Laat leeg om de eigen thermostaat van de haard te gebruiken."
+        }
+      }
+    }
+  },
+  "entity": {
+    "switch": {
+      "secondary_burner": {
+        "name": "Tweede brander"
+      }
+    },
+    "number": {
+      "flame_height": {
+        "name": "Vlamhoogte"
+      }
+    },
+    "sensor": {
+      "ambient_temperature": {
+        "name": "Omgevingstemperatuur"
+      },
+      "status": {
+        "name": "Status",
+        "state": {
+          "off": "Uit",
+          "standby": "Waakvlam",
+          "igniting": "Ontsteken",
+          "on": "Aan",
+          "shutting_down": "Uitschakelen"
+        }
+      },
+      "fan_level": {
+        "name": "Ventilatorstand"
+      },
+      "ip_address": {
+        "name": "IP-adres"
+      }
+    },
+    "binary_sensor": {
+      "pilot_flame": {
+        "name": "Waakvlam"
+      },
+      "igniting": {
+        "name": "Ontsteken"
+      },
+      "shutting_down": {
+        "name": "Uitschakelen"
+      },
+      "receiver_connection": {
+        "name": "Ontvanger"
+      },
+      "remote_connection": {
+        "name": "Afstandsbediening"
+      },
+      "fault": {
+        "name": "Storing"
+      },
+      "fan": {
+        "name": "Ventilator"
+      }
+    },
+    "light": {
+      "light": {
+        "name": "Verlichting"
+      }
+    },
+    "climate": {
+      "thermostat": {
+        "name": "Thermostaat"
+      }
+    },
+    "select": {
+      "mode": {
+        "name": "Modus",
+        "state": {
+          "manual": "Handmatig",
+          "thermostat": "Thermostaat",
+          "eco": "Eco"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "fireplace_off": {
+      "message": "Zet eerst de haard aan."
+    },
+    "shutting_down": {
+      "message": "De haard is nog aan het uitschakelen. Probeer het zo opnieuw."
+    },
+    "no_receiver": {
+      "message": "De wifi-module heeft geen verbinding met de ontvanger in de haard."
+    },
+    "cannot_reach": {
+      "message": "De haard reageert niet: {error}"
+    }
+  },
+  "issues": {
+    "receiver_lost": {
+      "title": "{name}: geen verbinding met de haard",
+      "description": "De wifi-module van {name} antwoordt, maar heeft geen radioverbinding meer met de ontvanger in de haard (de app toont dit als F43). Opdrachten bereiken de haard niet tot de verbinding terug is. Controleer de voeding of batterijen van de ontvanger. De haard met de afstandsbediening bedienen, of de stroom even uit- en aanzetten, herstelt de verbinding meestal."
+    }
+  }
+}

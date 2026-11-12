@@ -1,176 +1,524 @@
-"""Tests for the thermostat climate entity."""
+"""The thermostat entity, in both of its forms.
+
+Without a temperature sensor in the options it drives the fireplace's own
+thermostat mode. With one, Home Assistant regulates the flame itself. Neither
+ever ignites the fireplace.
+"""
+
+from __future__ import annotations
+
+import logging
 
 import pytest
+from pytest_homeassistant_custom_component.common import mock_restore_cache
 
-from homeassistant.components.climate import (
-    ClimateEntityFeature,
-    HVACAction,
-    HVACMode,
-)
-from homeassistant.const import UnitOfTemperature
+from homeassistant.core import HomeAssistant, State
 from homeassistant.exceptions import ServiceValidationError
 
-from custom_components.mertik.climate import (
-    MertikThermostatEntity,
-    async_setup_entry,
-)
-from custom_components.mertik.const import DOMAIN
+from custom_components.mertik.const import CONF_TEMPERATURE_SENSOR
+
+from .conftest import call, entity_id, poll
+from .fakes import FakeBox, FakeClock, FakeFireplace
+
+ROOM = "sensor.room"
+CLIMATE = "climate.fireplace_thermostat"
 
 
-class TestThermostat:
-    """Test the thermostat climate entity."""
-
-    @pytest.fixture
-    def thermostat(self, hass, mock_coordinator):
-        entity = MertikThermostatEntity(mock_coordinator, "test_entry", "My Fireplace")
-        entity.hass = hass
-        return entity
-
-    def test_unique_id(self, thermostat):
-        assert thermostat.unique_id == "test_entry-Thermostat"
-
-    def test_name(self, thermostat):
-        assert thermostat.name == "Thermostat"
-
-    def test_has_entity_name(self, thermostat):
-        assert thermostat.has_entity_name is True
-
-    def test_device_info(self, thermostat):
-        info = thermostat.device_info
-        assert info["identifiers"] == {(DOMAIN, "test_entry")}
-        assert info["name"] == "My Fireplace"
-        assert info["manufacturer"] == "Mertik Maxitrol"
-
-    def test_hvac_modes(self, thermostat):
-        assert thermostat.hvac_modes == [HVACMode.OFF, HVACMode.HEAT]
-
-    def test_supported_features(self, thermostat):
-        assert thermostat.supported_features == (
-            ClimateEntityFeature.TARGET_TEMPERATURE
-            | ClimateEntityFeature.TURN_ON
-            | ClimateEntityFeature.TURN_OFF
-        )
-
-    def test_temperature_range(self, thermostat):
-        assert thermostat.temperature_unit == UnitOfTemperature.CELSIUS
-        assert thermostat.min_temp == 5
-        assert thermostat.max_temp == 36
-        assert thermostat.target_temperature_step == 0.5
-
-    def test_hvac_mode_heat(self, thermostat, mock_coordinator):
-        mock_coordinator.is_thermostat_on = True
-        assert thermostat.hvac_mode == HVACMode.HEAT
-
-    def test_hvac_mode_off(self, thermostat, mock_coordinator):
-        mock_coordinator.is_thermostat_on = False
-        assert thermostat.hvac_mode == HVACMode.OFF
-
-    def test_hvac_action_preheating(self, thermostat, mock_coordinator):
-        mock_coordinator.is_igniting = True
-        assert thermostat.hvac_action == HVACAction.PREHEATING
-
-    def test_hvac_action_heating(self, thermostat, mock_coordinator):
-        mock_coordinator.is_burning = True
-        mock_coordinator.is_pilot_on = True
-        assert thermostat.hvac_action == HVACAction.HEATING
-
-    def test_hvac_action_idle_on_pilot(self, thermostat, mock_coordinator):
-        """Room warm enough: the fireplace drops to its pilot flame."""
-        mock_coordinator.is_pilot_on = True
-        assert thermostat.hvac_action == HVACAction.IDLE
-
-    def test_hvac_action_off(self, thermostat):
-        assert thermostat.hvac_action == HVACAction.OFF
-
-    def test_current_temperature(self, thermostat, mock_coordinator):
-        mock_coordinator.ambient_temperature = 21.5
-        assert thermostat.current_temperature == 21.5
-
-    def test_current_temperature_without_handset(self, thermostat, mock_coordinator):
-        mock_coordinator.ambient_temperature = None
-        assert thermostat.current_temperature is None
-
-    def test_target_temperature(self, thermostat, mock_coordinator):
-        mock_coordinator.target_temperature = 22.0
-        assert thermostat.target_temperature == 22.0
-
-    def test_target_temperature_unset(self, thermostat, mock_coordinator):
-        """The device reports 0 when no target has been set."""
-        mock_coordinator.target_temperature = 0.0
-        assert thermostat.target_temperature is None
-
-    def test_target_temperature_unknown(self, thermostat, mock_coordinator):
-        mock_coordinator.target_temperature = None
-        assert thermostat.target_temperature is None
-
-    async def test_set_temperature(self, thermostat, mock_coordinator):
-        mock_coordinator.is_pilot_on = True
-        await thermostat.async_set_temperature(temperature=21.5)
-        mock_coordinator.set_thermostat.assert_called_once_with(21.5)
-        mock_coordinator.async_set_updated_data.assert_called_once_with(None)
-
-    async def test_set_temperature_rounds_to_half_degrees(self, thermostat, mock_coordinator):
-        mock_coordinator.is_pilot_on = True
-        await thermostat.async_set_temperature(temperature=21.3)
-        mock_coordinator.set_thermostat.assert_called_once_with(21.5)
-
-    async def test_set_temperature_with_hvac_mode_off(self, thermostat, mock_coordinator):
-        mock_coordinator.is_pilot_on = True
-        await thermostat.async_set_temperature(temperature=21.5, hvac_mode=HVACMode.OFF)
-        mock_coordinator.set_manual.assert_called_once()
-        mock_coordinator.set_thermostat.assert_not_called()
-
-    async def test_set_temperature_requires_lit_fireplace(self, thermostat, mock_coordinator):
-        mock_coordinator.is_pilot_on = False
-        with pytest.raises(ServiceValidationError):
-            await thermostat.async_set_temperature(temperature=21.5)
-        mock_coordinator.set_thermostat.assert_not_called()
-
-    async def test_set_hvac_mode_heat_uses_current_target(self, thermostat, mock_coordinator):
-        mock_coordinator.is_pilot_on = True
-        mock_coordinator.target_temperature = 22.5
-        await thermostat.async_set_hvac_mode(HVACMode.HEAT)
-        mock_coordinator.set_thermostat.assert_called_once_with(22.5)
-        mock_coordinator.async_set_updated_data.assert_called_once_with(None)
-
-    async def test_set_hvac_mode_heat_defaults_target(self, thermostat, mock_coordinator):
-        """Without a stored target, start the thermostat at 20 C."""
-        mock_coordinator.is_pilot_on = True
-        mock_coordinator.target_temperature = 0.0
-        await thermostat.async_set_hvac_mode(HVACMode.HEAT)
-        mock_coordinator.set_thermostat.assert_called_once_with(20.0)
-
-    async def test_set_hvac_mode_heat_requires_lit_fireplace(self, thermostat, mock_coordinator):
-        mock_coordinator.is_pilot_on = False
-        with pytest.raises(ServiceValidationError):
-            await thermostat.async_set_hvac_mode(HVACMode.HEAT)
-        mock_coordinator.set_thermostat.assert_not_called()
-
-    async def test_set_hvac_mode_off_returns_to_manual(self, thermostat, mock_coordinator):
-        await thermostat.async_set_hvac_mode(HVACMode.OFF)
-        mock_coordinator.set_manual.assert_called_once()
-        mock_coordinator.async_set_updated_data.assert_called_once_with(None)
-
-    async def test_turn_on(self, thermostat, mock_coordinator):
-        mock_coordinator.is_pilot_on = True
-        mock_coordinator.target_temperature = 21.0
-        await thermostat.async_turn_on()
-        mock_coordinator.set_thermostat.assert_called_once_with(21.0)
-
-    async def test_turn_off(self, thermostat, mock_coordinator):
-        await thermostat.async_turn_off()
-        mock_coordinator.set_manual.assert_called_once()
+def set_room(hass: HomeAssistant, value: str, unit: str = "°C") -> None:
+    hass.states.async_set(
+        ROOM, value, {"unit_of_measurement": unit, "device_class": "temperature"}
+    )
 
 
-class TestClimatePlatformSetup:
-    """Test climate platform async_setup_entry."""
+@pytest.fixture
+def with_sensor(hass: HomeAssistant, entry) -> None:
+    """Options: Home Assistant regulates on sensor.room (18 degrees to start)."""
+    hass.config_entries.async_update_entry(
+        entry, options={CONF_TEMPERATURE_SENSOR: ROOM}
+    )
+    set_room(hass, "18.0")
 
-    async def test_creates_thermostat(self, hass, mock_coordinator, mock_config_entry):
-        hass.data[DOMAIN] = {mock_config_entry.entry_id: mock_coordinator}
-        added = []
 
-        await async_setup_entry(hass, mock_config_entry, lambda e: added.extend(e))
+@pytest.fixture
+def climate(hass: HomeAssistant, entry, coordinator) -> str:
+    found = entity_id(hass, entry, "climate", "Thermostat")
+    assert found == CLIMATE
+    return found
 
-        assert len(added) == 1
-        assert isinstance(added[0], MertikThermostatEntity)
-        assert added[0].unique_id == "test_entry_123-Thermostat"
+
+# --- The fireplace's own thermostat ----------------------------------------------
+
+
+async def test_own_thermostat_is_off_with_the_fire_off(
+    hass: HomeAssistant, climate: str
+) -> None:
+    state = hass.states.get(climate)
+    assert state.state == "off"
+    assert state.attributes["hvac_modes"] == ["off", "heat"]
+    assert state.attributes["hvac_action"] == "off"
+    assert state.attributes["min_temp"] == 5
+    assert state.attributes["max_temp"] == 36
+    assert state.attributes["target_temp_step"] == 0.5
+    # The target the fireplace keeps; no room temperature without a handset.
+    assert state.attributes["temperature"] == 20.0
+    assert state.attributes["current_temperature"] is None
+
+
+async def test_own_thermostat_set_temperature_starts_it(
+    hass: HomeAssistant, coordinator, fire: FakeFireplace, box: FakeBox, climate: str
+) -> None:
+    fire.lit(12)
+    fire.set(room=0x00CD)  # 20.5 on the handset
+    await poll(hass, coordinator)
+    assert hass.states.get(climate).state == "off"
+    assert hass.states.get(climate).attributes["current_temperature"] == 20.5
+
+    await call(hass, "climate", "set_temperature", climate, temperature=22.5)
+
+    assert box.commands == ["B201", "B2FD00E1"]
+    state = hass.states.get(climate)
+    assert state.state == "heat"
+    assert state.attributes["temperature"] == 22.5
+    assert state.attributes["hvac_action"] == "heating"
+
+
+async def test_own_thermostat_works_in_half_degrees(
+    hass: HomeAssistant, coordinator, fire: FakeFireplace, box: FakeBox, climate: str
+) -> None:
+    fire.lit(12)
+    await poll(hass, coordinator)
+
+    await call(hass, "climate", "set_temperature", climate, temperature=21.3)
+
+    assert box.commands == ["B201", "B2FD00D7"]  # 21.5
+
+
+async def test_own_thermostat_is_idle_on_the_pilot(
+    hass: HomeAssistant, coordinator, fire: FakeFireplace, climate: str
+) -> None:
+    """Room warm enough: the fireplace turned itself down to the pilot."""
+    fire.standby()
+    fire.set(mode="1")
+    await poll(hass, coordinator)
+
+    state = hass.states.get(climate)
+    assert state.state == "heat"
+    assert state.attributes["hvac_action"] == "idle"
+
+
+async def test_own_thermostat_on_and_off(
+    hass: HomeAssistant, coordinator, fire: FakeFireplace, box: FakeBox, climate: str
+) -> None:
+    fire.lit(12)
+    await poll(hass, coordinator)
+
+    await call(hass, "climate", "set_hvac_mode", climate, hvac_mode="heat")
+    assert box.commands == ["B201", "B2FD00C8"]  # the target it had: 20.0
+    assert hass.states.get(climate).state == "heat"
+
+    await call(hass, "climate", "set_hvac_mode", climate, hvac_mode="off")
+    assert box.commands == ["B201", "B2FD00C8", "B0"]
+    state = hass.states.get(climate)
+    assert state.state == "off"
+    assert state.attributes["hvac_action"] == "off"
+    # Off only ends the regulating; the fire burns on.
+    assert "10" not in box.commands
+
+
+async def test_own_thermostat_turn_on_and_turn_off_services(
+    hass: HomeAssistant, coordinator, fire: FakeFireplace, box: FakeBox, climate: str
+) -> None:
+    fire.lit(12)
+    await poll(hass, coordinator)
+
+    await call(hass, "climate", "turn_on", climate)
+    assert hass.states.get(climate).state == "heat"
+
+    await call(hass, "climate", "turn_off", climate)
+    assert hass.states.get(climate).state == "off"
+    assert box.commands == ["B201", "B2FD00C8", "B0"]
+
+
+async def test_own_thermostat_needs_a_fire(
+    hass: HomeAssistant, box: FakeBox, climate: str
+) -> None:
+    with pytest.raises(ServiceValidationError) as error:
+        await call(hass, "climate", "set_temperature", climate, temperature=22)
+    assert error.value.translation_key == "fireplace_off"
+
+    with pytest.raises(ServiceValidationError) as error:
+        await call(hass, "climate", "set_hvac_mode", climate, hvac_mode="heat")
+    assert error.value.translation_key == "fireplace_off"
+
+    assert box.commands == []
+
+
+async def test_own_thermostat_set_while_igniting_waits_for_the_fire(
+    hass: HomeAssistant,
+    entry,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    climate: str,
+) -> None:
+    await call(hass, "switch", "turn_on", entity_id(hass, entry, "switch", "OnOff"))
+    await call(hass, "climate", "set_temperature", climate, temperature=23)
+    assert box.commands == ["1A"]
+
+    fire.lit(12)
+    clock.advance(61)
+    await poll(hass, coordinator)
+
+    assert box.commands == ["1A", "B201", "B2FD00E6"]
+    assert hass.states.get(climate).state == "heat"
+
+
+async def test_out_of_range_target_from_the_fireplace_is_not_shown(
+    hass: HomeAssistant, coordinator, fire: FakeFireplace, climate: str
+) -> None:
+    fire.set(target=0x0000)
+    await poll(hass, coordinator)
+
+    assert hass.states.get(climate).attributes["temperature"] is None
+
+
+# --- Home Assistant regulating on a sensor -----------------------------------------
+
+
+async def test_ha_thermostat_reads_the_sensor(
+    hass: HomeAssistant, with_sensor, climate: str
+) -> None:
+    state = hass.states.get(climate)
+    assert state.state == "off"
+    assert state.attributes["current_temperature"] == 18.0
+    assert state.attributes["temperature"] == 20.0
+
+
+async def test_ha_thermostat_reads_a_fahrenheit_sensor(
+    hass: HomeAssistant, with_sensor, coordinator, climate: str
+) -> None:
+    set_room(hass, "68", "°F")
+    await poll(hass, coordinator)
+
+    assert hass.states.get(climate).attributes["current_temperature"] == 20.0
+
+
+async def test_ha_thermostat_never_ignites(
+    hass: HomeAssistant, with_sensor, coordinator, box: FakeBox, climate: str
+) -> None:
+    """A cold room is no reason to light a gas fire unattended."""
+    with pytest.raises(ServiceValidationError) as error:
+        await call(hass, "climate", "set_hvac_mode", climate, hvac_mode="heat")
+    assert error.value.translation_key == "fireplace_off"
+
+    await poll(hass, coordinator)
+    assert box.commands == []
+    assert hass.states.get(climate).state == "off"
+
+
+async def test_ha_thermostat_keeps_a_target_set_while_off(
+    hass: HomeAssistant, with_sensor, coordinator, box: FakeBox, climate: str
+) -> None:
+    await call(hass, "climate", "set_temperature", climate, temperature=22)
+
+    state = hass.states.get(climate)
+    assert state.state == "off"
+    assert state.attributes["temperature"] == 22.0
+    assert box.commands == []
+
+
+async def test_ha_thermostat_regulates_the_flame(
+    hass: HomeAssistant,
+    with_sensor,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    climate: str,
+) -> None:
+    fire.lit(12)
+    await poll(hass, coordinator)
+
+    # Cold room, fire at full: nothing to change.
+    await call(hass, "climate", "set_temperature", climate, temperature=21)
+    state = hass.states.get(climate)
+    assert state.state == "heat"
+    assert state.attributes["hvac_action"] == "heating"
+    assert box.commands == []
+
+    # Warm enough: down to the pilot.
+    set_room(hass, "21.4")
+    await poll(hass, coordinator)
+    assert box.commands == ["1600"]
+    assert hass.states.get(climate).state == "heat"
+    assert hass.states.get(climate).attributes["hvac_action"] == "idle"
+
+    # Cooling off again, but the flame was changed a moment ago.
+    set_room(hass, "20.6")
+    await poll(hass, coordinator)
+    assert box.commands == ["1600"]
+
+    clock.advance(121)
+    await poll(hass, coordinator)
+    assert box.commands == ["1600", "1680"]  # low flame
+    assert hass.states.get(climate).attributes["hvac_action"] == "heating"
+
+    # A degree or more short: full flame.
+    set_room(hass, "19.9")
+    clock.advance(121)
+    await poll(hass, coordinator)
+    assert box.commands == ["1600", "1680", "16FF"]
+
+    # Nearly there: back to the low flame.
+    set_room(hass, "20.6")
+    clock.advance(121)
+    await poll(hass, coordinator)
+    assert box.commands == ["1600", "1680", "16FF", "1680"]
+
+    # It only ever moved the flame.
+    assert set(box.commands) <= {"1600", "1680", "16FF"}
+
+
+async def test_ha_thermostat_takes_the_fireplace_out_of_its_own_modes(
+    hass: HomeAssistant,
+    with_sensor,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    climate: str,
+) -> None:
+    """Two thermostats on one flame would fight."""
+    fire.lit(12)
+    fire.set(mode="1")
+    await poll(hass, coordinator)
+
+    await call(hass, "climate", "set_hvac_mode", climate, hvac_mode="heat")
+
+    assert box.commands == ["B0"]
+    assert hass.states.get(climate).state == "heat"
+
+
+async def test_ha_thermostat_goes_to_the_pilot_when_the_sensor_is_lost(
+    hass: HomeAssistant,
+    with_sensor,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    climate: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    fire.lit(12)
+    await poll(hass, coordinator)
+    await call(hass, "climate", "set_temperature", climate, temperature=21)
+
+    hass.states.async_set(ROOM, "unavailable")
+    await poll(hass, coordinator)
+    assert box.commands == []  # a short gap is tolerated
+    assert hass.states.get(climate).attributes["current_temperature"] is None
+
+    clock.advance(301)
+    with caplog.at_level(logging.WARNING):
+        await poll(hass, coordinator)
+    assert box.commands == ["1600"]
+    assert "no reading from sensor.room" in caplog.text
+
+    # The sensor returns and the room is cold: heat again, once the interval allows.
+    set_room(hass, "18.0")
+    clock.advance(121)
+    await poll(hass, coordinator)
+    assert box.commands == ["1600", "16FF"]
+
+
+async def test_ha_thermostat_stops_when_the_flame_is_set_by_hand(
+    hass: HomeAssistant,
+    entry,
+    with_sensor,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    climate: str,
+) -> None:
+    fire.lit(12)
+    await poll(hass, coordinator)
+    await call(hass, "climate", "set_temperature", climate, temperature=21)
+
+    number = entity_id(hass, entry, "number", "FlameHeight")
+    await call(hass, "number", "set_value", number, value=5)
+    assert hass.states.get(climate).state == "off"
+
+    set_room(hass, "25.0")
+    clock.advance(121)
+    await poll(hass, coordinator)
+    assert box.commands == ["16AE"]
+
+
+async def test_ha_thermostat_off_leaves_the_fire_as_it_is(
+    hass: HomeAssistant,
+    with_sensor,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    climate: str,
+) -> None:
+    fire.lit(12)
+    await poll(hass, coordinator)
+    await call(hass, "climate", "set_temperature", climate, temperature=21)
+
+    await call(hass, "climate", "set_hvac_mode", climate, hvac_mode="off")
+    assert hass.states.get(climate).state == "off"
+
+    set_room(hass, "25.0")
+    clock.advance(121)
+    await poll(hass, coordinator)
+    assert box.commands == []
+
+
+async def test_ha_thermostat_ends_with_the_fire(
+    hass: HomeAssistant,
+    entry,
+    with_sensor,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    climate: str,
+) -> None:
+    """Lighting the fire again later does not bring the thermostat back."""
+    fire.lit(12)
+    await poll(hass, coordinator)
+    await call(hass, "climate", "set_temperature", climate, temperature=21)
+
+    await call(hass, "switch", "turn_off", entity_id(hass, entry, "switch", "OnOff"))
+    fire.off()
+    await poll(hass, coordinator)
+    assert hass.states.get(climate).state == "off"
+
+    fire.lit(12)
+    set_room(hass, "25.0")
+    clock.advance(600)
+    await poll(hass, coordinator)
+    assert hass.states.get(climate).state == "off"
+    assert box.commands == ["10"]
+
+
+async def test_ha_thermostat_set_while_igniting_starts_once_lit(
+    hass: HomeAssistant,
+    entry,
+    with_sensor,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    climate: str,
+) -> None:
+    await call(hass, "switch", "turn_on", entity_id(hass, entry, "switch", "OnOff"))
+    set_room(hass, "22.0")
+    await call(hass, "climate", "set_temperature", climate, temperature=21)
+
+    state = hass.states.get(climate)
+    assert state.state == "heat"
+    assert state.attributes["hvac_action"] == "preheating"
+    assert box.commands == ["1A"]
+
+    fire.lit(12)
+    clock.advance(61)
+    await poll(hass, coordinator)
+
+    # Lit, and the room is already warm: straight down to the pilot.
+    assert box.commands == ["1A", "1600"]
+    assert hass.states.get(climate).state == "heat"
+
+
+async def test_ha_thermostat_stops_when_the_sensor_is_removed_from_the_options(
+    hass: HomeAssistant,
+    entry,
+    with_sensor,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    climate: str,
+) -> None:
+    fire.lit(12)
+    await poll(hass, coordinator)
+    await call(hass, "climate", "set_temperature", climate, temperature=21)
+
+    hass.config_entries.async_update_entry(entry, options={})
+    await hass.async_block_till_done()
+    set_room(hass, "25.0")
+    clock.advance(121)
+    await poll(hass, coordinator)
+
+    assert box.commands == []
+    # Back to the fireplace's own thermostat, which is not running.
+    assert hass.states.get(climate).state == "off"
+
+
+# --- After a restart ------------------------------------------------------------------
+
+
+async def test_ha_thermostat_resumes_after_a_restart_if_the_fire_burns(
+    hass: HomeAssistant, entry, with_sensor, fire: FakeFireplace, box: FakeBox
+) -> None:
+    mock_restore_cache(hass, [State(CLIMATE, "heat", {"temperature": 22.5})])
+    fire.lit(12)
+    set_room(hass, "23.5")
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    state = hass.states.get(CLIMATE)
+    assert state.state == "heat"
+    assert state.attributes["temperature"] == 22.5
+
+    await poll(hass, entry.runtime_data)
+    assert box.commands == ["1600"]
+
+
+async def test_ha_thermostat_does_not_resume_with_the_fire_off(
+    hass: HomeAssistant, entry, with_sensor, fire: FakeFireplace, box: FakeBox
+) -> None:
+    mock_restore_cache(hass, [State(CLIMATE, "heat", {"temperature": 22.5})])
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    await poll(hass, entry.runtime_data)
+
+    state = hass.states.get(CLIMATE)
+    assert state.state == "off"
+    assert state.attributes["temperature"] == 22.5  # the target is kept
+    assert box.commands == []
+
+
+async def test_ha_thermostat_stays_off_after_a_restart_if_it_was_off(
+    hass: HomeAssistant, entry, with_sensor, fire: FakeFireplace, box: FakeBox
+) -> None:
+    mock_restore_cache(hass, [State(CLIMATE, "off", {"temperature": 22.5})])
+    fire.lit(12)
+    set_room(hass, "25.0")
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    await poll(hass, entry.runtime_data)
+
+    assert hass.states.get(CLIMATE).state == "off"
+    assert box.commands == []
+
+
+async def test_restored_state_does_not_touch_the_own_thermostat(
+    hass: HomeAssistant, entry, fire: FakeFireplace, box: FakeBox
+) -> None:
+    mock_restore_cache(hass, [State(CLIMATE, "heat", {"temperature": 22.5})])
+    fire.lit(12)
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    await poll(hass, entry.runtime_data)
+
+    state = hass.states.get(CLIMATE)
+    assert state.state == "off"  # the fireplace is in manual mode
+    assert state.attributes["temperature"] == 20.0  # and reports its own target
+    assert box.commands == []

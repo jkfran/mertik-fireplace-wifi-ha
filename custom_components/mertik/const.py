@@ -1,1 +1,24 @@
+"""Constants for the Mertik Maxitrol integration."""
+
+from __future__ import annotations
+
+from datetime import timedelta
+
 DOMAIN = "mertik"
+MANUFACTURER = "Mertik Maxitrol"
+
+CONF_MAC = "mac"
+# Name the WiFi module gives itself when asked, e.g. "mmWiFiBoxV2".
+CONF_MODEL = "model"
+# Option: a Home Assistant temperature sensor for the thermostat to regulate on.
+CONF_TEMPERATURE_SENSOR = "temperature_sensor"
+
+UPDATE_INTERVAL = timedelta(seconds=10)
+
+# Requested values are shown for this long while the fireplace catches up (the
+# valve needs up to ten seconds to move).
+OPTIMISTIC_SECONDS = 12.0
+# Commands given while the fireplace is lighting are kept this long at most.
+PENDING_TIMEOUT_SECONDS = 300.0
+# The receiver ignores an ignition right after a shutdown.
+REIGNITE_DELAY_SECONDS = 15.0

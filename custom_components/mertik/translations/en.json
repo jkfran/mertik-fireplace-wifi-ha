@@ -2,19 +2,139 @@
   "config": {
     "step": {
       "user": {
+        "title": "Mertik Maxitrol fireplace",
+        "description": "Pick the WiFi module of your fireplace, or type its IP address. Found on your network: {found}",
         "data": {
-          "name": "Assign name to the fireplace",
-          "host": "IP address of the fireplace controller"
-        },
-        "description": "Choose device.",
-        "title": "Devices"
+          "name": "Name of the fireplace",
+          "host": "IP address of the WiFi module"
+        }
+      },
+      "reconfigure": {
+        "title": "Change the address",
+        "description": "Current address: {current}. Found on your network: {found}",
+        "data": {
+          "host": "IP address of the WiFi module"
+        }
       }
     },
     "error": {
-      "cannot_connect": "Unable to connect to the fireplace. Please check the IP address and ensure the device is powered on."
+      "cannot_connect": "Unable to connect to the fireplace. Please check the IP address and ensure the device is powered on.",
+      "wrong_device": "A different fireplace answers at that address."
     },
     "abort": {
-      "already_configured": "This fireplace is already configured."
+      "already_configured": "This fireplace is already configured.",
+      "reconfigure_successful": "The address has been changed.",
+      "not_configured": "This fireplace has not been set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Thermostat",
+        "description": "The fireplace's own thermostat measures the room with its handset. If you pick a temperature sensor here, Home Assistant regulates the flame on that sensor instead. It never ignites the fireplace: with the room warm enough it turns the flame down to the pilot, and back up when heat is needed.",
+        "data": {
+          "temperature_sensor": "Room temperature sensor"
+        },
+        "data_description": {
+          "temperature_sensor": "Leave empty to use the fireplace's own thermostat."
+        }
+      }
+    }
+  },
+  "entity": {
+    "switch": {
+      "secondary_burner": {
+        "name": "Secondary burner"
+      }
+    },
+    "number": {
+      "flame_height": {
+        "name": "Flame Height"
+      }
+    },
+    "sensor": {
+      "ambient_temperature": {
+        "name": "Ambient Temperature"
+      },
+      "status": {
+        "name": "Status",
+        "state": {
+          "off": "Off",
+          "standby": "Standby",
+          "igniting": "Igniting",
+          "on": "On",
+          "shutting_down": "Shutting down"
+        }
+      },
+      "fan_level": {
+        "name": "Fan level"
+      },
+      "ip_address": {
+        "name": "IP address"
+      }
+    },
+    "binary_sensor": {
+      "pilot_flame": {
+        "name": "Pilot flame"
+      },
+      "igniting": {
+        "name": "Igniting"
+      },
+      "shutting_down": {
+        "name": "Shutting down"
+      },
+      "receiver_connection": {
+        "name": "Receiver"
+      },
+      "remote_connection": {
+        "name": "Remote"
+      },
+      "fault": {
+        "name": "Fault"
+      },
+      "fan": {
+        "name": "Fan"
+      }
+    },
+    "light": {
+      "light": {
+        "name": "Light"
+      }
+    },
+    "climate": {
+      "thermostat": {
+        "name": "Thermostat"
+      }
+    },
+    "select": {
+      "mode": {
+        "name": "Mode",
+        "state": {
+          "manual": "Manual",
+          "thermostat": "Thermostat",
+          "eco": "Eco"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "fireplace_off": {
+      "message": "Turn on the fireplace first."
+    },
+    "shutting_down": {
+      "message": "The fireplace is still shutting down. Try again in a moment."
+    },
+    "no_receiver": {
+      "message": "The WiFi module has no connection to the receiver in the fireplace."
+    },
+    "cannot_reach": {
+      "message": "The fireplace did not respond: {error}"
+    }
+  },
+  "issues": {
+    "receiver_lost": {
+      "title": "{name}: no connection to the fireplace",
+      "description": "The WiFi module of {name} answers, but it has lost its radio link to the receiver in the fireplace (the app shows this as F43). Commands do not reach the fireplace until the link is back. Check the receiver's power supply or batteries. Operating the fireplace with its handset, or switching its power off and on, usually restores the link."
     }
   }
 }

@@ -1,270 +1,245 @@
-"""Tests for the MertikDataCoordinator."""
+"""Availability, errors and repairs."""
 
-from datetime import timedelta
-from unittest.mock import MagicMock, patch
+from __future__ import annotations
+
+import logging
 
 import pytest
 
-from homeassistant.util import dt as dt_util
+from homeassistant.const import STATE_UNAVAILABLE
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import issue_registry as ir
 
-from custom_components.mertik.mertikdatacoordinator import (
-    MertikDataCoordinator,
-    OPTIMISTIC_ON_SECONDS,
-    OPTIMISTIC_OFF_SECONDS,
-)
+from custom_components.mertik.const import DOMAIN
 
-
-@pytest.fixture
-def mock_mertik():
-    """Return a mock Mertik device."""
-    mertik = MagicMock()
-    mertik.is_on = False
-    mertik.is_igniting = False
-    mertik.is_aux_on = False
-    mertik.is_guard_flame_on = False
-    mertik.is_shutting_down = False
-    mertik.is_thermostat_mode = False
-    mertik.target_temperature = None
-    mertik.is_light_on = False
-    mertik.light_brightness = 0
-    mertik.ambient_temperature = 20.0
-    return mertik
+from .conftest import call, entity_id, poll
+from .fakes import NO_RECEIVER, FakeBox, FakeClock, FakeFireplace, framed
 
 
 @pytest.fixture
-def coordinator(hass, mock_mertik):
-    """Return a MertikDataCoordinator with mocked Mertik."""
-    return MertikDataCoordinator(hass, mock_mertik)
+def switch(hass: HomeAssistant, entry, coordinator) -> str:
+    return entity_id(hass, entry, "switch", "OnOff")
 
 
-class TestOptimisticState:
-    """Test optimistic on/off state logic."""
-
-    def test_is_on_false_by_default(self, coordinator, mock_mertik):
-        """When device is off and no optimistic state, is_on should be False."""
-        mock_mertik.is_on = False
-        mock_mertik.is_igniting = False
-        assert coordinator.is_on is False
-
-    def test_is_on_true_when_device_on(self, coordinator, mock_mertik):
-        """When device reports on, is_on should be True."""
-        mock_mertik.is_on = True
-        assert coordinator.is_on is True
-
-    def test_is_on_true_on_pilot_only(self, coordinator, mock_mertik):
-        """Thermostat dropped to the pilot because the room is warm: still on."""
-        mock_mertik.is_on = False
-        mock_mertik.is_guard_flame_on = True
-        assert coordinator.is_on is True
-
-    def test_is_on_false_while_shutting_down(self, coordinator, mock_mertik):
-        """The pilot still burns while shutting down, but the fireplace is going off."""
-        mock_mertik.is_guard_flame_on = True
-        mock_mertik.is_shutting_down = True
-        assert coordinator.is_on is False
-
-    def test_is_on_true_when_igniting(self, coordinator, mock_mertik):
-        """When device is igniting, is_on should be True."""
-        mock_mertik.is_igniting = True
-        assert coordinator.is_on is True
-
-    def test_optimistic_on(self, coordinator, mock_mertik):
-        """After mark_optimistic_on, is_on should be True even if device says off."""
-        mock_mertik.is_on = False
-        mock_mertik.is_igniting = False
-        coordinator.mark_optimistic_on()
-        assert coordinator.is_on is True
-
-    def test_optimistic_on_expires(self, coordinator, mock_mertik):
-        """Optimistic on should expire after OPTIMISTIC_ON_SECONDS."""
-        mock_mertik.is_on = False
-        mock_mertik.is_igniting = False
-        coordinator.mark_optimistic_on()
-
-        future = dt_util.utcnow() + timedelta(seconds=OPTIMISTIC_ON_SECONDS + 1)
-        with patch.object(dt_util, "utcnow", return_value=future):
-            assert coordinator.is_on is False
-
-    def test_optimistic_off(self, coordinator, mock_mertik):
-        """After mark_optimistic_off, is_on should be False even if device says on."""
-        mock_mertik.is_on = True
-        coordinator.mark_optimistic_off()
-        assert coordinator.is_on is False
-
-    def test_optimistic_off_expires(self, coordinator, mock_mertik):
-        """Optimistic off should expire after OPTIMISTIC_OFF_SECONDS."""
-        mock_mertik.is_on = True
-        coordinator.mark_optimistic_off()
-
-        future = dt_util.utcnow() + timedelta(seconds=OPTIMISTIC_OFF_SECONDS + 1)
-        with patch.object(dt_util, "utcnow", return_value=future):
-            assert coordinator.is_on is True
-
-    def test_optimistic_on_clears_optimistic_off(self, coordinator, mock_mertik):
-        """mark_optimistic_on should clear any pending optimistic_off."""
-        mock_mertik.is_on = True
-        coordinator.mark_optimistic_off()
-        assert coordinator.is_on is False
-
-        coordinator.mark_optimistic_on()
-        assert coordinator.is_on is True
-
-    def test_optimistic_off_clears_optimistic_on(self, coordinator, mock_mertik):
-        """mark_optimistic_off should clear any pending optimistic_on."""
-        mock_mertik.is_on = False
-        mock_mertik.is_igniting = False
-        coordinator.mark_optimistic_on()
-        assert coordinator.is_on is True
-
-        coordinator.mark_optimistic_off()
-        assert coordinator.is_on is False
+def issue(hass: HomeAssistant, entry) -> ir.IssueEntry | None:
+    return ir.async_get(hass).async_get_issue(DOMAIN, f"receiver_lost_{entry.entry_id}")
 
 
-class TestCoordinatorDelegation:
-    """Test that coordinator properly delegates to Mertik device."""
+async def test_unavailable_while_the_box_does_not_answer(
+    hass: HomeAssistant, coordinator, box: FakeBox, switch: str
+) -> None:
+    box.fail_connects = 2  # the request and its one retry
+    await poll(hass, coordinator)
+    assert hass.states.get(switch).state == STATE_UNAVAILABLE
 
-    def test_ignite_fireplace(self, coordinator, mock_mertik):
-        coordinator.ignite_fireplace()
-        mock_mertik.ignite_fireplace.assert_called_once()
-
-    def test_guard_flame_off_clears_optimistic(self, coordinator, mock_mertik):
-        """guard_flame_off should clear optimistic state and delegate."""
-        coordinator.mark_optimistic_on()
-        coordinator.guard_flame_off()
-        mock_mertik.guard_flame_off.assert_called_once()
-        # Optimistic should be cleared
-        assert coordinator._optimistic_on_until is None
-        assert coordinator._optimistic_off_until is None
-
-    def test_aux_on(self, coordinator, mock_mertik):
-        coordinator.aux_on()
-        mock_mertik.aux_on.assert_called_once()
-
-    def test_aux_off(self, coordinator, mock_mertik):
-        coordinator.aux_off()
-        mock_mertik.aux_off.assert_called_once()
-
-    def test_get_flame_height(self, coordinator, mock_mertik):
-        mock_mertik.get_flame_height.return_value = 5
-        assert coordinator.get_flame_height() == 5
-
-    def test_set_flame_height(self, coordinator, mock_mertik):
-        coordinator.set_flame_height(7)
-        mock_mertik.set_flame_height.assert_called_once_with(7)
-
-    def test_light_on(self, coordinator, mock_mertik):
-        coordinator.light_on()
-        mock_mertik.light_on.assert_called_once()
-
-    def test_light_off(self, coordinator, mock_mertik):
-        coordinator.light_off()
-        mock_mertik.light_off.assert_called_once()
-
-    def test_set_light_brightness(self, coordinator, mock_mertik):
-        coordinator.set_light_brightness(128)
-        mock_mertik.set_light_brightness.assert_called_once_with(128)
-
-    def test_ambient_temperature(self, coordinator, mock_mertik):
-        mock_mertik.ambient_temperature = 22.5
-        assert coordinator.ambient_temperature == 22.5
-
-    def test_is_aux_on_requires_device_on(self, coordinator, mock_mertik):
-        """is_aux_on should only be True if device is on AND aux is on."""
-        mock_mertik.is_on = False
-        mock_mertik.is_aux_on = True
-        assert coordinator.is_aux_on is False
-
-        mock_mertik.is_on = True
-        assert coordinator.is_aux_on is True
-
-    def test_is_aux_on_with_pilot_only(self, coordinator, mock_mertik):
-        """The secondary burner setting still shows while the thermostat idles on the pilot."""
-        mock_mertik.is_guard_flame_on = True
-        mock_mertik.is_aux_on = True
-        assert coordinator.is_aux_on is True
-
-    def test_light_brightness(self, coordinator, mock_mertik):
-        mock_mertik.light_brightness = 200
-        assert coordinator.light_brightness == 200
-
-    def test_is_light_on(self, coordinator, mock_mertik):
-        mock_mertik.is_light_on = True
-        assert coordinator.is_light_on is True
+    await poll(hass, coordinator)
+    assert hass.states.get(switch).state == "off"
 
 
-class TestThermostatDelegation:
-    """Test the coordinator's thermostat state and commands."""
-
-    def test_set_thermostat(self, coordinator, mock_mertik):
-        coordinator.set_thermostat(21.5)
-        mock_mertik.set_thermostat.assert_called_once_with(21.5)
-
-    def test_set_manual(self, coordinator, mock_mertik):
-        coordinator.set_manual()
-        mock_mertik.set_manual.assert_called_once()
-
-    def test_target_temperature(self, coordinator, mock_mertik):
-        mock_mertik.target_temperature = 21.5
-        assert coordinator.target_temperature == 21.5
-
-    def test_is_igniting(self, coordinator, mock_mertik):
-        mock_mertik.is_igniting = True
-        assert coordinator.is_igniting is True
-
-    def test_is_burning_follows_main_burner(self, coordinator, mock_mertik):
-        mock_mertik.is_on = True
-        assert coordinator.is_burning is True
-
-    def test_is_pilot_on_in_standby(self, coordinator, mock_mertik):
-        """Pilot only (standby): guard flame set, main burner off."""
-        mock_mertik.is_guard_flame_on = True
-        assert coordinator.is_pilot_on is True
-
-    def test_is_pilot_on_when_burning(self, coordinator, mock_mertik):
-        mock_mertik.is_on = True
-        assert coordinator.is_pilot_on is True
-
-    def test_is_pilot_off_while_shutting_down(self, coordinator, mock_mertik):
-        mock_mertik.is_guard_flame_on = True
-        mock_mertik.is_shutting_down = True
-        assert coordinator.is_pilot_on is False
-
-    def test_is_pilot_off(self, coordinator):
-        assert coordinator.is_pilot_on is False
-
-    def test_is_thermostat_on(self, coordinator, mock_mertik):
-        mock_mertik.is_thermostat_mode = True
-        mock_mertik.is_guard_flame_on = True
-        assert coordinator.is_thermostat_on is True
-
-    def test_is_thermostat_on_requires_lit_fireplace(self, coordinator, mock_mertik):
-        """The mode character alone doesn't count while the fireplace is out."""
-        mock_mertik.is_thermostat_mode = True
-        assert coordinator.is_thermostat_on is False
-
-    def test_is_thermostat_on_requires_thermostat_mode(self, coordinator, mock_mertik):
-        mock_mertik.is_on = True
-        assert coordinator.is_thermostat_on is False
+async def test_one_failed_attempt_is_retried_unnoticed(
+    hass: HomeAssistant, coordinator, box: FakeBox, switch: str
+) -> None:
+    box.fail_connects = 1
+    await poll(hass, coordinator)
+    assert hass.states.get(switch).state == "off"
 
 
-class TestAsyncUpdateData:
-    """Test the coordinator's _async_update_data method."""
+async def test_ignition_does_not_make_the_fireplace_unavailable(
+    hass: HomeAssistant,
+    entry,
+    coordinator,
+    fire: FakeFireplace,
+    clock: FakeClock,
+    switch: str,
+) -> None:
+    """The box drops its receiver link for 20-30 s during every ignition."""
+    await call(hass, "switch", "turn_on", switch)
+    # While the link is down the box reports nonsense: pilot out, no ignition.
+    fire.set(link=False, igniting=False)
 
-    async def test_calls_refresh_status(self, coordinator, mock_mertik):
-        """_async_update_data should call mertik.refresh_status via executor."""
-        await coordinator._async_update_data()
-        mock_mertik.refresh_status.assert_called_once()
+    for _ in range(3):
+        clock.advance(10)
+        await poll(hass, coordinator)
+        assert hass.states.get(switch).state == "on"
+        assert hass.states.get(entity_id(hass, entry, "sensor", "Status")).state == "igniting"
+    assert issue(hass, entry) is None
 
-    async def test_update_interval(self, coordinator):
-        """Update interval should be 10 seconds."""
-        from datetime import timedelta
 
-        assert coordinator.update_interval == timedelta(seconds=10)
+async def test_lost_receiver_link_makes_the_fireplace_unavailable(
+    hass: HomeAssistant,
+    entry,
+    coordinator,
+    fire: FakeFireplace,
+    clock: FakeClock,
+    switch: str,
+) -> None:
+    """Without the link nothing the box says about the fire can be trusted."""
+    fire.lit(12)
+    await poll(hass, coordinator)
 
-    async def test_raises_update_failed_on_error(self, coordinator, mock_mertik):
-        """Should raise UpdateFailed when refresh_status raises."""
-        from homeassistant.helpers.update_coordinator import UpdateFailed
+    fire.set(link=False, pilot=False, output=0x00)
+    await poll(hass, coordinator)
+    assert hass.states.get(switch).state == "on"  # the last reliable state
+    assert issue(hass, entry) is None
 
-        mock_mertik.refresh_status.side_effect = Exception("Connection lost")
-        with pytest.raises(UpdateFailed):
-            await coordinator._async_update_data()
+    clock.advance(46)
+    await poll(hass, coordinator)
+    assert hass.states.get(switch).state == STATE_UNAVAILABLE
+    found = issue(hass, entry)
+    assert found is not None
+    assert found.translation_key == "receiver_lost"
+    assert found.translation_placeholders == {"name": "Fireplace"}
+    assert found.severity is ir.IssueSeverity.WARNING
+    assert not found.is_fixable
+
+    # The link returns: the box's word counts again, and the repair goes away.
+    fire.set(link=True)
+    await poll(hass, coordinator)
+    assert hass.states.get(switch).state == "off"
+    assert issue(hass, entry) is None
+
+
+async def test_box_answering_no_receiver_to_polls(
+    hass: HomeAssistant,
+    entry,
+    coordinator,
+    box: FakeBox,
+    clock: FakeClock,
+    switch: str,
+) -> None:
+    """Some boxes answer every request with E101 instead of clearing a bit."""
+    box.no_receiver = True
+    await poll(hass, coordinator)
+    assert hass.states.get(switch).state == "off"
+    receiver = entity_id(hass, entry, "binary_sensor", "ReceiverConnection")
+    assert hass.states.get(receiver).state == "off"
+
+    clock.advance(46)
+    await poll(hass, coordinator)
+    assert hass.states.get(switch).state == STATE_UNAVAILABLE
+    assert issue(hass, entry) is not None
+
+    box.no_receiver = False
+    await poll(hass, coordinator)
+    assert hass.states.get(switch).state == "off"
+    assert hass.states.get(receiver).state == "on"
+    assert issue(hass, entry) is None
+
+
+async def test_command_refused_for_lack_of_a_receiver(
+    hass: HomeAssistant, entry, coordinator, fire: FakeFireplace, box: FakeBox
+) -> None:
+    fire.lit(12)
+    await poll(hass, coordinator)
+    box.no_receiver = True
+
+    with pytest.raises(HomeAssistantError) as error:
+        await call(
+            hass,
+            "number",
+            "set_value",
+            entity_id(hass, entry, "number", "FlameHeight"),
+            value=3,
+        )
+
+    assert not isinstance(error.value, ServiceValidationError)
+    assert error.value.translation_domain == DOMAIN
+    assert error.value.translation_key == "no_receiver"
+    # Sent, refused, and tried once more.
+    assert box.commands == ["1697", "1697"]
+
+
+async def test_command_to_an_unreachable_box(
+    hass: HomeAssistant, entry, coordinator, fire: FakeFireplace, box: FakeBox
+) -> None:
+    fire.lit(12)
+    await poll(hass, coordinator)
+    box.fail_connects = 2
+
+    with pytest.raises(HomeAssistantError) as error:
+        await call(
+            hass, "light", "turn_on", entity_id(hass, entry, "light", "Light")
+        )
+
+    assert error.value.translation_key == "cannot_reach"
+    assert "192.168.1.100" in error.value.translation_placeholders["error"]
+    assert box.commands == []
+
+
+async def test_ignite_is_never_sent_twice(
+    hass: HomeAssistant, coordinator, box: FakeBox, switch: str
+) -> None:
+    """An unanswered ignite is not repeated: the first one may have arrived."""
+    box.script["1A"] = []  # received, never acknowledged
+
+    with pytest.raises(HomeAssistantError) as error:
+        await call(hass, "switch", "turn_on", switch)
+
+    assert error.value.translation_key == "cannot_reach"
+    assert box.requests.count("1A") == 1
+
+
+async def test_failure_of_a_waiting_command_is_logged_not_raised(
+    hass: HomeAssistant,
+    entry,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    switch: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    await call(hass, "switch", "turn_on", switch)
+    await call(
+        hass, "number", "set_value", entity_id(hass, entry, "number", "FlameHeight"), value=4
+    )
+    box.script["16A2"] = [framed(NO_RECEIVER)]
+
+    fire.lit(12)
+    clock.advance(61)
+    with caplog.at_level(logging.WARNING):
+        await poll(hass, coordinator)
+
+    assert "Mertik Fireplace" in caplog.text
+    # It is not tried again on every poll after that.
+    sent = len(box.requests)
+    await poll(hass, coordinator)
+    assert box.requests[sent:] == ["03"]
+
+
+async def test_status_read_after_a_command_may_fail(
+    hass: HomeAssistant, entry, coordinator, fire: FakeFireplace, box: FakeBox
+) -> None:
+    """The command went through; a failed read right after it is not an error."""
+    fire.lit(12)
+    await poll(hass, coordinator)
+    number = entity_id(hass, entry, "number", "FlameHeight")
+    box.script["03"] = []
+
+    await call(hass, "number", "set_value", number, value=3)
+
+    assert box.commands == ["1697"]
+    assert float(hass.states.get(number).state) == 3
+
+
+async def test_polls_keep_their_distance_from_commands(
+    hass: HomeAssistant,
+    entry,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+) -> None:
+    """Two control commands are at least two seconds apart; polls are free."""
+    fire.lit(12)
+    await poll(hass, coordinator)
+    number = entity_id(hass, entry, "number", "FlameHeight")
+
+    await call(hass, "number", "set_value", number, value=3)
+    first = clock.now
+    await poll(hass, coordinator)
+    assert clock.now == first  # the poll did not wait
+
+    await call(hass, "number", "set_value", number, value=4)
+    assert clock.now - first >= 2.0

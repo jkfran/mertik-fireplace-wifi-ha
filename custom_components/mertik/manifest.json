@@ -1,11 +1,20 @@
 {
-  "codeowners": ["@jkfran"],
-  "config_flow": true,
-  "dependencies": [],
-  "documentation": "https://github.com/jkfran/mertik-fireplace-wifi-ha",
-  "issue_tracker": "https://github.com/jkfran/mertik-fireplace-wifi-ha/issues",
   "domain": "mertik",
   "name": "Mertik Maxitrol Fireplace",
-  "version": "1.0.0",
-  "iot_class": "local_polling"
+  "codeowners": [
+    "@jkfran"
+  ],
+  "config_flow": true,
+  "dependencies": [],
+  "dhcp": [
+    {
+      "registered_devices": true
+    }
+  ],
+  "documentation": "https://github.com/jkfran/mertik-fireplace-wifi-ha",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/jkfran/mertik-fireplace-wifi-ha/issues",
+  "requirements": [],
+  "version": "2.0.0"
 }

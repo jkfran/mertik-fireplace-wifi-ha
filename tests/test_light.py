@@ -1,94 +1,91 @@
-"""Tests for light entity."""
+"""The fireplace light."""
 
-from unittest.mock import MagicMock
+from __future__ import annotations
 
 import pytest
 
-from homeassistant.components.light import ColorMode, ATTR_BRIGHTNESS
+from homeassistant.core import HomeAssistant
 
-from custom_components.mertik.light import (
-    MertikLightEntity,
-    async_setup_entry,
+from .conftest import call, entity_id, poll
+from .fakes import FakeBox, FakeFireplace
+
+
+@pytest.fixture
+def light(hass: HomeAssistant, entry, coordinator) -> str:
+    return entity_id(hass, entry, "light", "Light")
+
+
+async def test_on_and_off(
+    hass: HomeAssistant, fire: FakeFireplace, box: FakeBox, light: str
+) -> None:
+    """The light works with the fire off."""
+    fire.set(light_level=0xFB)
+    assert hass.states.get(light).state == "off"
+
+    await call(hass, "light", "turn_on", light)
+    assert box.commands == ["3001"]
+    state = hass.states.get(light)
+    assert state.state == "on"
+    assert state.attributes["brightness"] == 255
+
+    await call(hass, "light", "turn_off", light)
+    assert box.commands == ["3001", "3000"]
+    assert hass.states.get(light).state == "off"
+
+
+@pytest.mark.parametrize(
+    ("brightness", "command"),
+    # Levels below 0x77 leave the light dark on some fireplaces, so the whole
+    # brightness range is spread over 0x77-0xFB.
+    [(1, "30FE77"), (128, "30FEB9"), (255, "30FEFB")],
 )
-from custom_components.mertik.const import DOMAIN
+async def test_brightness(
+    hass: HomeAssistant, box: FakeBox, light: str, brightness: int, command: str
+) -> None:
+    await call(hass, "light", "turn_on", light, brightness=brightness)
+
+    assert box.commands == [command]
+    state = hass.states.get(light)
+    assert state.state == "on"
+    assert state.attributes["brightness"] == brightness
 
 
-class TestLightEntity:
-    """Test the light entity."""
+async def test_light_is_switched_on_if_setting_the_level_did_not(
+    hass: HomeAssistant, fire: FakeFireplace, box: FakeBox, light: str
+) -> None:
+    fire.level_lights = False
 
-    @pytest.fixture
-    def light(self, hass, mock_coordinator):
-        entity = MertikLightEntity(mock_coordinator, "test_entry", "My Fireplace")
-        entity.hass = hass
-        return entity
+    await call(hass, "light", "turn_on", light, brightness=255)
 
-    def test_unique_id(self, light):
-        assert light.unique_id == "test_entry-Light"
-
-    def test_name(self, light):
-        assert light.name == "Light"
-
-    def test_has_entity_name(self, light):
-        assert light.has_entity_name is True
-
-    def test_color_mode(self, light):
-        assert light.color_mode == ColorMode.BRIGHTNESS
-
-    def test_supported_color_modes(self, light):
-        assert light.supported_color_modes == {ColorMode.BRIGHTNESS}
-
-    def test_device_info(self, light):
-        info = light.device_info
-        assert info["identifiers"] == {(DOMAIN, "test_entry")}
-        assert info["name"] == "My Fireplace"
-        assert info["manufacturer"] == "Mertik Maxitrol"
-
-    def test_is_on_false(self, light, mock_coordinator):
-        mock_coordinator.is_light_on = False
-        assert light.is_on is False
-
-    def test_is_on_true(self, light, mock_coordinator):
-        mock_coordinator.is_light_on = True
-        assert light.is_on is True
-
-    def test_brightness(self, light, mock_coordinator):
-        mock_coordinator.light_brightness = 128
-        assert light.brightness == 128
-
-    async def test_turn_on_no_brightness(self, light, mock_coordinator):
-        mock_coordinator.is_light_on = False
-        await light.async_turn_on()
-        mock_coordinator.light_on.assert_called_once()
-        mock_coordinator.set_light_brightness.assert_not_called()
-        mock_coordinator.async_set_updated_data.assert_called_once_with(None)
-
-    async def test_turn_on_with_brightness(self, light, mock_coordinator):
-        await light.async_turn_on(**{ATTR_BRIGHTNESS: 200})
-        mock_coordinator.set_light_brightness.assert_called_once_with(200)
-        mock_coordinator.light_on.assert_not_called()
-        mock_coordinator.async_set_updated_data.assert_called_once_with(None)
-
-    async def test_turn_on_already_on_no_brightness(self, light, mock_coordinator):
-        mock_coordinator.is_light_on = True
-        await light.async_turn_on()
-        mock_coordinator.light_on.assert_not_called()
-        mock_coordinator.set_light_brightness.assert_not_called()
-        mock_coordinator.async_set_updated_data.assert_called_once_with(None)
-
-    async def test_turn_off(self, light, mock_coordinator):
-        await light.async_turn_off()
-        mock_coordinator.light_off.assert_called_once()
-        mock_coordinator.async_set_updated_data.assert_called_once_with(None)
+    assert box.commands == ["30FEFB", "3001"]
+    assert hass.states.get(light).state == "on"
 
 
-class TestLightPlatformSetup:
-    """Test light platform async_setup_entry."""
+@pytest.mark.parametrize(
+    ("level", "brightness"),
+    [(0x77, 1), (0xFB, 255), (0xFF, 255), (0x63, 1), (0x00, 1)],
+)
+async def test_reported_level_stays_within_the_brightness_range(
+    hass: HomeAssistant,
+    coordinator,
+    fire: FakeFireplace,
+    light: str,
+    level: int,
+    brightness: int,
+) -> None:
+    """Handsets set levels outside the range this integration sends."""
+    fire.set(light=True, light_level=level)
+    await poll(hass, coordinator)
 
-    async def test_creates_one_entity(self, hass, mock_coordinator, mock_config_entry):
-        hass.data[DOMAIN] = {mock_config_entry.entry_id: mock_coordinator}
-        added = []
-        await async_setup_entry(hass, mock_config_entry, lambda e: added.extend(e))
+    assert hass.states.get(light).attributes["brightness"] == brightness
 
-        assert len(added) == 1
-        assert isinstance(added[0], MertikLightEntity)
-        assert added[0].name == "Light"
+
+async def test_changing_brightness_of_a_lit_light_sends_only_the_level(
+    hass: HomeAssistant, coordinator, fire: FakeFireplace, box: FakeBox, light: str
+) -> None:
+    fire.set(light=True, light_level=0xFB)
+    await poll(hass, coordinator)
+
+    await call(hass, "light", "turn_on", light, brightness=1)
+
+    assert box.commands == ["30FE77"]

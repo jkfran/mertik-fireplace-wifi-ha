@@ -1,40 +1,46 @@
-from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+"""Flame height."""
 
-from homeassistant.components.number import NumberEntity
+from __future__ import annotations
 
-from .const import DOMAIN
+from typing import Any
+
+from homeassistant.components.number import NumberEntity, NumberMode
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+from .coordinator import MertikConfigEntry
+from .entity import MertikEntity
+from .mertik import FLAME_STEPS
+
+PARALLEL_UPDATES = 1
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
-    dataservice = hass.data[DOMAIN].get(entry.entry_id)
-
-    async_add_entities([
-        MertikFlameHeightEntity(dataservice, entry.entry_id, entry.data["name"]),
-    ])
+async def async_setup_entry(
+    hass: HomeAssistant, entry: MertikConfigEntry, async_add_entities: AddEntitiesCallback
+) -> None:
+    async_add_entities([MertikFlameHeightEntity(entry.runtime_data)])
 
 
-class MertikFlameHeightEntity(CoordinatorEntity, NumberEntity):
-    _attr_has_entity_name = True
-    _attr_name = "Flame Height"
-    _attr_icon = "mdi:fire"
-    _attr_native_min_value = 1
-    _attr_native_max_value = 12
+class MertikFlameHeightEntity(MertikEntity, NumberEntity):
+    """Flame height in the handset's 12 steps; 0 is standby (pilot only)."""
 
-    def __init__(self, dataservice, entry_id, device_name):
-        super().__init__(dataservice)
-        self._dataservice = dataservice
-        self._attr_unique_id = entry_id + "-FlameHeight"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry_id)},
-            name=device_name,
-            manufacturer="Mertik Maxitrol",
-        )
+    _attr_translation_key = "flame_height"
+    _attr_native_min_value = 0
+    _attr_native_max_value = FLAME_STEPS
+    _attr_native_step = 1
+    _attr_mode = NumberMode.SLIDER
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "FlameHeight")
 
     @property
     def native_value(self) -> float:
-        return self._dataservice.get_flame_height()
+        return self.coordinator.flame_height
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """The raw burner output (0-255), which moves in finer steps."""
+        return {"burner_output": self.coordinator.mertik.burner_output}
 
     async def async_set_native_value(self, value: float) -> None:
-        await self.hass.async_add_executor_job(self._dataservice.set_flame_height, int(value))
-        self._dataservice.async_set_updated_data(None)
+        await self.coordinator.async_set_flame_height(int(value))

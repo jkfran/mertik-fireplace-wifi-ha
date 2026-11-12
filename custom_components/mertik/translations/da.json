@@ -2,19 +2,139 @@
   "config": {
     "step": {
       "user": {
+        "title": "Mertik Maxitrol-pejs",
+        "description": "Vælg pejsens wifi-modul, eller skriv dets IP-adresse. Fundet på dit netværk: {found}",
         "data": {
           "name": "Navn på gaspejs",
-          "host": "IP addresse"
-        },
-        "description": "Opsætning",
-        "title": "Enheder"
+          "host": "IP-adresse på wifi-modulet"
+        }
+      },
+      "reconfigure": {
+        "title": "Skift adresse",
+        "description": "Nuværende adresse: {current}. Fundet på dit netværk: {found}",
+        "data": {
+          "host": "IP-adresse på wifi-modulet"
+        }
       }
     },
     "error": {
-      "cannot_connect": "Kan ikke oprette forbindelse til pejsen. Kontrollér IP-adressen, og sørg for, at enheden er tændt."
+      "cannot_connect": "Kan ikke oprette forbindelse til pejsen. Kontrollér IP-adressen, og sørg for, at enheden er tændt.",
+      "wrong_device": "En anden pejs svarer på den adresse."
     },
     "abort": {
-      "already_configured": "Denne pejs er allerede konfigureret."
+      "already_configured": "Denne pejs er allerede konfigureret.",
+      "reconfigure_successful": "Adressen er ændret.",
+      "not_configured": "Denne pejs er ikke sat op."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Termostat",
+        "description": "Pejsens egen termostat måler rumtemperaturen med fjernbetjeningen. Vælger du en temperatursensor her, regulerer Home Assistant flammen efter den sensor i stedet. Pejsen bliver aldrig tændt automatisk: Når rummet er varmt nok, skrues flammen ned til vågeblus og op igen, når der er brug for varme.",
+        "data": {
+          "temperature_sensor": "Rumtemperatursensor"
+        },
+        "data_description": {
+          "temperature_sensor": "Lad feltet stå tomt for at bruge pejsens egen termostat."
+        }
+      }
+    }
+  },
+  "entity": {
+    "switch": {
+      "secondary_burner": {
+        "name": "Sekundær brænder"
+      }
+    },
+    "number": {
+      "flame_height": {
+        "name": "Flammehøjde"
+      }
+    },
+    "sensor": {
+      "ambient_temperature": {
+        "name": "Rumtemperatur"
+      },
+      "status": {
+        "name": "Status",
+        "state": {
+          "off": "Slukket",
+          "standby": "Vågeblus",
+          "igniting": "Tænder",
+          "on": "Tændt",
+          "shutting_down": "Slukker"
+        }
+      },
+      "fan_level": {
+        "name": "Blæsertrin"
+      },
+      "ip_address": {
+        "name": "IP-adresse"
+      }
+    },
+    "binary_sensor": {
+      "pilot_flame": {
+        "name": "Vågeblus"
+      },
+      "igniting": {
+        "name": "Tænder"
+      },
+      "shutting_down": {
+        "name": "Slukker"
+      },
+      "receiver_connection": {
+        "name": "Modtager"
+      },
+      "remote_connection": {
+        "name": "Fjernbetjening"
+      },
+      "fault": {
+        "name": "Fejl"
+      },
+      "fan": {
+        "name": "Blæser"
+      }
+    },
+    "light": {
+      "light": {
+        "name": "Lys"
+      }
+    },
+    "climate": {
+      "thermostat": {
+        "name": "Termostat"
+      }
+    },
+    "select": {
+      "mode": {
+        "name": "Tilstand",
+        "state": {
+          "manual": "Manuel",
+          "thermostat": "Termostat",
+          "eco": "Eco"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "fireplace_off": {
+      "message": "Tænd pejsen først."
+    },
+    "shutting_down": {
+      "message": "Pejsen er ved at slukke. Prøv igen om lidt."
+    },
+    "no_receiver": {
+      "message": "Wifi-modulet har ingen forbindelse til modtageren i pejsen."
+    },
+    "cannot_reach": {
+      "message": "Pejsen svarer ikke: {error}"
+    }
+  },
+  "issues": {
+    "receiver_lost": {
+      "title": "{name}: ingen forbindelse til pejsen",
+      "description": "Wifi-modulet til {name} svarer, men har mistet radioforbindelsen til modtageren i pejsen (appen viser det som F43). Kommandoer når ikke pejsen, før forbindelsen er tilbage. Kontrollér modtagerens strømforsyning eller batterier. Forbindelsen kommer som regel tilbage, når pejsen betjenes med fjernbetjeningen, eller strømmen slås fra og til."
     }
   }
 }

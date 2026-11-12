@@ -1,0 +1,63 @@
+{
+  "entity": {
+    "switch": {
+      "fireplace": {
+        "default": "mdi:fireplace-off",
+        "state": {
+          "on": "mdi:fireplace"
+        }
+      },
+      "secondary_burner": {
+        "default": "mdi:fire-off",
+        "state": {
+          "on": "mdi:fire"
+        }
+      }
+    },
+    "number": {
+      "flame_height": {
+        "default": "mdi:fire"
+      }
+    },
+    "sensor": {
+      "status": {
+        "default": "mdi:fireplace-off",
+        "state": {
+          "standby": "mdi:candle",
+          "igniting": "mdi:fire-alert",
+          "on": "mdi:fireplace",
+          "shutting_down": "mdi:fire-off"
+        }
+      },
+      "fan_level": {
+        "default": "mdi:fan"
+      },
+      "ip_address": {
+        "default": "mdi:ip-network"
+      }
+    },
+    "binary_sensor": {
+      "pilot_flame": {
+        "default": "mdi:fire-off",
+        "state": {
+          "on": "mdi:fire"
+        }
+      },
+      "igniting": {
+        "default": "mdi:fire-alert"
+      },
+      "shutting_down": {
+        "default": "mdi:fire-off"
+      }
+    },
+    "select": {
+      "mode": {
+        "default": "mdi:tune-variant",
+        "state": {
+          "thermostat": "mdi:thermostat",
+          "eco": "mdi:leaf"
+        }
+      }
+    }
+  }
+}

@@ -1,138 +1,360 @@
-"""Tests for switch entities."""
+"""The fireplace switch (ignite, off) and the secondary burner."""
 
-from unittest.mock import MagicMock
+from __future__ import annotations
 
 import pytest
 
-from custom_components.mertik.switch import (
-    MertikOnOffSwitchEntity,
-    MertikAuxOnOffSwitchEntity,
-    async_setup_entry,
-)
-from custom_components.mertik.const import DOMAIN
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
+
+from .conftest import call, entity_id, poll
+from .fakes import FakeBox, FakeClock, FakeFireplace
 
 
-class TestOnOffSwitch:
-    """Test the main on/off switch entity."""
-
-    @pytest.fixture
-    def switch(self, hass, mock_coordinator):
-        entity = MertikOnOffSwitchEntity(mock_coordinator, "test_entry", "My Fireplace")
-        entity.hass = hass
-        return entity
-
-    def test_unique_id(self, switch):
-        assert switch.unique_id == "test_entry-OnOff"
-
-    def test_name(self, switch):
-        """Primary entity has name=None (uses device name)."""
-        assert switch.name is None
-
-    def test_has_entity_name(self, switch):
-        assert switch.has_entity_name is True
-
-    def test_icon(self, switch):
-        assert switch.icon == "mdi:fireplace"
-
-    def test_device_info(self, switch):
-        info = switch.device_info
-        assert info["identifiers"] == {(DOMAIN, "test_entry")}
-        assert info["name"] == "My Fireplace"
-        assert info["manufacturer"] == "Mertik Maxitrol"
-
-    def test_is_on_false(self, switch, mock_coordinator):
-        mock_coordinator.is_on = False
-        assert switch.is_on is False
-
-    def test_is_on_true(self, switch, mock_coordinator):
-        mock_coordinator.is_on = True
-        assert switch.is_on is True
-
-    async def test_turn_on(self, switch, mock_coordinator):
-        await switch.async_turn_on()
-        mock_coordinator.ignite_fireplace.assert_called_once()
-        mock_coordinator.mark_optimistic_on.assert_called_once()
-        mock_coordinator.async_set_updated_data.assert_called_once_with(None)
-
-    async def test_turn_off(self, switch, mock_coordinator):
-        await switch.async_turn_off()
-        mock_coordinator.guard_flame_off.assert_called_once()
-        mock_coordinator.mark_optimistic_off.assert_called_once()
-        mock_coordinator.async_set_updated_data.assert_called_once_with(None)
+@pytest.fixture
+def switch(hass: HomeAssistant, entry, coordinator) -> str:
+    return entity_id(hass, entry, "switch", "OnOff")
 
 
-class TestAuxSwitch:
-    """Test the secondary burner (aux) switch entity."""
-
-    @pytest.fixture
-    def switch(self, hass, mock_coordinator):
-        entity = MertikAuxOnOffSwitchEntity(
-            mock_coordinator, "test_entry", "My Fireplace"
-        )
-        entity.hass = hass
-        return entity
-
-    def test_unique_id(self, switch):
-        assert switch.unique_id == "test_entry-AuxOnOff"
-
-    def test_name(self, switch):
-        assert switch.name == "Secondary burner"
-
-    def test_has_entity_name(self, switch):
-        assert switch.has_entity_name is True
-
-    def test_icon(self, switch):
-        assert switch.icon == "mdi:fire"
-
-    def test_device_info(self, switch):
-        info = switch.device_info
-        assert info["identifiers"] == {(DOMAIN, "test_entry")}
-        assert info["name"] == "My Fireplace"
-        assert info["manufacturer"] == "Mertik Maxitrol"
-
-    def test_is_on_false(self, switch, mock_coordinator):
-        mock_coordinator.is_aux_on = False
-        assert switch.is_on is False
-
-    def test_is_on_true(self, switch, mock_coordinator):
-        mock_coordinator.is_aux_on = True
-        assert switch.is_on is True
-
-    async def test_turn_on(self, switch, mock_coordinator):
-        await switch.async_turn_on()
-        mock_coordinator.aux_on.assert_called_once()
-        mock_coordinator.async_set_updated_data.assert_called_once_with(None)
-
-    async def test_turn_off(self, switch, mock_coordinator):
-        await switch.async_turn_off()
-        mock_coordinator.aux_off.assert_called_once()
-        mock_coordinator.async_set_updated_data.assert_called_once_with(None)
+@pytest.fixture
+def aux(hass: HomeAssistant, entry, coordinator) -> str:
+    return entity_id(hass, entry, "switch", "AuxOnOff")
 
 
-class TestSwitchPlatformSetup:
-    """Test switch platform async_setup_entry."""
+@pytest.fixture
+def status(hass: HomeAssistant, entry, coordinator) -> str:
+    return entity_id(hass, entry, "sensor", "Status")
 
-    async def test_creates_two_entities(self, hass, mock_coordinator, mock_config_entry):
-        hass.data[DOMAIN] = {mock_config_entry.entry_id: mock_coordinator}
-        added = []
 
-        await async_setup_entry(hass, mock_config_entry, lambda e: added.extend(e))
+async def test_turn_on_ignites_and_waits_for_the_fire_to_settle(
+    hass: HomeAssistant,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    switch: str,
+    status: str,
+) -> None:
+    assert hass.states.get(switch).state == "off"
 
-        assert len(added) == 2
-        assert isinstance(added[0], MertikOnOffSwitchEntity)
-        assert isinstance(added[1], MertikAuxOnOffSwitchEntity)
+    await call(hass, "switch", "turn_on", switch)
 
-    async def test_entity_names(self, hass, mock_coordinator, mock_config_entry):
-        hass.data[DOMAIN] = {mock_config_entry.entry_id: mock_coordinator}
-        added = []
-        await async_setup_entry(hass, mock_config_entry, lambda e: added.extend(e))
+    assert box.commands == ["1A"]
+    assert hass.states.get(switch).state == "on"
+    assert hass.states.get(status).state == "igniting"
 
-        assert added[0].name is None
-        assert added[1].name == "Secondary burner"
+    # The pilot catches and the burner opens, but a fresh ignition has to hold.
+    fire.lit(12)
+    await poll(hass, coordinator)
+    assert hass.states.get(status).state == "igniting"
 
-    async def test_all_entities_share_device(self, hass, mock_coordinator, mock_config_entry):
-        hass.data[DOMAIN] = {mock_config_entry.entry_id: mock_coordinator}
-        added = []
-        await async_setup_entry(hass, mock_config_entry, lambda e: added.extend(e))
+    clock.advance(61)
+    await poll(hass, coordinator)
+    assert hass.states.get(status).state == "on"
+    assert hass.states.get(switch).state == "on"
+    assert box.commands == ["1A"]
 
-        assert added[0].device_info["identifiers"] == added[1].device_info["identifiers"]
+
+@pytest.mark.parametrize("flame", [12, 0], ids=["burning", "standby"])
+async def test_turn_on_does_not_ignite_a_fire_that_is_on(
+    hass: HomeAssistant,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    switch: str,
+    flame: int,
+) -> None:
+    """A second ignite would restart the ignition of a burning fire."""
+    fire.lit(flame)
+    await poll(hass, coordinator)
+    assert hass.states.get(switch).state == "on"
+
+    await call(hass, "switch", "turn_on", switch)
+
+    assert box.commands == []
+
+
+async def test_turn_on_does_not_ignite_twice(
+    hass: HomeAssistant, coordinator, box: FakeBox, switch: str
+) -> None:
+    await call(hass, "switch", "turn_on", switch)
+    await call(hass, "switch", "turn_on", switch)
+
+    assert box.commands == ["1A"]
+
+
+async def test_turn_off(
+    hass: HomeAssistant,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    switch: str,
+    status: str,
+) -> None:
+    fire.lit(12)
+    await poll(hass, coordinator)
+
+    await call(hass, "switch", "turn_off", switch)
+
+    assert box.commands == ["10"]
+    assert hass.states.get(switch).state == "off"
+    assert hass.states.get(status).state == "shutting_down"
+
+    fire.off()
+    await poll(hass, coordinator)
+    assert hass.states.get(status).state == "off"
+
+
+async def test_off_shows_at_once_even_if_the_box_is_slow_to_report_it(
+    hass: HomeAssistant,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    switch: str,
+    status: str,
+) -> None:
+    fire.lit(12)
+    await poll(hass, coordinator)
+    box.on_command = None  # the box keeps reporting the fire as burning
+
+    await call(hass, "switch", "turn_off", switch)
+    assert hass.states.get(status).state == "shutting_down"
+
+    # It does not stay that way for ever if the fire really keeps burning.
+    clock.advance(21)
+    await poll(hass, coordinator)
+    assert hass.states.get(status).state == "on"
+
+
+async def test_turn_on_is_refused_while_shutting_down_and_just_after(
+    hass: HomeAssistant,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    switch: str,
+) -> None:
+    """The receiver ignores an ignition during a shutdown and right after it."""
+    fire.lit(12)
+    await poll(hass, coordinator)
+    await call(hass, "switch", "turn_off", switch)
+
+    with pytest.raises(ServiceValidationError) as error:
+        await call(hass, "switch", "turn_on", switch)
+    assert error.value.translation_key == "shutting_down"
+
+    fire.off()
+    await poll(hass, coordinator)
+    with pytest.raises(ServiceValidationError) as error:
+        await call(hass, "switch", "turn_on", switch)
+    assert error.value.translation_key == "shutting_down"
+    assert box.commands == ["10"]
+
+    clock.advance(16)
+    await call(hass, "switch", "turn_on", switch)
+    assert box.commands == ["10", "1A"]
+
+
+async def test_a_cold_fireplace_can_be_ignited_right_away(
+    hass: HomeAssistant, coordinator, box: FakeBox, switch: str
+) -> None:
+    """The wait after a shutdown only applies to one that was seen."""
+    await call(hass, "switch", "turn_on", switch)
+    assert box.commands == ["1A"]
+
+
+async def test_failed_ignition_ends_up_off(
+    hass: HomeAssistant,
+    coordinator,
+    fire: FakeFireplace,
+    clock: FakeClock,
+    switch: str,
+    status: str,
+) -> None:
+    await call(hass, "switch", "turn_on", switch)
+    # The pilot does not catch: the box reports the fireplace off again.
+    fire.off()
+
+    # Shortly after the command that is still read as the ignition starting.
+    await poll(hass, coordinator)
+    assert hass.states.get(status).state == "igniting"
+
+    clock.advance(31)
+    await poll(hass, coordinator)
+    assert hass.states.get(status).state == "off"
+    assert hass.states.get(switch).state == "off"
+
+
+async def test_fire_lit_with_the_handset_is_followed(
+    hass: HomeAssistant,
+    coordinator,
+    fire: FakeFireplace,
+    clock: FakeClock,
+    switch: str,
+    status: str,
+) -> None:
+    fire.set(igniting=True)
+    await poll(hass, coordinator)
+    assert hass.states.get(status).state == "igniting"
+    assert hass.states.get(switch).state == "on"
+
+    fire.lit(12)
+    clock.advance(61)
+    await poll(hass, coordinator)
+    assert hass.states.get(status).state == "on"
+
+
+async def test_secondary_burner(
+    hass: HomeAssistant, coordinator, fire: FakeFireplace, box: FakeBox, aux: str
+) -> None:
+    fire.lit(12)
+    await poll(hass, coordinator)
+    assert hass.states.get(aux).state == "off"
+
+    await call(hass, "switch", "turn_on", aux)
+    assert box.commands == ["2001"]
+    assert hass.states.get(aux).state == "on"
+
+    await call(hass, "switch", "turn_off", aux)
+    assert box.commands == ["2001", "2000"]
+    assert hass.states.get(aux).state == "off"
+
+
+async def test_secondary_burner_reads_off_while_the_fireplace_is_off(
+    hass: HomeAssistant, coordinator, fire: FakeFireplace, box: FakeBox, aux: str
+) -> None:
+    """The box keeps the bit of the last fire; nothing burns with the fire off."""
+    fire.set(aux=True)
+    await poll(hass, coordinator)
+    assert hass.states.get(aux).state == "off"
+
+    # Turning it off is already the case; turning it on needs a fire.
+    await call(hass, "switch", "turn_off", aux)
+    with pytest.raises(ServiceValidationError) as error:
+        await call(hass, "switch", "turn_on", aux)
+    assert error.value.translation_key == "fireplace_off"
+    assert box.commands == []
+
+
+async def test_secondary_burner_request_shows_until_the_box_reports_it(
+    hass: HomeAssistant,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    aux: str,
+) -> None:
+    fire.lit(12)
+    await poll(hass, coordinator)
+    box.on_command = None  # the box acknowledges, its status lags behind
+
+    await call(hass, "switch", "turn_on", aux)
+    assert hass.states.get(aux).state == "on"
+
+    # If the report never comes, what the box says wins.
+    clock.advance(13)
+    await poll(hass, coordinator)
+    assert hass.states.get(aux).state == "off"
+
+
+async def test_commands_given_while_igniting_wait_for_the_fire(
+    hass: HomeAssistant,
+    entry,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    switch: str,
+    aux: str,
+) -> None:
+    """The receiver must be left alone while it lights the fire."""
+    number = entity_id(hass, entry, "number", "FlameHeight")
+    await call(hass, "switch", "turn_on", switch)
+
+    await call(hass, "number", "set_value", number, value=4)
+    await call(hass, "switch", "turn_on", aux)
+
+    assert box.commands == ["1A"]
+    assert float(hass.states.get(number).state) == 4
+    assert hass.states.get(aux).state == "on"
+
+    fire.lit(12)
+    await poll(hass, coordinator)
+    assert box.commands == ["1A"]  # still settling
+
+    clock.advance(61)
+    await poll(hass, coordinator)
+
+    # Secondary burner first: it is refused while the valve moves to a new flame.
+    assert box.commands == ["1A", "2001", "16A2"]
+    assert float(hass.states.get(number).state) == 4
+    assert hass.states.get(aux).state == "on"
+
+
+async def test_commands_waiting_for_the_fire_are_dropped_if_it_does_not_light(
+    hass: HomeAssistant,
+    entry,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    switch: str,
+) -> None:
+    number = entity_id(hass, entry, "number", "FlameHeight")
+    await call(hass, "switch", "turn_on", switch)
+    await call(hass, "number", "set_value", number, value=4)
+
+    fire.off()
+    clock.advance(31)
+    await poll(hass, coordinator)
+    assert float(hass.states.get(number).state) == 0
+
+    # A fire lit later does not get the old request.
+    fire.lit(12)
+    clock.advance(600)
+    await poll(hass, coordinator)
+    assert box.commands == ["1A"]
+    assert float(hass.states.get(number).state) == 12
+
+
+async def test_commands_waiting_for_the_fire_expire(
+    hass: HomeAssistant,
+    entry,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    switch: str,
+) -> None:
+    """An ignition that never ends does not hold a command for ever."""
+    number = entity_id(hass, entry, "number", "FlameHeight")
+    await call(hass, "switch", "turn_on", switch)
+    await call(hass, "number", "set_value", number, value=4)
+
+    clock.advance(301)
+    await poll(hass, coordinator)  # the box still reports the ignition
+
+    fire.lit(12)
+    clock.advance(61)
+    await poll(hass, coordinator)
+    assert box.commands == ["1A"]
+
+
+async def test_turning_off_drops_what_was_waiting(
+    hass: HomeAssistant,
+    entry,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    switch: str,
+) -> None:
+    number = entity_id(hass, entry, "number", "FlameHeight")
+    await call(hass, "switch", "turn_on", switch)
+    await call(hass, "number", "set_value", number, value=4)
+
+    await call(hass, "switch", "turn_off", switch)
+
+    assert box.commands == ["1A", "10"]
+    assert float(hass.states.get(number).state) == 0
