@@ -1,72 +1,176 @@
-"""Tests for sensor entity (ambient temperature)."""
+"""Sensors and binary sensors."""
 
-from unittest.mock import MagicMock
+from __future__ import annotations
 
 import pytest
 
-from homeassistant.components.sensor import SensorDeviceClass
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 
-from custom_components.mertik.sensor import (
-    MertikAmbientTemperatureSensorEntity,
-    async_setup_entry,
-)
 from custom_components.mertik.const import DOMAIN
 
+from .conftest import HOST, entity_id, poll, settled
+from .fakes import FakeBox, FakeClock, FakeFireplace
 
-class TestTemperatureSensor:
-    """Test the ambient temperature sensor entity."""
 
-    @pytest.fixture
-    def sensor(self, hass, mock_coordinator):
-        entity = MertikAmbientTemperatureSensorEntity(
-            mock_coordinator, "test_entry", "My Fireplace"
+@pytest.fixture
+def all_enabled(hass: HomeAssistant, entry) -> None:
+    """Enable the entities that are disabled by default (before setup)."""
+    registry = er.async_get(hass)
+    for platform, key in (
+        ("sensor", "FanLevel"),
+        ("sensor", "IPAddress"),
+        ("binary_sensor", "Igniting"),
+        ("binary_sensor", "ShuttingDown"),
+        ("binary_sensor", "Fault"),
+        ("binary_sensor", "Fan"),
+    ):
+        registry.async_get_or_create(
+            platform, DOMAIN, f"{entry.entry_id}-{key}", config_entry=entry
         )
-        entity.hass = hass
-        return entity
-
-    def test_unique_id(self, sensor):
-        assert sensor.unique_id == "test_entry-AmbientTemperature"
-
-    def test_name(self, sensor):
-        assert sensor.name == "Ambient Temperature"
-
-    def test_has_entity_name(self, sensor):
-        assert sensor.has_entity_name is True
-
-    def test_device_class(self, sensor):
-        assert sensor.device_class == SensorDeviceClass.TEMPERATURE
-
-    def test_unit(self, sensor):
-        assert sensor.native_unit_of_measurement == UnitOfTemperature.CELSIUS
-
-    def test_device_info(self, sensor):
-        info = sensor.device_info
-        assert info["identifiers"] == {(DOMAIN, "test_entry")}
-        assert info["name"] == "My Fireplace"
-        assert info["manufacturer"] == "Mertik Maxitrol"
-
-    def test_native_value(self, sensor, mock_coordinator):
-        mock_coordinator.ambient_temperature = 21.5
-        assert sensor.native_value == 21.5
-
-    def test_native_value_cold(self, sensor, mock_coordinator):
-        mock_coordinator.ambient_temperature = 5.0
-        assert sensor.native_value == 5.0
-
-    def test_native_value_without_handset(self, sensor, mock_coordinator):
-        """No handset reading: unknown rather than a made-up number."""
-        mock_coordinator.ambient_temperature = None
-        assert sensor.native_value is None
 
 
-class TestSensorPlatformSetup:
-    """Test sensor platform async_setup_entry."""
+def state_of(hass: HomeAssistant, entry, platform: str, key: str) -> str:
+    return hass.states.get(entity_id(hass, entry, platform, key)).state
 
-    async def test_creates_one_entity(self, hass, mock_coordinator, mock_config_entry):
-        hass.data[DOMAIN] = {mock_config_entry.entry_id: mock_coordinator}
-        added = []
-        await async_setup_entry(hass, mock_config_entry, lambda e: added.extend(e))
 
-        assert len(added) == 1
-        assert isinstance(added[0], MertikAmbientTemperatureSensorEntity)
+async def test_ambient_temperature(
+    hass: HomeAssistant, entry, coordinator, fire: FakeFireplace
+) -> None:
+    fire.set(room=0x00D7)
+    await poll(hass, coordinator)
+
+    state = hass.states.get(entity_id(hass, entry, "sensor", "AmbientTemperature"))
+    assert float(state.state) == 21.5
+    assert state.attributes["unit_of_measurement"] == "°C"
+    assert state.attributes["device_class"] == "temperature"
+    assert state.attributes["state_class"] == "measurement"
+
+
+async def test_ambient_temperature_is_unknown_without_a_handset(
+    hass: HomeAssistant, entry, coordinator, fire: FakeFireplace
+) -> None:
+    """Without a handset reading the box reports 0666, which is not 163.8 degrees."""
+    fire.set(room="0666")
+    await poll(hass, coordinator)
+
+    assert state_of(hass, entry, "sensor", "AmbientTemperature") == STATE_UNKNOWN
+
+
+async def test_status_sensor_follows_the_fire(
+    hass: HomeAssistant, entry, coordinator, fire: FakeFireplace, clock: FakeClock
+) -> None:
+    status = entity_id(hass, entry, "sensor", "Status")
+    assert hass.states.get(status).state == "off"
+    assert hass.states.get(status).attributes["options"] == [
+        "off",
+        "standby",
+        "igniting",
+        "on",
+        "shutting_down",
+    ]
+
+    fire.set(igniting=True)
+    await poll(hass, coordinator)
+    assert hass.states.get(status).state == "igniting"
+
+    fire.lit(12)
+    clock.advance(61)
+    await settled(hass, coordinator, clock)
+    assert hass.states.get(status).state == "on"
+
+    fire.standby()
+    await poll(hass, coordinator)
+    assert hass.states.get(status).state == "standby"
+
+    fire.set(shutting_down=True)
+    await poll(hass, coordinator)
+    assert hass.states.get(status).state == "shutting_down"
+
+    fire.off()
+    await poll(hass, coordinator)
+    assert hass.states.get(status).state == "off"
+
+
+async def test_pilot_flame(
+    hass: HomeAssistant, entry, coordinator, fire: FakeFireplace,
+    clock: FakeClock,
+) -> None:
+    assert state_of(hass, entry, "binary_sensor", "PilotFlame") == "off"
+
+    fire.standby()
+    await settled(hass, coordinator, clock)
+    assert state_of(hass, entry, "binary_sensor", "PilotFlame") == "on"
+
+    fire.lit(7)
+    await poll(hass, coordinator)
+    assert state_of(hass, entry, "binary_sensor", "PilotFlame") == "on"
+
+    # A cold fireplace reporting a full burner output has no pilot.
+    fire.set(pilot=False, output=0xFF)
+    await poll(hass, coordinator)
+    assert state_of(hass, entry, "binary_sensor", "PilotFlame") == "off"
+
+
+async def test_remote(hass: HomeAssistant, entry, coordinator, fire: FakeFireplace) -> None:
+    """A handset shows by its status bit, or by the temperature it reports."""
+    assert state_of(hass, entry, "binary_sensor", "RemoteConnection") == "off"
+
+    fire.set(room=0x00D2)
+    await poll(hass, coordinator)
+    assert state_of(hass, entry, "binary_sensor", "RemoteConnection") == "on"
+
+    fire.set(room="0666", handset=True)
+    await poll(hass, coordinator)
+    assert state_of(hass, entry, "binary_sensor", "RemoteConnection") == "on"
+
+
+async def test_receiver_link(
+    hass: HomeAssistant, entry, coordinator, fire: FakeFireplace, clock: FakeClock
+) -> None:
+    """The receiver sensor stays readable while its link is what is missing."""
+    assert state_of(hass, entry, "binary_sensor", "ReceiverConnection") == "on"
+
+    fire.set(link=False)
+    await poll(hass, coordinator)
+    assert state_of(hass, entry, "binary_sensor", "ReceiverConnection") == "off"
+    assert state_of(hass, entry, "sensor", "Status") == "off"
+
+    clock.advance(46)
+    await poll(hass, coordinator)
+    assert state_of(hass, entry, "binary_sensor", "ReceiverConnection") == "off"
+    assert state_of(hass, entry, "sensor", "Status") == STATE_UNAVAILABLE
+
+
+async def test_entities_disabled_by_default(
+    hass: HomeAssistant,
+    entry,
+    all_enabled,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+) -> None:
+    assert state_of(hass, entry, "sensor", "IPAddress") == HOST
+    assert state_of(hass, entry, "sensor", "FanLevel") == "0"
+    assert state_of(hass, entry, "binary_sensor", "Fan") == "off"
+    assert state_of(hass, entry, "binary_sensor", "Igniting") == "off"
+    assert state_of(hass, entry, "binary_sensor", "ShuttingDown") == "off"
+    # A fireplace whose handset does not report keeps the fault F44 stored.
+    assert state_of(hass, entry, "binary_sensor", "Fault") == "on"
+
+    fire.set(fan=True, fan_level=3, igniting=True)
+    await poll(hass, coordinator)
+    assert state_of(hass, entry, "sensor", "FanLevel") == "3"
+    assert state_of(hass, entry, "binary_sensor", "Fan") == "on"
+    assert state_of(hass, entry, "binary_sensor", "Igniting") == "on"
+
+    fire.set(igniting=False, pilot=True, shutting_down=True)
+    await poll(hass, coordinator)
+    assert state_of(hass, entry, "binary_sensor", "ShuttingDown") == "on"
+
+    # The address stays readable when the fireplace does not answer.
+    box.fail_connects = 2
+    await poll(hass, coordinator)
+    assert state_of(hass, entry, "sensor", "Status") == STATE_UNAVAILABLE
+    assert state_of(hass, entry, "sensor", "IPAddress") == HOST

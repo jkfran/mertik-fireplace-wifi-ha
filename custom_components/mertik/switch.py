@@ -1,81 +1,83 @@
-from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+"""Switches: the fireplace itself and its secondary burner."""
+
+from __future__ import annotations
+
+from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .coordinator import MertikConfigEntry
+from .entity import MertikEntity
 
-
-async def async_setup_entry(hass, entry, async_add_entities):
-    dataservice = hass.data[DOMAIN].get(entry.entry_id)
-
-    entities = [
-        MertikOnOffSwitchEntity(dataservice, entry.entry_id, entry.data["name"]),
-        MertikAuxOnOffSwitchEntity(dataservice, entry.entry_id, entry.data["name"]),
-    ]
-
-    async_add_entities(entities)
+# Calls are not queued one behind the other here: an off must not wait for a
+# turn-on that is still being checked. The coordinator and the protocol layer
+# keep what is sent in order.
+PARALLEL_UPDATES = 0
 
 
-class MertikOnOffSwitchEntity(CoordinatorEntity, SwitchEntity):
-    _attr_has_entity_name = True
+async def async_setup_entry(
+    hass: HomeAssistant, entry: MertikConfigEntry, async_add_entities: AddEntitiesCallback
+) -> None:
+    coordinator = entry.runtime_data
+    async_add_entities(
+        [MertikOnOffSwitchEntity(coordinator), MertikAuxOnOffSwitchEntity(coordinator)]
+    )
+
+
+class MertikOnOffSwitchEntity(MertikEntity, SwitchEntity):
+    """The fireplace: on ignites it, off turns it off completely.
+
+    It reads on whenever the pilot burns, so also in standby and while igniting.
+
+    Unlike the other entities it never becomes unavailable: Home Assistant does
+    not pass a command on to an unavailable entity, and turning a fire off must
+    not be dropped because the fireplace could not be reached a moment ago.
+    While nothing is known about the fireplace it reads unknown.
+    """
+
     _attr_name = None
-    _attr_icon = "mdi:fireplace"
+    _attr_translation_key = "fireplace"
 
-    def __init__(self, dataservice, entry_id, device_name):
-        super().__init__(dataservice)
-        self._dataservice = dataservice
-        self._attr_unique_id = entry_id + "-OnOff"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry_id)},
-            name=device_name,
-            manufacturer="Mertik Maxitrol",
-        )
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "OnOff")
 
     @property
-    def is_on(self):
-        return bool(self._dataservice.is_on)
+    def available(self) -> bool:
+        return True
 
-    async def async_turn_on(self, **kwargs):
-        await self.hass.async_add_executor_job(self._dataservice.ignite_fireplace)
-        self._dataservice.mark_optimistic_on()
-        self._dataservice.async_set_updated_data(None)
+    @property
+    def is_on(self) -> bool | None:
+        if not self.coordinator.available:
+            return None
+        return self.coordinator.is_on
 
-    async def async_turn_off(self, **kwargs):
-        await self.hass.async_add_executor_job(self._dataservice.guard_flame_off)
-        self._dataservice.mark_optimistic_off()
-        self._dataservice.async_set_updated_data(None)
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self.coordinator.async_turn_on()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self.coordinator.async_turn_off()
 
 
-class MertikAuxOnOffSwitchEntity(CoordinatorEntity, SwitchEntity):
+class MertikAuxOnOffSwitchEntity(MertikEntity, SwitchEntity):
     """Secondary burner on dual-burner fireplaces (the module's aux output).
 
     Turn off to run on the primary burner only.
     """
 
-    _attr_has_entity_name = True
-    _attr_name = "Secondary burner"
-    _attr_icon = "mdi:fire"
+    _attr_translation_key = "secondary_burner"
 
-    def __init__(self, dataservice, entry_id, device_name):
-        super().__init__(dataservice)
-        self._dataservice = dataservice
-        # Keep the original "Aux" unique_id so existing entity_ids don't change
-        self._attr_unique_id = entry_id + "-AuxOnOff"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry_id)},
-            name=device_name,
-            manufacturer="Mertik Maxitrol",
-        )
+    def __init__(self, coordinator) -> None:
+        # The key dates from when this was called "Aux"; it keeps entity IDs stable.
+        super().__init__(coordinator, "AuxOnOff")
 
     @property
-    def is_on(self):
-        return bool(self._dataservice.is_aux_on)
+    def is_on(self) -> bool:
+        return self.coordinator.is_aux_on
 
-    async def async_turn_on(self, **kwargs):
-        await self.hass.async_add_executor_job(self._dataservice.aux_on)
-        self._dataservice.async_set_updated_data(None)
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self.coordinator.async_set_aux(True)
 
-    async def async_turn_off(self, **kwargs):
-        await self.hass.async_add_executor_job(self._dataservice.aux_off)
-        self._dataservice.async_set_updated_data(None)
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self.coordinator.async_set_aux(False)

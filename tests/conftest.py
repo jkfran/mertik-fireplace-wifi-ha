@@ -1,109 +1,198 @@
-"""Fixtures for Mertik tests."""
+"""Fixtures: a scripted fireplace instead of the network.
+
+Nothing here opens a socket. The fireplace is a FakeBox, time is a FakeClock
+(waiting costs nothing), and discovery answers from a list.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Generator
+from functools import partial
+from unittest.mock import patch
 
 import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from unittest.mock import MagicMock, AsyncMock, patch, PropertyMock
+from homeassistant.const import CONF_HOST, CONF_NAME
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 
+from custom_components.mertik.const import CONF_MAC, CONF_MODEL, DOMAIN
+from custom_components.mertik.coordinator import MertikDataCoordinator
+from custom_components.mertik.discovery import Module
 from custom_components.mertik.mertik import Mertik
-from custom_components.mertik.const import DOMAIN
+
+from .fakes import FakeBox, FakeClock, FakeFireplace
+
+HOST = "192.168.1.100"
+MAC = "00:23:3c:aa:bb:cc"
+MODEL = "mmWiFiBoxV2"
+NAME = "Fireplace"
+
+
+class Network:
+    """The fake network: a box per address, and the modules discovery finds."""
+
+    def __init__(self, clock: FakeClock) -> None:
+        self.clock = clock
+        self.boxes: dict[str, FakeBox] = {}
+        self.modules: dict[str, Module] = {}
+        # False: modules only answer when asked at their own address.
+        self.broadcast_works = True
+
+    def add(
+        self, host: str = HOST, mac: str | None = MAC, name: str = MODEL
+    ) -> FakeBox:
+        """Put a fireplace on the network. With mac None it ignores discovery."""
+        box = FakeBox(self.clock)
+        self.boxes[host] = box
+        if mac is not None:
+            self.modules[host] = Module(host=host, name=name, mac=mac)
+        return box
+
+    def move(self, old: str, new: str) -> None:
+        """Give a fireplace another address."""
+        self.boxes[new] = self.boxes.pop(old)
+        if old in self.modules:
+            module = self.modules.pop(old)
+            self.modules[new] = Module(host=new, name=module.name, mac=module.mac)
+
+    def swap(self, first: str, second: str) -> None:
+        """Two fireplaces come back from a router restart with each other's address."""
+        self.boxes[first], self.boxes[second] = self.boxes[second], self.boxes[first]
+        one, two = self.modules.get(first), self.modules.get(second)
+        for host, module in ((first, two), (second, one)):
+            if module is None:
+                self.modules.pop(host, None)
+            else:
+                self.modules[host] = Module(host=host, name=module.name, mac=module.mac)
+
+    def connect(self, host: str, port: int, timeout: float):
+        if ".." in host:
+            # What Python does with an address like "192.168..1.4".
+            raise UnicodeError("label empty or too long")
+        if host not in self.boxes:
+            raise OSError("No route to host")
+        return self.boxes[host].connect(host, port, timeout)
+
+    def discover(self, *args, **kwargs) -> list[Module]:
+        if not self.broadcast_works:
+            return []
+        return sorted(self.modules.values(), key=lambda module: module.host)
+
+    def discover_host(self, host: str, *args, **kwargs) -> Module | None:
+        return self.modules.get(host)
+
+
+@pytest.fixture(autouse=True)
+def auto_enable_custom_integrations(enable_custom_integrations):
+    """Let Home Assistant load the integration under test."""
+    return
 
 
 @pytest.fixture
-def mock_coordinator():
-    """Return a mock MertikDataCoordinator for entity tests."""
-    coordinator = MagicMock()
-    coordinator.is_on = False
-    coordinator.is_aux_on = False
-    coordinator.is_light_on = False
-    coordinator.light_brightness = 0
-    coordinator.ambient_temperature = 21.5
-    coordinator.target_temperature = None
-    coordinator.is_igniting = False
-    coordinator.is_burning = False
-    coordinator.is_pilot_on = False
-    coordinator.is_thermostat_on = False
-    coordinator.get_flame_height.return_value = 0
-    coordinator.async_set_updated_data = MagicMock()
-    coordinator.mark_optimistic_on = MagicMock()
-    coordinator.mark_optimistic_off = MagicMock()
-    coordinator.ignite_fireplace = MagicMock()
-    coordinator.guard_flame_off = MagicMock()
-    coordinator.aux_on = MagicMock()
-    coordinator.aux_off = MagicMock()
-    coordinator.light_on = MagicMock()
-    coordinator.light_off = MagicMock()
-    coordinator.set_light_brightness = MagicMock()
-    coordinator.set_flame_height = MagicMock()
-    coordinator.set_thermostat = MagicMock()
-    coordinator.set_manual = MagicMock()
-    # DataUpdateCoordinator attributes needed by CoordinatorEntity
-    coordinator.async_add_listener = MagicMock(return_value=MagicMock())
-    coordinator.data = None
-    return coordinator
+def clock() -> FakeClock:
+    return FakeClock()
 
 
 @pytest.fixture
-def mock_config_entry():
-    """Return a mock config entry."""
-    entry = MagicMock()
-    entry.entry_id = "test_entry_123"
-    entry.data = {"name": "My Fireplace", "host": "192.168.1.100"}
-    return entry
+def network(clock: FakeClock) -> Generator[Network]:
+    """Route the integration's connections and searches to the fake network."""
+    net = Network(clock)
+
+    def make_mertik(ip: str, **kwargs) -> Mertik:
+        return Mertik(ip, connect=net.connect, clock=clock, sleep=clock.sleep, **kwargs)
+
+    with (
+        patch("custom_components.mertik.Mertik", new=make_mertik),
+        patch("custom_components.mertik.config_flow.Mertik", new=make_mertik),
+        patch(
+            "custom_components.mertik.MertikDataCoordinator",
+            new=partial(MertikDataCoordinator, clock=clock),
+        ),
+        patch("custom_components.mertik.discover", new=net.discover),
+        patch("custom_components.mertik.discover_host", new=net.discover_host),
+        patch("custom_components.mertik.coordinator.discover_host", new=net.discover_host),
+        patch("custom_components.mertik.config_flow.discover", new=net.discover),
+        patch("custom_components.mertik.config_flow.discover_host", new=net.discover_host),
+    ):
+        yield net
 
 
 @pytest.fixture
-def mock_socket():
-    """Return a mock socket that doesn't connect anywhere."""
-    with patch("custom_components.mertik.mertik.socket.socket") as mock_sock_cls:
-        mock_sock = MagicMock()
-        mock_sock_cls.return_value = mock_sock
-        mock_sock.recv.return_value = _build_status_bytes()
-        yield mock_sock
+def box(network: Network) -> FakeBox:
+    """The WiFi box of the fireplace the config entry points at."""
+    return network.add(HOST)
 
 
-def _build_status_bytes(
-    flame_height: int = 0x00,
-    status_bits: str = "0000",
-    light_level: int = 0x64,
-    mode: str = "0",
-    ambient_temp: int = 0xE6,
-    target_temp: int = 0x00,
-) -> bytes:
-    """Build a raw status response matching the Mertik protocol.
+@pytest.fixture
+def fire(box: FakeBox) -> FakeFireplace:
+    """That fireplace: off, linked to its receiver, no handset reading."""
+    return FakeFireplace(box)
 
-    After __sendCommand strips the first byte and the regex no-op, __processStatus
-    receives a string parsed at these indices:
 
-        [0:12]   prefix (e.g. "303030300003")
-        [12:14]  padding
-        [14:16]  flame height (2 hex chars)
-        [16:20]  status bits (4 hex chars)
-        [20:22]  light level (2 hex chars)
-        [22:24]  padding
-        [24:25]  mode (1 char)
-        [25:28]  padding
-        [28:32]  ambient temperature x10 (4 hex chars)
-        [32:36]  target temperature x10 (4 hex chars)
-    """
-    prefix = "303030300003"
-    body = (
-        "00"                        # [12:14] padding
-        f"{flame_height:02X}"       # [14:16] flame height
-        f"{status_bits}"            # [16:20] status bits (4 hex chars)
-        f"{light_level:02X}"        # [20:22] light level
-        "00"                        # [22:24] padding
-        f"{mode}"                   # [24:25] mode
-        "000"                       # [25:28] padding
-        f"{ambient_temp:04X}"       # [28:32] ambient temp
-        f"{target_temp:04X}"        # [32:36] target temp
+@pytest.fixture
+def entry(hass: HomeAssistant) -> MockConfigEntry:
+    """A config entry as version 2 makes it."""
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title=NAME,
+        unique_id=MAC,
+        data={CONF_NAME: NAME, CONF_HOST: HOST, CONF_MAC: MAC, CONF_MODEL: MODEL},
     )
-    # __sendCommand strips the first byte, so prepend a dummy
-    raw = "\x02" + prefix + body
-    return raw.encode("ascii")
+    config_entry.add_to_hass(hass)
+    return config_entry
 
 
 @pytest.fixture
-def mertik_device(mock_socket):
-    """Return a Mertik instance with a mocked socket."""
-    device = Mertik("192.168.1.100")
-    return device
+async def coordinator(
+    hass: HomeAssistant, entry: MockConfigEntry, fire: FakeFireplace
+) -> MertikDataCoordinator:
+    """The integration set up against the fake fireplace."""
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry.runtime_data
+
+
+async def poll(hass: HomeAssistant, coordinator: MertikDataCoordinator) -> None:
+    """Poll the fireplace now and let everything that follows from it finish."""
+    await coordinator.async_refresh()
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+
+async def settled(
+    hass: HomeAssistant, coordinator: MertikDataCoordinator, clock: FakeClock
+) -> None:
+    """Poll a fire that was lit behind Home Assistant's back, and let it settle.
+
+    A fire found burning where it was off a moment ago was lit with the handset;
+    like any fresh ignition it only counts as on after a minute.
+    """
+    await poll(hass, coordinator)
+    clock.advance(61)
+    await poll(hass, coordinator)
+
+
+def entity_id(hass: HomeAssistant, entry: MockConfigEntry, platform: str, key: str) -> str:
+    """The entity ID behind one of the integration's unique ID keys."""
+    found = er.async_get(hass).async_get_entity_id(
+        platform, DOMAIN, f"{entry.entry_id}-{key}"
+    )
+    assert found is not None, f"no {platform} entity with key {key}"
+    return found
+
+
+async def call(hass: HomeAssistant, domain: str, service: str, target: str, **data) -> None:
+    """Call an entity service and let its effects settle."""
+    await hass.services.async_call(
+        domain, service, {"entity_id": target, **data}, blocking=True
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+
+def fireplace_device(hass: HomeAssistant, entry: MockConfigEntry) -> dr.DeviceEntry | None:
+    """The device of an entry's fireplace."""
+    for device in dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id):
+        if (DOMAIN, entry.entry_id) in device.identifiers:
+            return device
+    return None

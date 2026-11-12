@@ -1,155 +1,439 @@
-"""Tests for the Mertik config flow."""
+"""Setting up a fireplace, changing its address, following it, and the options."""
 
-from unittest.mock import patch
+from __future__ import annotations
 
-import pytest
+from dataclasses import dataclass
 
-from homeassistant import config_entries
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from homeassistant.config_entries import (
+    SOURCE_DHCP,
+    SOURCE_RECONFIGURE,
+    SOURCE_USER,
+    ConfigEntryState,
+)
+from homeassistant.const import CONF_HOST, CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
-from custom_components.mertik.const import DOMAIN
+from custom_components.mertik.const import (
+    CONF_MAC,
+    CONF_MODEL,
+    CONF_TEMPERATURE_SENSOR,
+    DOMAIN,
+)
+
+from .conftest import HOST, MAC, MODEL, NAME, Network
+
+try:
+    from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
+except ImportError:  # Home Assistant before 2025.2 keeps it inside the dhcp integration
+
+    @dataclass
+    class DhcpServiceInfo:  # type: ignore[no-redef]
+        """What the dhcp integration hands to a flow."""
+
+        ip: str
+        hostname: str
+        macaddress: str
 
 
-@pytest.fixture(autouse=True)
-def mock_setup_entry(enable_custom_integrations):
-    """Prevent actual setup during config flow tests."""
-    with patch(
-        "custom_components.mertik.async_setup_entry", return_value=True
-    ), patch(
-        "custom_components.mertik.async_setup", return_value=True
-    ):
-        yield
+OTHER_HOST = "192.168.1.150"
+OTHER_MAC = "00:23:3c:11:22:33"
 
 
-@pytest.fixture
-def mock_connection_success():
-    """Mock a successful connection test."""
-    with patch(
-        "custom_components.mertik.config_flow._test_connection", return_value=True
-    ):
-        yield
-
-
-@pytest.fixture
-def mock_connection_failure():
-    """Mock a failed connection test."""
-    with patch(
-        "custom_components.mertik.config_flow._test_connection", return_value=False
-    ):
-        yield
-
-
-async def test_user_flow_shows_form(hass: HomeAssistant):
-    """Test that the user step shows the configuration form."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER}
+async def start_user_flow(hass: HomeAssistant) -> dict:
+    return await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
     )
-    assert result["type"] == FlowResultType.FORM
+
+
+async def start_reconfigure_flow(hass: HomeAssistant, entry: MockConfigEntry) -> dict:
+    return await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_RECONFIGURE, "entry_id": entry.entry_id}
+    )
+
+
+def entry_from_1_0(hass: HomeAssistant) -> MockConfigEntry:
+    """An entry as versions before 1.1 made it: known by its address only."""
+    entry = MockConfigEntry(
+        domain=DOMAIN, title=NAME, unique_id=HOST, data={CONF_NAME: NAME, CONF_HOST: HOST}
+    )
+    entry.add_to_hass(hass)
+    return entry
+
+
+# --- Setting up ------------------------------------------------------------------------
+
+
+async def test_user_flow_with_a_module_found(hass: HomeAssistant, network: Network) -> None:
+    network.add(HOST)
+
+    result = await start_user_flow(hass)
+
+    assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "user"
-
-
-async def test_user_flow_creates_entry(hass: HomeAssistant, mock_connection_success):
-    """Test that submitting valid data creates a config entry."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER}
-    )
+    assert result["errors"] == {}
+    assert result["description_placeholders"] == {"found": HOST}
+    # The module found is filled in already.
+    assert result["data_schema"]({CONF_NAME: NAME}) == {CONF_NAME: NAME, CONF_HOST: HOST}
 
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        user_input={"name": "My Fireplace", "host": "192.168.1.100"},
+        result["flow_id"], {CONF_NAME: "Living room fire", CONF_HOST: HOST}
     )
+    await hass.async_block_till_done()
 
-    assert result["type"] == FlowResultType.CREATE_ENTRY
-    assert result["title"] == "Mertik Maxitrol"
-    assert result["data"] == {"name": "My Fireplace", "host": "192.168.1.100"}
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "Living room fire"
+    assert result["data"] == {
+        CONF_NAME: "Living room fire",
+        CONF_HOST: HOST,
+        CONF_MAC: MAC,
+        CONF_MODEL: MODEL,
+    }
+    entry = result["result"]
+    assert entry.unique_id == MAC
+    assert entry.state is ConfigEntryState.LOADED
 
 
-async def test_user_flow_connection_error(hass: HomeAssistant, mock_connection_failure):
-    """Test that connection failure shows error and re-displays form."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER}
-    )
+async def test_user_flow_with_nothing_found_takes_a_typed_address(
+    hass: HomeAssistant, network: Network
+) -> None:
+    """A module that ignores the UDP query is set up by its address alone."""
+    network.add(HOST, mac=None)
+
+    result = await start_user_flow(hass)
+    assert result["type"] is FlowResultType.FORM
+    assert result["description_placeholders"] == {"found": "-"}
 
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        user_input={"name": "My Fireplace", "host": "192.168.1.100"},
+        result["flow_id"], {CONF_NAME: NAME, CONF_HOST: f" {HOST} "}
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"] == {CONF_NAME: NAME, CONF_HOST: HOST}
+    assert result["result"].unique_id == HOST
+
+
+async def test_user_flow_asks_a_typed_address_for_its_identity(
+    hass: HomeAssistant, network: Network
+) -> None:
+    """The broadcast did not get through (another subnet), the direct query does."""
+    network.add(HOST)
+    network.broadcast_works = False
+
+    result = await start_user_flow(hass)
+    assert result["description_placeholders"] == {"found": "-"}
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_NAME: NAME, CONF_HOST: HOST}
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_MAC] == MAC
+    assert result["result"].unique_id == MAC
+
+
+async def test_user_flow_cannot_connect(hass: HomeAssistant, network: Network) -> None:
+    result = await start_user_flow(hass)
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_NAME: "Stove", CONF_HOST: HOST}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "cannot_connect"}
+    # What was typed is kept.
+    assert result["data_schema"]({}) == {CONF_NAME: "Stove", CONF_HOST: HOST}
+
+    network.add(HOST)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_NAME: "Stove", CONF_HOST: HOST}
+    )
+    await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+
+async def test_user_flow_with_a_mistyped_address(hass: HomeAssistant, network: Network) -> None:
+    """An address that is not one is an error on the form, not a crash."""
+    result = await start_user_flow(hass)
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_NAME: NAME, CONF_HOST: "192.168..1.4"}
     )
 
-    assert result["type"] == FlowResultType.FORM
+    assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "cannot_connect"}
 
 
-async def test_user_flow_recover_after_error(
-    hass: HomeAssistant, mock_connection_failure
-):
-    """Test that user can retry after a connection error."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER}
-    )
+async def test_user_flow_suggests_the_module_not_set_up_yet(
+    hass: HomeAssistant, entry, coordinator, network: Network
+) -> None:
+    network.add(OTHER_HOST, mac=OTHER_MAC)
 
-    # First attempt fails
+    result = await start_user_flow(hass)
+
+    assert result["description_placeholders"] == {"found": f"{HOST}, {OTHER_HOST}"}
+    assert result["data_schema"]({CONF_NAME: NAME})[CONF_HOST] == OTHER_HOST
+
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        user_input={"name": "My Fireplace", "host": "192.168.1.100"},
+        result["flow_id"], {CONF_NAME: "Second fire", CONF_HOST: OTHER_HOST}
     )
-    assert result["type"] == FlowResultType.FORM
-    assert result["errors"] == {"base": "cannot_connect"}
-
-    # Second attempt succeeds
-    with patch(
-        "custom_components.mertik.config_flow._test_connection", return_value=True
-    ):
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            user_input={"name": "My Fireplace", "host": "192.168.1.100"},
-        )
-
-    assert result["type"] == FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["result"].unique_id == OTHER_MAC
 
 
-async def test_user_flow_duplicate_host(hass: HomeAssistant, mock_connection_success):
-    """Test that adding the same host twice is rejected."""
-    # First entry succeeds
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER}
-    )
+async def test_user_flow_does_not_add_a_fireplace_twice(
+    hass: HomeAssistant, entry, coordinator
+) -> None:
+    result = await start_user_flow(hass)
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        user_input={"name": "My Fireplace", "host": "192.168.1.100"},
+        result["flow_id"], {CONF_NAME: "Again", CONF_HOST: HOST}
     )
-    assert result["type"] == FlowResultType.CREATE_ENTRY
 
-    # Second entry with same host is aborted
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        user_input={"name": "Another Name", "host": "192.168.1.100"},
-    )
-    assert result["type"] == FlowResultType.ABORT
+    assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
 
 
-async def test_user_flow_different_hosts_allowed(
-    hass: HomeAssistant, mock_connection_success
-):
-    """Test that different hosts can be added."""
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER}
-    )
+async def test_user_flow_recognises_a_configured_fireplace_at_a_new_address(
+    hass: HomeAssistant, entry, coordinator, network: Network
+) -> None:
+    """Same MAC address elsewhere: it is the same fireplace, which has moved."""
+    network.move(HOST, OTHER_HOST)
+
+    result = await start_user_flow(hass)
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        user_input={"name": "Fireplace 1", "host": "192.168.1.100"},
+        result["flow_id"], {CONF_NAME: "Again", CONF_HOST: OTHER_HOST}
     )
-    assert result["type"] == FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert entry.data[CONF_HOST] == OTHER_HOST
+    assert entry.runtime_data.mertik.ip == OTHER_HOST
+
+
+async def test_user_flow_adds_a_new_fireplace_at_an_address_an_old_one_had(
+    hass: HomeAssistant, entry, network: Network
+) -> None:
+    """The entry of a fireplace that moved away still has the address stored."""
+    network.add(HOST, mac=OTHER_MAC)  # a different fireplace lives there now
+
+    result = await start_user_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_NAME: "New fire", CONF_HOST: HOST}
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["result"].unique_id == OTHER_MAC
+    # The old entry is not touched, and does not take the new fireplace for its own.
+    assert entry.unique_id == MAC
+    assert entry.data[CONF_MAC] == MAC
+
+
+async def test_user_flow_does_not_duplicate_an_entry_from_1_0(
+    hass: HomeAssistant, network: Network
+) -> None:
+    """Before its first start on 1.1 such an entry is only known by its address."""
+    network.add(HOST)
+    entry_from_1_0(hass)
+
+    result = await start_user_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_NAME: "Again", CONF_HOST: HOST}
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+
+
+# --- Changing the address ------------------------------------------------------------
+
+
+async def test_reconfigure_to_a_new_address(
+    hass: HomeAssistant, entry, coordinator, network: Network
+) -> None:
+    network.move(HOST, OTHER_HOST)
+
+    result = await start_reconfigure_flow(hass, entry)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reconfigure"
+    assert result["description_placeholders"] == {"current": HOST, "found": OTHER_HOST}
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: OTHER_HOST}
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data == {
+        CONF_NAME: NAME,
+        CONF_HOST: OTHER_HOST,
+        CONF_MAC: MAC,
+        CONF_MODEL: MODEL,
+    }
+    assert entry.unique_id == MAC
+    assert entry.state is ConfigEntryState.LOADED
+    assert entry.runtime_data.mertik.ip == OTHER_HOST
+
+
+async def test_reconfigure_refuses_another_fireplace(
+    hass: HomeAssistant, entry, coordinator, network: Network
+) -> None:
+    network.add(OTHER_HOST, mac=OTHER_MAC)
+
+    result = await start_reconfigure_flow(hass, entry)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: OTHER_HOST}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "wrong_device"}
+    assert entry.data[CONF_HOST] == HOST
+
+
+async def test_reconfigure_cannot_connect(
+    hass: HomeAssistant, entry, coordinator
+) -> None:
+    result = await start_reconfigure_flow(hass, entry)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: "192.168.1.77"}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "cannot_connect"}
+    assert result["data_schema"]({}) == {CONF_HOST: "192.168.1.77"}
+    assert entry.data[CONF_HOST] == HOST
+
+
+async def test_reconfigure_gives_an_entry_from_1_0_its_identity(
+    hass: HomeAssistant, network: Network
+) -> None:
+    """The module moved before the entry ever learned its MAC address."""
+    network.add(OTHER_HOST)
+    entry = entry_from_1_0(hass)
+
+    result = await start_reconfigure_flow(hass, entry)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: OTHER_HOST}
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.unique_id == MAC
+    assert entry.data[CONF_HOST] == OTHER_HOST
+    assert entry.data[CONF_MAC] == MAC
+
+
+async def test_reconfigure_of_an_entry_known_by_address_only(
+    hass: HomeAssistant, network: Network
+) -> None:
+    network.add(OTHER_HOST, mac=None)
+    entry = entry_from_1_0(hass)
+
+    result = await start_reconfigure_flow(hass, entry)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: OTHER_HOST}
+    )
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.unique_id == OTHER_HOST
+    assert entry.data == {CONF_NAME: NAME, CONF_HOST: OTHER_HOST}
+
+
+async def test_reconfigure_does_not_point_two_entries_at_one_fireplace(
+    hass: HomeAssistant, entry, coordinator, network: Network
+) -> None:
+    """An entry from 1.0 cannot take the address of a fireplace set up already."""
+    old = MockConfigEntry(
+        domain=DOMAIN,
+        title="Old",
+        unique_id="192.168.1.60",
+        data={CONF_NAME: "Old", CONF_HOST: "192.168.1.60"},
+    )
+    old.add_to_hass(hass)
+
+    result = await start_reconfigure_flow(hass, old)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: HOST}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "wrong_device"}
+    assert old.unique_id == "192.168.1.60"
+
+
+# --- Following the module --------------------------------------------------------------
+
+
+async def test_dhcp_moves_a_known_fireplace_to_its_new_address(
+    hass: HomeAssistant, entry, coordinator, network: Network
+) -> None:
+    network.move(HOST, OTHER_HOST)
 
     result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER}
+        DOMAIN,
+        context={"source": SOURCE_DHCP},
+        data=DhcpServiceInfo(
+            ip=OTHER_HOST, hostname="mmwifibox", macaddress=MAC.replace(":", "")
+        ),
     )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        user_input={"name": "Fireplace 2", "host": "192.168.1.101"},
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert entry.data[CONF_HOST] == OTHER_HOST
+    assert entry.state is ConfigEntryState.LOADED
+    assert entry.runtime_data.mertik.ip == OTHER_HOST
+
+
+async def test_dhcp_does_not_offer_unknown_devices(
+    hass: HomeAssistant, entry, coordinator
+) -> None:
+    """Only addresses of fireplaces already set up are followed."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_DHCP},
+        data=DhcpServiceInfo(
+            ip=OTHER_HOST, hostname="something", macaddress=OTHER_MAC.replace(":", "")
+        ),
     )
-    assert result["type"] == FlowResultType.CREATE_ENTRY
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "not_configured"
+    assert entry.data[CONF_HOST] == HOST
+    assert not hass.config_entries.flow.async_progress()
+
+
+# --- Options ---------------------------------------------------------------------------
+
+
+async def test_options_set_and_clear_the_temperature_sensor(
+    hass: HomeAssistant, entry, coordinator
+) -> None:
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "init"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_TEMPERATURE_SENSOR: "sensor.room"}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options == {CONF_TEMPERATURE_SENSOR: "sensor.room"}
+    assert coordinator.temperature_sensor == "sensor.room"
+
+    # The form comes back with the sensor filled in; emptying the field removes it.
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    key = next(iter(result["data_schema"].schema))
+    assert key.description == {"suggested_value": "sensor.room"}
+
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options == {}
+    assert coordinator.temperature_sensor is None

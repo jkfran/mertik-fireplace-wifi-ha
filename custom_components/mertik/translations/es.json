@@ -1,0 +1,154 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Chimenea Mertik Maxitrol",
+        "description": "Elige el módulo wifi de tu chimenea o escribe su dirección IP. Encontrados en tu red: {found}",
+        "data": {
+          "name": "Nombre de la chimenea",
+          "host": "Dirección IP del módulo wifi"
+        }
+      },
+      "reconfigure": {
+        "title": "Cambiar la dirección",
+        "description": "Dirección actual: {current}. Encontrados en tu red: {found}",
+        "data": {
+          "host": "Dirección IP del módulo wifi"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "No se puede conectar con la chimenea. Comprueba la dirección IP y que el dispositivo está encendido.",
+      "wrong_device": "En esa dirección responde otra chimenea.",
+      "address_in_use": "Esta dirección pertenece a una chimenea que ya está configurada."
+    },
+    "abort": {
+      "already_configured": "Esta chimenea ya está configurada.",
+      "reconfigure_successful": "La dirección se ha cambiado.",
+      "not_configured": "Esta chimenea no está configurada."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Termostato",
+        "description": "El termostato propio de la chimenea mide la temperatura con el mando. Si eliges aquí un sensor de temperatura, Home Assistant regula la llama con ese sensor. Nunca enciende la chimenea: cuando la habitación está caliente baja la llama hasta el piloto, y la sube de nuevo cuando hace falta calor.",
+        "data": {
+          "temperature_sensor": "Sensor de temperatura de la habitación"
+        },
+        "data_description": {
+          "temperature_sensor": "Déjalo vacío para usar el termostato propio de la chimenea."
+        }
+      }
+    }
+  },
+  "entity": {
+    "switch": {
+      "secondary_burner": {
+        "name": "Quemador secundario"
+      }
+    },
+    "number": {
+      "flame_height": {
+        "name": "Altura de llama"
+      }
+    },
+    "sensor": {
+      "ambient_temperature": {
+        "name": "Temperatura ambiente"
+      },
+      "status": {
+        "name": "Estado",
+        "state": {
+          "off": "Apagada",
+          "standby": "Piloto",
+          "igniting": "Encendiendo",
+          "on": "Encendida",
+          "shutting_down": "Apagando"
+        }
+      },
+      "fan_level": {
+        "name": "Nivel del ventilador"
+      },
+      "ip_address": {
+        "name": "Dirección IP"
+      }
+    },
+    "binary_sensor": {
+      "pilot_flame": {
+        "name": "Llama piloto"
+      },
+      "igniting": {
+        "name": "Encendiendo"
+      },
+      "shutting_down": {
+        "name": "Apagando"
+      },
+      "receiver_connection": {
+        "name": "Receptor"
+      },
+      "remote_connection": {
+        "name": "Mando"
+      },
+      "fault": {
+        "name": "Avería"
+      },
+      "fan": {
+        "name": "Ventilador"
+      }
+    },
+    "light": {
+      "light": {
+        "name": "Luz"
+      }
+    },
+    "climate": {
+      "thermostat": {
+        "name": "Termostato"
+      }
+    },
+    "select": {
+      "mode": {
+        "name": "Modo",
+        "state": {
+          "manual": "Manual",
+          "thermostat": "Termostato",
+          "eco": "Eco"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "fireplace_off": {
+      "message": "Enciende primero la chimenea."
+    },
+    "shutting_down": {
+      "message": "La chimenea aún se está apagando. Inténtalo de nuevo en un momento."
+    },
+    "no_receiver": {
+      "message": "El módulo wifi no tiene conexión con el receptor de la chimenea."
+    },
+    "cannot_reach": {
+      "message": "La chimenea no responde: {error}"
+    },
+    "wrong_device": {
+      "message": "Ahora responde otra chimenea en la dirección de esta. No se le ha enviado nada; Home Assistant está buscando esta chimenea de nuevo."
+    },
+    "igniting": {
+      "message": "La chimenea se está encendiendo y todavía no acepta órdenes. Inténtalo de nuevo en un minuto."
+    },
+    "no_handset": {
+      "message": "El termostato propio de la chimenea mide la habitación con su mando, y ningún mando está enviando una temperatura. Elige en su lugar un sensor de temperatura en las opciones de la integración."
+    }
+  },
+  "issues": {
+    "receiver_lost": {
+      "title": "{name}: sin conexión con la chimenea",
+      "description": "El módulo wifi de {name} responde, pero ha perdido el enlace de radio con el receptor de la chimenea (la aplicación lo muestra como F43). Las órdenes no llegan a la chimenea hasta que vuelva el enlace. Comprueba la alimentación o las pilas del receptor. Usar la chimenea con su mando, o quitarle y devolverle la corriente, suele restablecer el enlace."
+    },
+    "off_failed": {
+      "title": "{name} no se ha apagado",
+      "description": "Home Assistant ordenó a {name} que se apagara, y cinco minutos después no lo había hecho. Comprueba la chimenea y apágala con su mando. Este mensaje desaparece cuando la chimenea está apagada."
+    }
+  }
+}

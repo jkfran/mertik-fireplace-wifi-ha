@@ -1,710 +1,1273 @@
-"""Tests for the Mertik hardware communication layer."""
+"""Tests for the wire protocol (custom_components/mertik/mertik.py)."""
 
-from unittest.mock import MagicMock, patch, call
+from __future__ import annotations
 
-import pytest
-import socket
 import threading
 
+import pytest
+
+from custom_components.mertik import mertik as proto
 from custom_components.mertik.mertik import (
     Mertik,
-    COMMAND_PREFIX as send_command_prefix,
+    MertikConnectionError,
+    MertikError,
+    MertikReceiverError,
+    MertikStateError,
+    Status,
+    brightness_for_light_level,
+    build_request,
+    flame_step_for_output,
+    light_level_for_brightness,
+    reply_id,
+    split_frames,
 )
-from tests.conftest import _build_status_bytes
+
+from .fakes import (
+    NO_RECEIVER,
+    REAL_FRAME_OFF,
+    REPLY_HEADER,
+    FakeBox,
+    FakeClock,
+    ack,
+    framed,
+    status_frame,
+)
+
+PREFIX = "0233303330333033303830"  # STX + request header, as hex
+
+# Receiver state words used below.
+OFF = 0x8003
+PILOT = 0x8083
+IGNITING = 0x8013
+SHUTTING_DOWN = 0x8183
 
 
-class TestMertikInit:
-    """Test Mertik class initialization."""
+@pytest.fixture
+def clock() -> FakeClock:
+    return FakeClock()
 
-    def test_connects_to_correct_host_and_port(self, mock_socket):
-        device = Mertik("192.168.1.50")
-        mock_socket.connect.assert_called_with(("192.168.1.50", 2000))
 
-    def test_sets_timeout(self, mock_socket):
-        device = Mertik("192.168.1.50")
-        mock_socket.settimeout.assert_called_with(3)
+@pytest.fixture
+def box(clock: FakeClock) -> FakeBox:
+    return FakeBox(clock)
 
-    def test_calls_refresh_on_init(self, mock_socket):
-        device = Mertik("192.168.1.50")
-        refresh_cmd = bytearray.fromhex(send_command_prefix + "303303")
-        mock_socket.send.assert_called_with(refresh_cmd)
+
+@pytest.fixture
+def fire(box: FakeBox, clock: FakeClock) -> Mertik:
+    return Mertik("192.0.2.10", connect=box.connect, clock=clock, sleep=clock.sleep)
+
+
+@pytest.fixture
+def burning(fire: Mertik, box: FakeBox, clock: FakeClock) -> Mertik:
+    """The fireplace, burning and settled: flame commands need a fire."""
+    lit(box, fire, clock)
+    clock.sleeps.clear()
+    return fire
+
+
+def lit(box: FakeBox, fire: Mertik, clock: FakeClock, output: int = 0xFF, **fields) -> None:
+    """Put the fake fireplace in a settled burning state."""
+    box.status = status_frame(output=output, word=fields.pop("word", PILOT), **fields)
+    fire.refresh_status()
+    clock.advance(proto.IGNITION_SETTLE + 1)
+
+
+class TestRequests:
+    """The bytes sent must stay exactly what earlier versions sent."""
+
+    @pytest.mark.parametrize(
+        ("command", "line_feed", "expected"),
+        [
+            (proto.CMD_STATUS, False, "303303"),
+            (proto.CMD_DEVICE_INFO, False, "303103"),
+            (proto.CMD_IGNITE, False, "314103"),
+            (proto.CMD_OFF, False, "313003"),
+            (proto.CMD_STANDBY, False, "3136303003"),
+            (proto.CMD_AUX_ON, True, "32303031030a"),
+            (proto.CMD_AUX_OFF, True, "32303030030a"),
+            (proto.CMD_LIGHT_ON, False, "3330303103"),
+            (proto.CMD_LIGHT_OFF, False, "3330303003"),
+            (proto.CMD_MANUAL, False, "423003"),
+            (proto.CMD_ECO_ON, False, "4233303103"),
+            (proto.CMD_THERMOSTAT_ON, False, "4232303103"),
+        ],
+    )
+    def test_command_bytes(self, command, line_feed, expected):
+        assert build_request(command, line_feed=line_feed) == bytes.fromhex(PREFIX + expected)
+
+    def test_prefix_constant_matches_header(self):
+        assert build_request("")[:-1] == bytes.fromhex(proto.COMMAND_PREFIX)
+
+    def test_flame_steps_as_sent_before(self):
+        legacy = ["3830", "3842", "3937", "4132", "4145", "4239",
+                  "4335", "4430", "4443", "4537", "4633", "4646"]
+        sent = [f"{output:02X}".encode("ascii").hex() for output in proto.FLAME_STEP_OUTPUTS]
+        assert sent == legacy
+
+
+class TestFraming:
+    def test_complete_frames(self):
+        assert split_frames("\x02AAA\x03\x02BBB\x03") == (["AAA", "BBB"], "")
+
+    def test_partial_frame_is_kept(self):
+        assert split_frames("\x02AAA\x03\x02BB") == (["AAA"], "\x02BB")
+
+    def test_bytes_before_stx_are_dropped(self):
+        assert split_frames("noise\x02AAA\x03") == (["AAA"], "")
+
+    def test_nothing_framed(self):
+        assert split_frames("noise") == ([], "")
+
+    def test_reply_id(self):
+        assert reply_id(REPLY_HEADER + "1A") == "1A"
+        assert reply_id("3030303000" + "E101") == "E1"
+        assert reply_id("garbage") is None
+        assert reply_id(REPLY_HEADER) is None
 
 
 class TestStatusParsing:
-    """Test __processStatus parsing of status responses."""
+    def test_frame_from_a_real_fireplace(self):
+        """Captured from a fireplace that is off, with no handset reading."""
+        status = Status.parse(REAL_FRAME_OFF)
+        assert status.state == proto.STATE_OFF
+        assert status.word == 0x8003
+        assert status.burner_output == 0
+        assert status.receiver_connected is True
+        assert status.pilot_on is False
+        assert status.igniting is False
+        assert status.shutting_down is False
+        assert status.aux_on is False
+        assert status.light_on is False
+        assert status.mode == proto.MODE_MANUAL
+        assert status.room_temperature is None
+        assert status.target_temperature == 20.0
+        assert status.name is None
 
-    def test_fireplace_off_when_flame_height_low(self, mock_socket):
-        """Flame height <= 0x7B means fireplace is off."""
-        mock_socket.recv.return_value = _build_status_bytes(flame_height=0x00)
-        device = Mertik("192.168.1.100")
-        assert device.is_on is False
-        assert device.get_flame_height() == 0
-
-    def test_fireplace_on_when_flame_height_high(self, mock_socket):
-        """Flame height > 123 means on. 0x80=128 -> height=1."""
-        mock_socket.recv.return_value = _build_status_bytes(flame_height=0x80)
-        device = Mertik("192.168.1.100")
-        assert device.is_on is True
-        assert device.get_flame_height() == 1
-
-    def test_flame_height_mid_range(self, mock_socket):
-        """0xC0=192 -> round(((192-128)/128)*12)+1 = 7."""
-        mock_socket.recv.return_value = _build_status_bytes(flame_height=0xC0)
-        device = Mertik("192.168.1.100")
-        assert device.is_on is True
-        assert device.get_flame_height() == 7
-
-    def test_flame_height_max(self, mock_socket):
-        """0xFF=255 -> round(((255-128)/128)*12)+1 = 13."""
-        mock_socket.recv.return_value = _build_status_bytes(flame_height=0xFF)
-        device = Mertik("192.168.1.100")
-        assert device.is_on is True
-        # round(((255-128)/128)*12) + 1 = round(11.90625) + 1 = 12 + 1 = 13
-        assert device.get_flame_height() == 13
-
-    def test_flame_height_boundary(self, mock_socket):
-        """0x7B=123 is the boundary - still off."""
-        mock_socket.recv.return_value = _build_status_bytes(flame_height=0x7B)
-        device = Mertik("192.168.1.100")
-        assert device.is_on is False
-
-    def test_ambient_temperature(self, mock_socket):
-        """0xE6=230 -> 230/10 = 23.0 C."""
-        mock_socket.recv.return_value = _build_status_bytes(ambient_temp=0xE6)
-        device = Mertik("192.168.1.100")
-        assert device.ambient_temperature == 23.0
-
-    def test_ambient_temperature_different_value(self, mock_socket):
-        """0xC8=200 -> 200/10 = 20.0 C."""
-        mock_socket.recv.return_value = _build_status_bytes(ambient_temp=0xC8)
-        device = Mertik("192.168.1.100")
-        assert device.ambient_temperature == 20.0
-
-    def test_ambient_temperature_above_25_5(self, mock_socket):
-        """The field is 16 bits: 0x0104=260 -> 26.0 C, not 0.4 C."""
-        mock_socket.recv.return_value = _build_status_bytes(ambient_temp=0x0104)
-        device = Mertik("192.168.1.100")
-        assert device.ambient_temperature == 26.0
-
-    def test_ambient_temperature_without_handset(self, mock_socket):
-        """0666 is a placeholder for "no handset reading", not 163.8 C."""
-        mock_socket.recv.return_value = _build_status_bytes(ambient_temp=0x0666)
-        device = Mertik("192.168.1.100")
-        assert device.ambient_temperature is None
-
-    def test_frame_from_fireplace_without_handset(self, mock_socket):
-        """A status frame captured from a module: fireplace off, no handset reading."""
-        mock_socket.recv.return_value = (
-            b"\x020303000000034700800300000000066600C8" + b"0" * 64 + b"043E01\x03"
+    def test_frame_with_the_other_prefix_and_a_name(self):
+        """The example from the Gazco measurements: lit at low heat, light on."""
+        frame = (
+            "303030300003C68080C5AA04000000E100C8"
+            + "4C6976696E6720526F6F6D20" + "FF" * 20
         )
-        device = Mertik("192.168.1.100")
-        assert device.is_on is False
-        assert device.get_flame_height() == 0
-        assert device.is_guard_flame_on is False
-        assert device.is_igniting is False
-        assert device.is_shutting_down is False
-        assert device.is_aux_on is False
-        assert device.is_light_on is False
-        assert device.is_thermostat_mode is False
-        assert device.ambient_temperature is None
-        assert device.target_temperature == 20.0
+        status = Status.parse(frame)
+        assert status.state == proto.STATE_ON
+        assert status.burner_output == 0x80
+        assert status.light_on is True
+        assert status.light_level == 0xAA
+        assert status.aux_on is False
+        assert status.fan_level == 4
+        assert status.room_temperature == 22.5
+        assert status.target_temperature == 20.0
+        assert status.name == "Living Room"
 
-    def test_light_brightness_max(self, mock_socket):
-        """light_level 0xFB=251 with light on -> round(((251-100)/151)*255) = 255."""
-        # Use status_bits with bit 13 set (light_on) — need 16-bit value for stable indexing
-        # Bit 13 in 16-bit: 2^(15-13) = 0x0004, plus 0x8000 base for 16-bit length
-        mock_socket.recv.return_value = _build_status_bytes(
-            light_level=0xFB, status_bits="8004"
-        )
-        device = Mertik("192.168.1.100")
-        assert device.light_brightness == 255
+    def test_not_a_status_frame(self):
+        assert Status.parse(REPLY_HEADER + "1A") is None
+        assert Status.parse("") is None
 
-    def test_light_brightness_minimum(self, mock_socket):
-        """light_level 0x64=100 -> round(((100-100)/151)*255) = 0."""
-        mock_socket.recv.return_value = _build_status_bytes(
-            light_level=0x64, status_bits="8004"
-        )
-        device = Mertik("192.168.1.100")
-        assert device.light_brightness == 0
+    def test_too_short(self):
+        assert Status.parse(REAL_FRAME_OFF[:30]) is None
 
-    def test_light_off_brightness_zero(self, mock_socket):
-        """When light is off, brightness is forced to 0."""
-        mock_socket.recv.return_value = _build_status_bytes(
-            light_level=0xFB, status_bits="0000"
-        )
-        device = Mertik("192.168.1.100")
-        assert device.light_brightness == 0
+    def test_damaged_frame(self):
+        assert Status.parse(REAL_FRAME_OFF[:14] + "ZZ" + REAL_FRAME_OFF[16:]) is None
 
-    def test_status_bits_shutting_down(self, mock_socket):
-        """Bit 7 -> shutting_down. In 16-bit: 2^(15-7)=0x0100, base 0x8000."""
-        mock_socket.recv.return_value = _build_status_bytes(status_bits="8100")
-        device = Mertik("192.168.1.100")
-        assert device.is_shutting_down is True
+    def test_room_temperature_above_25_5(self):
+        """The field is 16 bits: 0x0104 is 26.0 C."""
+        assert Status.parse(status_frame(room=0x0104)).room_temperature == 26.0
 
-    def test_status_bits_igniting(self, mock_socket):
-        """Bit 11 -> igniting. In 16-bit: 2^(15-11)=0x0010, base 0x8000."""
-        mock_socket.recv.return_value = _build_status_bytes(status_bits="8010")
-        device = Mertik("192.168.1.100")
-        assert device.is_igniting is True
+    def test_no_handset_placeholder(self):
+        assert Status.parse(status_frame(room="0666")).room_temperature is None
 
-    def test_status_bits_aux_on(self, mock_socket):
-        """Bit 12 -> aux_on. In 16-bit: 2^(15-12)=0x0008, base 0x8000."""
-        mock_socket.recv.return_value = _build_status_bytes(status_bits="8008")
-        device = Mertik("192.168.1.100")
-        assert device.is_aux_on is True
+    def test_unreadable_temperatures(self):
+        status = Status.parse(status_frame(room="ZZZZ", target="ZZZZ"))
+        assert status.room_temperature is None
+        assert status.target_temperature is None
 
-    def test_status_bits_light_on(self, mock_socket):
-        """Bit 13 -> light_on. In 16-bit: 2^(15-13)=0x0004, base 0x8000."""
-        mock_socket.recv.return_value = _build_status_bytes(status_bits="8004")
-        device = Mertik("192.168.1.100")
-        assert device.is_light_on is True
+    @pytest.mark.parametrize(
+        ("mode", "expected"),
+        [("0", "manual"), ("1", "thermostat"), ("2", "eco"), ("3", None)],
+    )
+    def test_mode(self, mode, expected):
+        assert Status.parse(status_frame(mode=mode)).mode == expected
 
-    def test_status_bits_top_bit_clear(self, mock_socket):
-        """Bits keep their position when the receiver-link bit (MSB) is clear."""
-        mock_socket.recv.return_value = _build_status_bytes(status_bits="0018")
-        device = Mertik("192.168.1.100")
-        assert device.is_igniting is True
-        assert device.is_aux_on is True
-        assert device.is_light_on is False
+    @pytest.mark.parametrize(
+        ("output", "word", "expected"),
+        [
+            (0x00, 0x820A, "off"),
+            (0xFF, 0x8003, "off"),            # output left over, pilot out
+            (0x00, 0x821A, "igniting"),
+            (0xFF, 0x8213, "igniting"),       # failed ignition
+            (0x00, 0x808D, "standby"),
+            (0x20, 0x808D, "standby"),
+            (0x69, 0x828A, "on"),             # low phase of the flame wave
+            (0x80, 0x80C5, "on"),
+            (0xFF, 0x828A, "on"),
+            (0x8D, 0x838A, "shutting_down"),
+            (0x00, 0x81C7, "shutting_down"),
+        ],
+    )
+    def test_state(self, output, word, expected):
+        assert Status.parse(status_frame(output=output, word=word)).state == expected
 
-    def test_status_bits_all_clear(self, mock_socket):
-        """All status bits clear -> all flags False."""
-        mock_socket.recv.return_value = _build_status_bytes(status_bits="0000")
-        device = Mertik("192.168.1.100")
-        assert device.is_shutting_down is False
-        assert device.is_igniting is False
-        assert device.is_aux_on is False
-        assert device.is_light_on is False
+    def test_status_word_bits(self):
+        status = Status.parse(status_frame(word=0x8000 | 0x0200 | 0x0040 | 0x0008 | 0x0004))
+        assert status.handset_bit and status.fan_on and status.aux_on and status.light_on
+        assert not status.faulted
+        assert Status.parse(status_frame(word=0x8002)).faulted
 
-    def test_second_status_prefix_accepted(self, mock_socket):
-        """The alternate prefix '030300000003' should also be parsed."""
-        prefix = "030300000003"
-        body = (
-            "00"
-            f"{0x80:02X}"
-            "0000"
-            f"{0x64:02X}"
-            "00"
-            "0"
-            "00000"
-            f"{0xE6:02X}"
-        )
-        raw = "\x02" + prefix + body
-        mock_socket.recv.return_value = raw.encode("ascii")
-        device = Mertik("192.168.1.100")
-        assert device.is_on is True
-        assert device.ambient_temperature == 23.0
+    def test_top_bit_clear_keeps_the_other_bits_in_place(self):
+        """A word like 001B must not shift: igniting and aux stay where they are."""
+        status = Status.parse(status_frame(word=0x001B))
+        assert status.receiver_connected is False
+        assert status.igniting is True
+        assert status.aux_on is True
+        assert status.light_on is False
+
+
+class TestFlameAndLightScales:
+    def test_every_step_reads_back_as_itself(self):
+        steps = [flame_step_for_output(output) for output in proto.FLAME_STEP_OUTPUTS]
+        assert steps == list(range(1, 13))
+
+    @pytest.mark.parametrize(
+        ("output", "step"),
+        [(0x00, 0), (0x20, 0), (0x40, 0), (0x41, 1), (0x69, 1), (0x7E, 1), (0x84, 1),
+         (0x86, 2), (0xEB, 10), (0xFE, 12)],
+    )
+    def test_in_between_outputs(self, output, step):
+        assert flame_step_for_output(output) == step
+
+    def test_light_levels_sent(self):
+        assert light_level_for_brightness(1) == 0x77
+        assert light_level_for_brightness(255) == 0xFB
+        assert 0x77 < light_level_for_brightness(128) < 0xFB
+        assert light_level_for_brightness(0) == 0x77
+        assert light_level_for_brightness(999) == 0xFB
+
+    def test_light_levels_never_dark(self):
+        """0x63 and 0x66 leave the light dark on some fires."""
+        assert min(light_level_for_brightness(b) for b in range(1, 256)) >= 0x77
+
+    def test_brightness_read_back_stays_in_range(self):
+        assert brightness_for_light_level(0xFF) == 255
+        assert brightness_for_light_level(0xFB) == 255
+        assert brightness_for_light_level(0x63) == 1
+        assert brightness_for_light_level(0x00) == 1
+
+    def test_brightness_round_trip(self):
+        for brightness in (1, 64, 128, 200, 255):
+            level = light_level_for_brightness(brightness)
+            assert abs(brightness_for_light_level(level) - brightness) <= 1
+
+
+class TestStatusPoll:
+    def test_reads_status_on_creation(self, fire, box):
+        assert box.requests == ["03"]
+        assert fire.state == "off"
+        assert fire.status.word == 0x8003
+
+    def test_one_connection_per_request(self, fire, box):
+        fire.refresh_status()
+        fire.refresh_status()
+        assert box.connections == 3
+        assert box.open_connections == 0
+
+    def test_no_initial_refresh_when_asked(self, box, clock):
+        fire = Mertik("192.0.2.10", connect=box.connect, clock=clock, sleep=clock.sleep, refresh=False)
+        assert box.requests == []
+        assert fire.state is None
+        assert fire.flame_height == 0
+        assert fire.is_on is False
+        assert fire.ambient_temperature is None
+
+    def test_newest_status_frame_wins(self, fire, box):
+        old = status_frame(output=0x80, word=PILOT)
+        new = status_frame(output=0xFF, word=PILOT)
+        box.script["03"] = [framed(old, new)]
+        fire.refresh_status()
+        assert fire.burner_output == 0xFF
+
+    def test_frame_split_across_reads(self, fire, box):
+        data = framed(status_frame(output=0xC5, word=PILOT))
+        box.script["03"] = [data[:20], data[20:70], data[70:]]
+        fire.refresh_status()
+        assert fire.burner_output == 0xC5
+
+    def test_noise_and_other_frames_are_skipped(self, fire, box):
+        box.script["03"] = [b"\x00junk" + framed(ack("30", "01AA"), status_frame(output=0x97, word=PILOT))]
+        fire.refresh_status()
+        assert fire.burner_output == 0x97
+
+    def test_no_answer_is_retried_once(self, fire, box, clock):
+        replies = [[], [framed(status_frame(output=0x80, word=PILOT))]]
+        box.script["03"] = lambda: replies.pop(0)
+        fire.refresh_status()
+        assert box.requests.count("03") == 3  # creation + two attempts
+        assert fire.burner_output == 0x80
+
+    def test_no_answer_twice_raises(self, fire, box):
+        box.silent = True
+        with pytest.raises(MertikConnectionError):
+            fire.refresh_status()
+
+    def test_connection_refused_is_retried_once(self, fire, box, clock):
+        box.fail_connects = 1
+        fire.refresh_status()
+        assert proto.RETRY_DELAY in clock.sleeps
+
+    def test_connection_refused_twice_raises(self, fire, box):
+        box.fail_connects = 2
+        with pytest.raises(MertikConnectionError):
+            fire.refresh_status()
+
+    def test_creation_fails_when_unreachable(self, box, clock):
+        box.fail_connects = 2
+        with pytest.raises(MertikConnectionError):
+            Mertik("192.0.2.10", connect=box.connect, clock=clock, sleep=clock.sleep)
+
+    def test_address_that_is_not_one_is_a_connection_error(self, clock):
+        """A typo like "192.168..1.4" makes Python raise a ValueError, not an OSError."""
+
+        def connect(host, port, timeout):
+            raise UnicodeError("label empty or too long")
+
+        with pytest.raises(MertikConnectionError, match="not a usable address"):
+            Mertik("192.168..1.4", connect=connect, clock=clock, sleep=clock.sleep)
+        # Nothing to wait for: trying again cannot help.
+        assert clock.sleeps == []
+
+    def test_connection_is_closed_after_an_error(self, fire, box):
+        box.fail_sends = 2
+        with pytest.raises(MertikConnectionError):
+            fire.refresh_status()
+        assert box.open_connections == 0
 
 
 class TestCommands:
-    """Test command sending."""
-
-    def test_standby_sends_correct_command(self, mertik_device, mock_socket):
-        mock_socket.send.reset_mock()
-        mertik_device.standBy()
-        expected = bytearray.fromhex(send_command_prefix + "3136303003")
-        mock_socket.send.assert_called_with(expected)
-
-    def test_ignite_sends_correct_command(self, mertik_device, mock_socket):
-        mock_socket.send.reset_mock()
-        mertik_device.ignite_fireplace()
-        expected = bytearray.fromhex(send_command_prefix + "314103")
-        mock_socket.send.assert_called_with(expected)
-
-    def test_aux_on_sends_correct_command(self, mertik_device, mock_socket):
-        mock_socket.send.reset_mock()
-        mertik_device.aux_on()
-        expected = bytearray.fromhex(send_command_prefix + "32303031030a")
-        assert mock_socket.send.call_args_list[0] == call(expected)
-
-    def test_aux_on_calls_refresh(self, mertik_device, mock_socket):
-        mock_socket.send.reset_mock()
-        mertik_device.aux_on()
-        refresh_cmd = bytearray.fromhex(send_command_prefix + "303303")
-        assert mock_socket.send.call_args_list[1] == call(refresh_cmd)
-
-    def test_aux_off_sends_correct_command(self, mertik_device, mock_socket):
-        mock_socket.send.reset_mock()
-        mertik_device.aux_off()
-        expected = bytearray.fromhex(send_command_prefix + "32303030030a")
-        assert mock_socket.send.call_args_list[0] == call(expected)
-
-    def test_aux_off_calls_refresh(self, mertik_device, mock_socket):
-        mock_socket.send.reset_mock()
-        mertik_device.aux_off()
-        refresh_cmd = bytearray.fromhex(send_command_prefix + "303303")
-        assert mock_socket.send.call_args_list[1] == call(refresh_cmd)
-
-    def test_light_on_sends_correct_command(self, mertik_device, mock_socket):
-        mock_socket.send.reset_mock()
-        mertik_device.light_on()
-        expected = bytearray.fromhex(send_command_prefix + "3330303103")
-        mock_socket.send.assert_called_with(expected)
-
-    def test_light_off_sends_correct_command(self, mertik_device, mock_socket):
-        mock_socket.send.reset_mock()
-        mertik_device.light_off()
-        expected = bytearray.fromhex(send_command_prefix + "3330303003")
-        mock_socket.send.assert_called_with(expected)
-
-    def test_refresh_status_sends_correct_command(self, mertik_device, mock_socket):
-        mock_socket.send.reset_mock()
-        mertik_device.refresh_status()
-        expected = bytearray.fromhex(send_command_prefix + "303303")
-        mock_socket.send.assert_called_with(expected)
-
-    def test_guard_flame_off_sends_correct_command(self, mertik_device, mock_socket):
-        mock_socket.send.reset_mock()
-        mertik_device.guard_flame_off()
-        expected = bytearray.fromhex(send_command_prefix + "313003")
-        mock_socket.send.assert_called_with(expected)
-
-    def test_set_eco_sends_correct_command(self, mertik_device, mock_socket):
-        mock_socket.send.reset_mock()
-        mertik_device.set_eco()
-        expected = bytearray.fromhex(send_command_prefix + "4233303103")
-        mock_socket.send.assert_called_with(expected)
-
-    def test_set_manual_sends_correct_command(self, mertik_device, mock_socket):
-        mock_socket.send.reset_mock()
-        mertik_device.set_manual()
-        expected = bytearray.fromhex(send_command_prefix + "423003")
-        assert mock_socket.send.call_args_list[0] == call(expected)
-
-    def test_set_manual_calls_refresh(self, mertik_device, mock_socket):
-        mock_socket.send.reset_mock()
-        mertik_device.set_manual()
-        refresh_cmd = bytearray.fromhex(send_command_prefix + "303303")
-        assert mock_socket.send.call_args_list[1] == call(refresh_cmd)
-
-
-class TestFlameHeight:
-    """Test flame height commands."""
-
-    def test_set_flame_height_step_1(self, mertik_device, mock_socket):
-        mock_socket.send.reset_mock()
-        mertik_device.set_flame_height(1)
-        expected = bytearray.fromhex(send_command_prefix + "3136383003")
-        assert mock_socket.send.call_args_list[0] == call(expected)
-
-    def test_set_flame_height_step_12(self, mertik_device, mock_socket):
-        mock_socket.send.reset_mock()
-        mertik_device.set_flame_height(12)
-        expected = bytearray.fromhex(send_command_prefix + "3136464603")
-        assert mock_socket.send.call_args_list[0] == call(expected)
-
-    def test_set_flame_height_step_6(self, mertik_device, mock_socket):
-        mock_socket.send.reset_mock()
-        mertik_device.set_flame_height(6)
-        expected = bytearray.fromhex(send_command_prefix + "3136423903")
-        assert mock_socket.send.call_args_list[0] == call(expected)
-
-    def test_set_flame_height_calls_refresh(self, mertik_device, mock_socket):
-        mock_socket.send.reset_mock()
-        mertik_device.set_flame_height(1)
-        refresh_cmd = bytearray.fromhex(send_command_prefix + "303303")
-        assert mock_socket.send.call_args_list[1] == call(refresh_cmd)
-
-
-class TestLightBrightness:
-    """Test light brightness commands."""
-
-    def test_brightness_max(self, mertik_device, mock_socket):
-        """Brightness 255 -> device code 4642."""
-        mock_socket.send.reset_mock()
-        mertik_device.set_light_brightness(255)
-        expected = bytearray.fromhex(send_command_prefix + "33304645464203")
-        mock_socket.send.assert_called_with(expected)
-
-    def test_brightness_min(self, mertik_device, mock_socket):
-        """Brightness 1 -> device code 3633."""
-        mock_socket.send.reset_mock()
-        mertik_device.set_light_brightness(1)
-        expected = bytearray.fromhex(send_command_prefix + "33304645363303")
-        mock_socket.send.assert_called_with(expected)
-
-    def test_brightness_mid(self, mertik_device, mock_socket):
-        """brightness=128 -> normalized=50 -> l=40 -> l+=1=41 -> code '4141'."""
-        mock_socket.send.reset_mock()
-        mertik_device.set_light_brightness(128)
-        expected = bytearray.fromhex(send_command_prefix + "33304645414103")
-        mock_socket.send.assert_called_with(expected)
-
-    def test_brightness_skip_40(self, mertik_device, mock_socket):
-        """When l reaches 40, it skips to 41 (the skip-40 quirk)."""
-        # brightness where normalized=50 -> l=36+round(4.0)=40 -> 40>=40 -> l=41
-        mock_socket.send.reset_mock()
-        mertik_device.set_light_brightness(128)
-        cmd_bytes = mock_socket.send.call_args[0][0]
-        cmd_hex = cmd_bytes.hex()
-        # The device code is after "33304645" prefix, extract it
-        payload = cmd_hex[len(send_command_prefix):]
-        # payload = "33304645XXYY03", device_code = payload[8:12]
-        device_code = payload[8:12]
-        assert device_code == "4141"  # 41 (skipped 40)
-
-    def test_brightness_just_below_skip(self, mertik_device, mock_socket):
-        """Brightness where l=39 (below skip threshold)."""
-        # normalized = (b-1)/254*100, l = 36 + round(normalized/100*8)
-        # l=39 -> round(normalized/100*8)=3 -> normalized=37.5 -> b=1+37.5*254/100=96.25
-        # b=96: normalized=(95/254)*100=37.40, l=36+round(2.99)=36+3=39
-        mock_socket.send.reset_mock()
-        mertik_device.set_light_brightness(96)
-        cmd_bytes = mock_socket.send.call_args[0][0]
-        payload = cmd_bytes.hex()[len(send_command_prefix):]
-        device_code = payload[8:12]
-        assert device_code == "3939"  # 39 (no skip applied)
-
-    def test_brightness_near_max(self, mertik_device, mock_socket):
-        """Brightness 254 (just below max)."""
-        # normalized=(253/254)*100=99.6, l=36+round(7.97)=36+8=44, >=40 so l=45
-        mock_socket.send.reset_mock()
-        mertik_device.set_light_brightness(254)
-        cmd_bytes = mock_socket.send.call_args[0][0]
-        payload = cmd_bytes.hex()[len(send_command_prefix):]
-        device_code = payload[8:12]
-        assert device_code == "4545"  # 45
-
-    def test_brightness_low(self, mertik_device, mock_socket):
-        """Brightness 2 -> very low normalized value."""
-        # normalized=(1/254)*100=0.394, l=36+round(0.031)=36+0=36
-        mock_socket.send.reset_mock()
-        mertik_device.set_light_brightness(2)
-        cmd_bytes = mock_socket.send.call_args[0][0]
-        payload = cmd_bytes.hex()[len(send_command_prefix):]
-        device_code = payload[8:12]
-        assert device_code == "3636"  # 36 (no skip)
-
-
-class TestSocketReconnection:
-    """Test socket reconnection on errors."""
-
-    def test_reconnects_on_socket_error(self, mock_socket):
-        """Should reconnect and retry when send raises socket.error."""
-        call_count = 0
-
-        def side_effect(data):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                raise socket.error("Connection lost")
-
-        mock_socket.send.side_effect = side_effect
-
-        with patch("custom_components.mertik.mertik.socket.socket") as mock_cls:
-            new_sock = MagicMock()
-            new_sock.recv.return_value = _build_status_bytes()
-            mock_cls.return_value = new_sock
-
-            device = Mertik.__new__(Mertik)
-            device.ip = "192.168.1.100"
-            device._lock = threading.RLock()
-            device.client = mock_socket
-            device.refresh_status()
-
-            new_sock.connect.assert_called_with(("192.168.1.100", 2000))
-
-    def test_reconnects_on_empty_recv(self, mock_socket):
-        """Should reconnect when recv returns empty bytes."""
-        recv_count = 0
-
-        def recv_side_effect(size):
-            nonlocal recv_count
-            recv_count += 1
-            if recv_count == 1:
-                return b""
-            return _build_status_bytes()
-
-        mock_socket.recv.side_effect = recv_side_effect
-
-        with patch("custom_components.mertik.mertik.socket.socket") as mock_cls:
-            new_sock = MagicMock()
-            new_sock.recv.return_value = _build_status_bytes()
-            mock_cls.return_value = new_sock
-
-            device = Mertik.__new__(Mertik)
-            device.ip = "192.168.1.100"
-            device._lock = threading.RLock()
-            device.client = mock_socket
-            device.refresh_status()
-
-            new_sock.connect.assert_called_with(("192.168.1.100", 2000))
-
-
-class TestHelperMethods:
-    """Test hex2bin and fromBitStatus helpers."""
-
-    def test_hex_to_bin(self, mertik_device):
-        assert mertik_device._hex_to_bin("FF") == "11111111"
-        assert mertik_device._hex_to_bin("00") == "00000000"
-        assert mertik_device._hex_to_bin("80") == "10000000"
-        assert mertik_device._hex_to_bin("01") == "00000001"
-
-    def test_hex_to_bin_pads_to_full_width(self, mertik_device):
-        """A 4-char status word always gives 16 bits, even with the top bit clear."""
-        assert mertik_device._hex_to_bin("0008") == "0000000000001000"
-        assert mertik_device._hex_to_bin("8008") == "1000000000001000"
-
-    def test_bit_at(self, mertik_device):
-        assert mertik_device._bit_at("FF", 0) is True
-        assert mertik_device._bit_at("FF", 7) is True
-        assert mertik_device._bit_at("00", 0) is False
-        assert mertik_device._bit_at("80", 0) is True
-        assert mertik_device._bit_at("80", 1) is False
-
-
-class TestNonStatusResponses:
-    """Test that non-status responses don't alter device state."""
-
-    def test_non_matching_prefix_ignored(self, mock_socket):
-        """Response with unknown prefix should not update state."""
-        # First init with known-good status (off)
-        mock_socket.recv.return_value = _build_status_bytes(flame_height=0x00)
-        device = Mertik("192.168.1.100")
-        assert device.is_on is False
-
-        # Now send a command that returns a non-status response
-        mock_socket.recv.return_value = b"\x02XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-        device.refresh_status()
-
-        # State should remain unchanged
-        assert device.is_on is False
-        assert device.get_flame_height() == 0
-
-    def test_short_response_no_crash(self, mock_socket):
-        """A short response that doesn't match prefix should not crash."""
-        mock_socket.recv.return_value = _build_status_bytes()
-        device = Mertik("192.168.1.100")
-
-        # Short response - won't match any prefix
-        mock_socket.recv.return_value = b"\x02OK"
-        device.refresh_status()  # Should not raise
-
-    def test_state_preserved_across_non_status(self, mock_socket):
-        """State from a valid status should survive non-status responses."""
-        # Set up with fireplace on, flame=7
-        mock_socket.recv.return_value = _build_status_bytes(flame_height=0xC0)
-        device = Mertik("192.168.1.100")
-        assert device.is_on is True
-        assert device.get_flame_height() == 7
-
-        # Non-status response
-        mock_socket.recv.return_value = b"\x02ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"
-        device.refresh_status()
-
-        # Previous state preserved
-        assert device.is_on is True
-        assert device.get_flame_height() == 7
-
-
-class TestAllFlameHeightSteps:
-    """Test every flame height step sends the correct hex code."""
-
-    EXPECTED_STEPS = [
-        (1, "3830"), (2, "3842"), (3, "3937"), (4, "4132"),
-        (5, "4145"), (6, "4239"), (7, "4335"), (8, "4430"),
-        (9, "4443"), (10, "4537"), (11, "4633"), (12, "4646"),
-    ]
-
-    @pytest.mark.parametrize("step,hex_code", EXPECTED_STEPS)
-    def test_flame_step(self, mertik_device, mock_socket, step, hex_code):
-        mock_socket.send.reset_mock()
-        mertik_device.set_flame_height(step)
-        expected = bytearray.fromhex(send_command_prefix + "3136" + hex_code + "03")
-        assert mock_socket.send.call_args_list[0] == call(expected)
-
-
-class TestBrightnessEdgeCases:
-    """Test light brightness edge cases for safe refactoring."""
-
-    def test_light_level_below_100_clamps_to_zero(self, mock_socket):
-        """Light level below 100 with light on should clamp brightness to 0."""
-        # 0x50 = 80, brightness = round(((80-100)/151)*255) = -34, clamped to 0
-        mock_socket.recv.return_value = _build_status_bytes(
-            light_level=0x50, status_bits="8004"  # light on
-        )
-        device = Mertik("192.168.1.100")
-        assert device.light_brightness == 0
-
-    def test_light_level_mid_range(self, mock_socket):
-        """Light level in mid range with light on."""
-        # 0xAF = 175, brightness = round(((175-100)/151)*255) = round(126.6) = 127
-        mock_socket.recv.return_value = _build_status_bytes(
-            light_level=0xAF, status_bits="8004"
-        )
-        device = Mertik("192.168.1.100")
-        assert device.light_brightness == 127
-
-
-class TestGuardFlame:
-    """Test the guard flame internal attribute."""
-
-    def test_guard_flame_on(self, mock_socket):
-        """Bit 8 -> _guard_flame_on. In 16-bit: 2^(15-8)=0x0080, base 0x8000."""
-        mock_socket.recv.return_value = _build_status_bytes(status_bits="8080")
-        device = Mertik("192.168.1.100")
-        assert device._guard_flame_on is True
-
-    def test_guard_flame_off(self, mock_socket):
-        mock_socket.recv.return_value = _build_status_bytes(status_bits="8000")
-        device = Mertik("192.168.1.100")
-        assert device._guard_flame_on is False
-
-
-class TestStateTransitions:
-    """Test that state updates correctly across multiple status responses."""
-
-    def test_off_to_on(self, mock_socket):
-        """State should transition from off to on."""
-        mock_socket.recv.return_value = _build_status_bytes(flame_height=0x00)
-        device = Mertik("192.168.1.100")
-        assert device.is_on is False
-
-        mock_socket.recv.return_value = _build_status_bytes(flame_height=0xC0)
-        device.refresh_status()
-        assert device.is_on is True
-        assert device.get_flame_height() == 7
-
-    def test_on_to_off(self, mock_socket):
-        """State should transition from on to off."""
-        mock_socket.recv.return_value = _build_status_bytes(flame_height=0xC0)
-        device = Mertik("192.168.1.100")
-        assert device.is_on is True
-
-        mock_socket.recv.return_value = _build_status_bytes(flame_height=0x00)
-        device.refresh_status()
-        assert device.is_on is False
-        assert device.get_flame_height() == 0
-
-    def test_temperature_updates(self, mock_socket):
-        """Temperature should update on each status response."""
-        mock_socket.recv.return_value = _build_status_bytes(ambient_temp=0xC8)
-        device = Mertik("192.168.1.100")
-        assert device.ambient_temperature == 20.0
-
-        mock_socket.recv.return_value = _build_status_bytes(ambient_temp=0xFA)
-        device.refresh_status()
-        assert device.ambient_temperature == 25.0
-
-    def test_all_properties_update_together(self, mock_socket):
-        """All parsed properties should update from a single status response."""
-        mock_socket.recv.return_value = _build_status_bytes(
-            flame_height=0xC0,
-            status_bits="801C",  # igniting + aux + light on
-            light_level=0xFB,
-            ambient_temp=0xE6,
-        )
-        device = Mertik("192.168.1.100")
-
-        assert device.is_on is True
-        assert device.get_flame_height() == 7
-        assert device.is_igniting is True
-        assert device.is_aux_on is True
-        assert device.is_light_on is True
-        assert device.light_brightness == 255
-        assert device.ambient_temperature == 23.0
-
-        # Now update everything at once
-        mock_socket.recv.return_value = _build_status_bytes(
-            flame_height=0x00,
-            status_bits="8000",  # all off
-            light_level=0x64,
-            ambient_temp=0xC8,
-        )
-        device.refresh_status()
-
-        assert device.is_on is False
-        assert device.get_flame_height() == 0
-        assert device.is_igniting is False
-        assert device.is_aux_on is False
-        assert device.is_light_on is False
-        assert device.light_brightness == 0
-        assert device.ambient_temperature == 20.0
-
-
-class TestThermostat:
-    """Test thermostat mode commands and status fields."""
-
-    @pytest.fixture(autouse=True)
-    def no_sleep(self):
-        with patch("custom_components.mertik.mertik.time.sleep") as mock_sleep:
-            self.mock_sleep = mock_sleep
-            yield
-
-    def test_set_thermostat_sends_mode_then_temperature(self, mertik_device, mock_socket):
-        mock_socket.send.reset_mock()
-        mertik_device.set_thermostat(21.5)
-        # "B201", then "B2FD" + "00D7" (215 = 21.5 C x10), then a status refresh
-        assert mock_socket.send.call_args_list == [
-            call(bytearray.fromhex(send_command_prefix + "4232303103")),
-            call(bytearray.fromhex(send_command_prefix + "423246443030443703")),
-            call(bytearray.fromhex(send_command_prefix + "303303")),
-        ]
-
-    def test_set_thermostat_pauses_between_commands(self, mertik_device):
-        mertik_device.set_thermostat(20)
-        self.mock_sleep.assert_called_once_with(1)
-
-    def test_status_poll_waits_for_thermostat_sequence(self, mertik_device, mock_socket):
-        """A poll from another thread can't land between the mode and temperature commands."""
-        mock_socket.send.reset_mock()
-        poll = threading.Thread(target=mertik_device.refresh_status)
-
-        def poll_during_pause(_seconds):
-            poll.start()
-            poll.join(timeout=0.2)
-
-        self.mock_sleep.side_effect = poll_during_pause
-        mertik_device.set_thermostat(21.5)
-        poll.join(timeout=2)
-
+    def test_ignite(self, fire, box):
+        fire.ignite_fireplace()
+        assert box.commands == ["1A"]
+
+    def test_off(self, fire, box):
+        fire.guard_flame_off()
+        assert box.commands == ["10"]
+
+    @pytest.mark.parametrize("step", range(1, 13))
+    def test_flame_height(self, burning, box, step):
+        burning.set_flame_height(step)
+        assert box.commands == [f"16{proto.FLAME_STEP_OUTPUTS[step - 1]:02X}"]
+
+    def test_flame_height_zero_is_standby(self, burning, box):
+        burning.set_flame_height(0)
+        assert box.commands == ["1600"]
+
+    def test_standby(self, burning, box):
+        burning.standBy()
+        assert box.commands == ["1600"]
+
+    @pytest.mark.parametrize("step", [-1, 13, 99])
+    def test_flame_height_out_of_range(self, fire, box, step):
+        with pytest.raises(ValueError):
+            fire.set_flame_height(step)
+        assert box.commands == []
+
+    def test_aux_commands_end_with_a_line_feed(self, burning, box):
+        burning.aux_on()
+        burning.aux_off()
+        assert box.commands == ["2001", "2000"]
+        assert all(raw.endswith(b"\x03\n") for raw in box.raw_requests[-2:])
+
+    def test_light(self, fire, box):
+        fire.light_on()
+        fire.light_off()
+        fire.set_light_brightness(255)
+        fire.set_light_brightness(1)
+        assert box.commands == ["3001", "3000", "30FEFB", "30FE77"]
+
+    def test_modes(self, burning, box):
+        burning.set_manual()
+        burning.set_eco()
+        assert box.commands == ["B0", "B301"]
+
+    @pytest.mark.parametrize(
+        ("temperature", "sent"),
+        [(5, "0032"), (20, "00C8"), (20.5, "00CD"), (21.5, "00D7"), (36, "0168"),
+         (1, "0032"), (50, "0168")],
+    )
+    def test_thermostat(self, burning, box, temperature, sent):
+        burning.set_thermostat(temperature)
+        assert box.commands == ["B201", f"B2FD{sent}"]
+
+    def test_commands_do_not_poll_by_themselves(self, burning, box):
+        polls = box.requests.count("03")
+        burning.set_flame_height(6)
+        assert box.requests[-1] == "16B9"
+        assert box.requests.count("03") == polls
+
+
+class TestAcknowledgements:
+    def test_acknowledged_command_returns_at_once(self, fire, box, clock):
+        before = clock.now
+        fire.light_on()
+        assert clock.now == before
+
+    def test_acknowledgement_after_a_status_frame(self, fire, box):
+        box.script["3001"] = [framed(status_frame()), framed(ack("30", "01AA"))]
+        fire.light_on()
+        assert box.commands == ["3001"]
+
+    def test_status_frame_counts_when_the_box_sends_no_acknowledgement(self, fire, box, clock):
+        lit(box, fire, clock, output=0x80)
+        box.acknowledge = False
+        before = clock.now
+        fire.set_flame_height(1)
+        assert box.commands == ["1680"]
+        # It gave the acknowledgement, or a refusal, all the time they may take.
+        assert clock.now - before == pytest.approx(proto.ACK_TIMEOUT)
+        assert fire.burner_output == 0x80
+
+    def test_unanswered_command_is_sent_again(self, fire, box):
+        replies = [[], [framed(ack("30"))]]
+        box.script["3001"] = lambda: replies.pop(0)
+        fire.light_on()
+        assert box.commands == ["3001", "3001"]
+
+    def test_unanswered_twice_raises(self, fire, box):
+        box.script["3001"] = []
+        with pytest.raises(MertikConnectionError):
+            fire.light_on()
+        assert box.commands == ["3001", "3001"]
+
+    def test_ignite_is_never_sent_twice(self, fire, box):
+        box.script["1A"] = []
+        with pytest.raises(MertikConnectionError):
+            fire.ignite_fireplace()
+        assert box.commands == ["1A"]
+
+    def test_ignite_is_retried_when_it_could_not_be_delivered(self, fire, box):
+        box.fail_connects = 1
+        fire.ignite_fireplace()
+        assert box.commands == ["1A"]
+
+    def test_ignite_is_not_sent_again_after_a_failed_send(self, fire, box):
+        """A send error may still have delivered the command."""
+        box.fail_sends = 1
+        connections = box.connections
+        with pytest.raises(MertikConnectionError) as error:
+            fire.ignite_fireplace()
+        assert error.value.sent
+        assert box.connections == connections + 1  # one attempt, no second
+        assert fire.state == "igniting"
+
+    def test_no_receiver_is_retried_then_raises(self, fire, box, clock):
+        lit(box, fire, clock)
+        box.script["2001"] = [framed(NO_RECEIVER)]
+        with pytest.raises(MertikReceiverError):
+            fire.aux_on()
+        assert box.commands == ["2001", "2001"]
+        assert proto.COMMAND_GAP in clock.sleeps
+
+    def test_no_receiver_then_accepted(self, fire, box, clock):
+        lit(box, fire, clock)
+        replies = [[framed(NO_RECEIVER)], [framed(ack("20"))]]
+        box.script["2001"] = lambda: replies.pop(0)
+        fire.aux_on()
+        assert box.commands == ["2001", "2001"]
+
+    def test_ignite_refused_by_a_missing_receiver(self, fire, box):
+        box.script["1A"] = [framed(NO_RECEIVER)]
+        with pytest.raises(MertikReceiverError):
+            fire.ignite_fireplace()
+        assert box.commands == ["1A"]
+
+
+class TestPacing:
+    def test_gap_between_commands(self, fire, box, clock):
+        fire.light_on()
+        clock.advance(0.5)
+        fire.light_off()
+        assert clock.sleeps == [pytest.approx(proto.COMMAND_GAP - 0.5)]
+
+    def test_no_wait_when_enough_time_passed(self, fire, box, clock):
+        fire.light_on()
+        clock.advance(proto.COMMAND_GAP + 0.1)
+        fire.light_off()
+        assert clock.sleeps == []
+
+    def test_status_polls_do_not_wait(self, fire, box, clock):
+        fire.light_on()
+        fire.refresh_status()
+        assert clock.sleeps == []
+
+    def test_gap_counts_from_a_failed_command_too(self, fire, box, clock):
+        box.script["3001"] = []
+        with pytest.raises(MertikConnectionError):
+            fire.light_on()
+        del box.script["3001"]
+        sleeps_before = len(clock.sleeps)
+        fire.light_on()
+        assert clock.sleeps[sleeps_before:] == [pytest.approx(proto.COMMAND_GAP)]
+
+    def test_aux_waits_for_the_valve(self, burning, box, clock):
+        fire = burning
+        fire.set_flame_height(12)
+        clock.advance(3)
+        fire.aux_on()
+        assert clock.sleeps == [pytest.approx(proto.VALVE_SETTLE - 3)]
+
+    def test_other_commands_do_not_wait_for_the_valve(self, burning, box, clock):
+        fire = burning
+        fire.set_flame_height(12)
+        clock.advance(3)
+        fire.light_on()
+        assert clock.sleeps == []
+
+    def test_thermostat_commands_are_spaced(self, burning, box, clock):
+        fire = burning
+        fire.set_thermostat(21)
+        assert clock.sleeps == [pytest.approx(proto.COMMAND_GAP)]
+
+    def test_poll_does_not_queue_behind_a_waiting_command(self, burning, box, clock):
+        """The gap between two commands is waited out without holding the line."""
+        fire = burning
+        poll = threading.Thread(target=fire.refresh_status)
+        original_sleep = clock.sleep
+
+        def sleep_and_poll(seconds):
+            original_sleep(seconds)
+            if poll.ident is None:
+                poll.start()
+                poll.join(timeout=2)
+
+        fire._sleep = sleep_and_poll
+        fire.set_thermostat(21.5)
         assert not poll.is_alive()
-        refresh = call(bytearray.fromhex(send_command_prefix + "303303"))
-        assert mock_socket.send.call_args_list == [
-            call(bytearray.fromhex(send_command_prefix + "4232303103")),
-            call(bytearray.fromhex(send_command_prefix + "423246443030443703")),
-            refresh,  # the sequence's own status refresh
-            refresh,  # the poll, once the sequence is done
-        ]
+        assert box.requests[-3:] == ["B201", "03", "B2FD00D7"]
 
-    def test_set_thermostat_temperature_encoding(self, mertik_device, mock_socket):
-        """Temperatures are sent as 4 uppercase ASCII hex chars of the value x10."""
-        for temperature, ascii_value in [(5, "0032"), (20, "00C8"), (20.5, "00CD"), (36, "0168")]:
-            mock_socket.send.reset_mock()
-            mertik_device.set_thermostat(temperature)
-            expected = bytearray.fromhex(
-                send_command_prefix + "42324644" + ascii_value.encode("ascii").hex() + "03"
-            )
-            assert mock_socket.send.call_args_list[1] == call(expected)
+    def test_off_does_not_wait_behind_a_valve(self, burning, box, clock):
+        """While a command waits for the valve, the line is free for the off."""
+        fire = burning
+        free = []
+        original_sleep = clock.sleep
 
-    def test_thermostat_mode(self, mock_socket):
-        mock_socket.recv.return_value = _build_status_bytes(mode="1")
-        device = Mertik("192.168.1.100")
-        assert device.is_thermostat_mode is True
+        def sleep_and_probe(seconds):
+            def probe():
+                got = fire._lock.acquire(blocking=False)
+                if got:
+                    fire._lock.release()
+                free.append(got)
 
-    def test_manual_mode(self, mock_socket):
-        mock_socket.recv.return_value = _build_status_bytes(mode="0")
-        device = Mertik("192.168.1.100")
-        assert device.is_thermostat_mode is False
+            worker = threading.Thread(target=probe)
+            worker.start()
+            worker.join()
+            original_sleep(seconds)
 
-    def test_eco_mode_is_not_thermostat(self, mock_socket):
-        mock_socket.recv.return_value = _build_status_bytes(mode="2")
-        device = Mertik("192.168.1.100")
-        assert device.is_thermostat_mode is False
+        fire.set_flame_height(6)
+        fire._sleep = sleep_and_probe
+        clock.advance(1)
+        fire.aux_on()
+        assert free == [True]
 
-    def test_target_temperature(self, mock_socket):
-        """0x00D7=215 -> 21.5 C."""
-        mock_socket.recv.return_value = _build_status_bytes(target_temp=0xD7)
-        device = Mertik("192.168.1.100")
-        assert device.target_temperature == 21.5
+    def test_valve_wait_also_follows_an_unanswered_flame_command(self, burning, box, clock):
+        """It was sent; the valve may be moving."""
+        fire = burning
+        box.script["16B9"] = []
+        with pytest.raises(MertikConnectionError):
+            fire.set_flame_height(6)
+        clock.sleeps.clear()
+        fire.aux_on()
+        assert max(clock.sleeps) > proto.COMMAND_GAP
 
-    def test_target_temperature_missing_from_short_frame(self, mock_socket):
-        raw = _build_status_bytes()[:-4]
-        mock_socket.recv.return_value = raw
-        device = Mertik("192.168.1.100")
-        assert device.target_temperature is None
 
-    def test_guard_flame_property(self, mock_socket):
-        mock_socket.recv.return_value = _build_status_bytes(status_bits="8080")
-        device = Mertik("192.168.1.100")
-        assert device.is_guard_flame_on is True
+class TestStateTracking:
+    def test_burning(self, fire, box, clock):
+        lit(box, fire, clock, output=0xB9)
+        assert fire.state == "on"
+        assert fire.is_on and fire.is_pilot_on and fire.is_burning
+        assert fire.flame_height == 6
+        assert fire.get_flame_height() == 6
+
+    def test_standby(self, fire, box, clock):
+        lit(box, fire, clock, output=0x00)
+        assert fire.state == "standby"
+        assert fire.is_on and fire.is_pilot_on
+        assert not fire.is_burning
+        assert fire.flame_height == 0
+
+    def test_cold_fireplace_with_a_full_burner_reading_is_off(self, fire, box):
+        box.status = status_frame(output=0xFF, word=OFF)
+        fire.refresh_status()
+        assert fire.state == "off"
+        assert not fire.is_on
+        assert fire.flame_height == 0
+
+    def test_low_modulated_flame_counts_as_burning(self, fire, box, clock):
+        lit(box, fire, clock, output=0x69)
+        assert fire.state == "on"
+        assert fire.flame_height == 1
+
+    def test_aux_and_light(self, fire, box, clock):
+        lit(box, fire, clock, word=PILOT | 0x0008 | 0x0004, light=0xFB)
+        assert fire.is_aux_on
+        assert fire.is_light_on
+        assert fire.light_brightness == 255
+
+    def test_light_level_is_ignored_while_the_light_is_off(self, fire, box, clock):
+        lit(box, fire, clock, light=0xAA)
+        assert not fire.is_light_on
+        assert fire.light_brightness == 0
+
+    def test_full_light_level_from_the_app_stays_in_range(self, fire, box, clock):
+        lit(box, fire, clock, word=PILOT | 0x0004, light=0xFF)
+        assert fire.light_brightness == 255
+
+    def test_modes_and_temperatures(self, fire, box, clock):
+        lit(box, fire, clock, mode="1", room=0x00E1, target=0x00D7)
+        assert fire.mode == "thermostat"
+        assert fire.is_thermostat_mode
+        assert fire.ambient_temperature == 22.5
+        assert fire.target_temperature == 21.5
+        assert fire.handset_connected is True
+
+    def test_no_handset(self, fire):
+        assert fire.ambient_temperature is None
+        assert fire.handset_connected is False
+
+    def test_fan(self, fire, box, clock):
+        lit(box, fire, clock, word=PILOT | 0x0040, fan=3)
+        assert fire.fan_level == 3
+        assert fire.is_fan_on
+
+    def test_fault_stored(self, fire, box, clock):
+        # The real frame has the bit set: its handset was not reporting (F44).
+        assert fire.is_faulted is True
+        lit(box, fire, clock, word=0x8081)
+        assert fire.is_faulted is False
+
+    def test_name(self, fire, box, clock):
+        lit(box, fire, clock, name="Living Room")
+        assert fire.name == "Living Room"
+
+
+class TestIgnition:
+    def test_counts_as_igniting_right_after_the_command(self, fire, box, clock):
+        """The box still reports "off" for a moment after an ignite command."""
+        fire.ignite_fireplace()
+        fire.refresh_status()
+        assert fire.state == "igniting"
+        assert fire.is_on
+
+    def test_gives_up_when_the_fire_stays_off(self, fire, box, clock):
+        fire.ignite_fireplace()
+        clock.advance(proto.IGNITION_SETTLE - 1)
+        fire.refresh_status()
+        assert fire.state == "igniting"
+        clock.advance(2)
+        fire.refresh_status()
+        assert fire.state == "off"
+
+    def test_a_lit_fire_settles_before_it_counts_as_on(self, fire, box, clock):
+        fire.ignite_fireplace()
+        box.status = status_frame(word=IGNITING)
+        fire.refresh_status()
+        assert fire.state == "igniting"
+        clock.advance(10)
+        box.status = status_frame(output=0xFF, word=PILOT)
+        fire.refresh_status()
+        assert fire.state == "igniting"
+        assert fire.flame_height == 0
+        clock.advance(proto.IGNITION_SETTLE)
+        fire.refresh_status()
+        assert fire.state == "on"
+        assert fire.flame_height == 12
+
+    def test_a_lit_fire_is_reported_while_it_settles(self, fire, box, clock):
+        """What to show differs from what decisions go by, for that minute."""
+        fire.ignite_fireplace()
+        box.status = status_frame(word=IGNITING)
+        fire.refresh_status()
+        assert fire.reported_flame_height == 0
+        assert fire.reported_pilot is False
+
+        clock.advance(10)
+        box.status = status_frame(output=0xFF, word=PILOT)
+        fire.refresh_status()
+        assert fire.state == "igniting"
+        assert fire.flame_height == 0
+        assert fire.is_pilot_on is False
+        assert fire.reported_flame_height == 12
+        assert fire.reported_pilot is True
+
+        # Pilot only, as after a standby given with the handset meanwhile.
+        box.status = status_frame(output=0x00, word=PILOT)
+        fire.refresh_status()
+        assert fire.state == "igniting"
+        assert fire.reported_flame_height == 0
+        assert fire.reported_pilot is True
+
+    def test_a_shutdown_reports_no_flame(self, burning, box):
+        """A real fireplace kept full output and the pilot bit for seconds after an off."""
+        box.status = status_frame(output=0xFF, word=SHUTTING_DOWN)
+        burning.refresh_status()
+        assert burning.state == "shutting_down"
+        assert burning.reported_flame_height == 0
+        assert burning.reported_pilot is False
+
+    def test_a_cold_fireplace_at_full_output_reports_no_flame(self, fire, box):
+        box.status = status_frame(output=0xFF, word=0x8003)
+        fire.refresh_status()
+        assert fire.state == "off"
+        assert fire.reported_flame_height == 0
+        assert fire.reported_pilot is False
+
+    def test_frames_without_the_receiver_link_keep_it_igniting(self, fire, box, clock):
+        box.status = status_frame(word=0x821A)
+        fire.refresh_status()
+        clock.advance(10)
+        box.status = status_frame(word=0x021A)
+        fire.refresh_status()
+        assert fire.state == "igniting"
+        clock.advance(10)
+        box.status = status_frame(output=0xFF, word=0x028A)
+        fire.refresh_status()
+        assert fire.state == "igniting"
+
+    def test_failed_attempt_reads_off_in_the_end(self, fire, box, clock):
+        """Measured: igniting, link lost, "on" for a moment, then off."""
+        for word, output in ((0x821A, 0), (0x021A, 0), (0x828A, 255), (0x028A, 255)):
+            box.status = status_frame(output=output, word=word)
+            fire.refresh_status()
+            assert fire.state == "igniting"
+            clock.advance(10)
+        # Off between two attempts of the receiver: the ignition is not over.
+        box.status = status_frame(word=0x820A)
+        fire.refresh_status()
+        assert fire.state == "igniting"
+        # No further sign of it for a minute: it has given up.
+        clock.advance(proto.IGNITION_SETTLE + 1)
+        fire.refresh_status()
+        assert fire.state == "off"
+
+    def test_ignition_started_elsewhere_is_seen(self, fire, box, clock):
+        box.status = status_frame(word=IGNITING)
+        fire.refresh_status()
+        assert fire.state == "igniting"
+        assert fire.is_on
+
+
+class TestShutdown:
+    def test_counts_as_shutting_down_right_after_the_command(self, fire, box, clock):
+        lit(box, fire, clock)
+        fire.guard_flame_off()
+        fire.refresh_status()  # the box still reports it burning
+        assert fire.state == "shutting_down"
+        assert not fire.is_on
+
+    def test_follows_the_box_after_the_grace(self, fire, box, clock):
+        lit(box, fire, clock)
+        fire.guard_flame_off()
+        clock.advance(proto.OFF_GRACE + 1)
+        fire.refresh_status()
+        assert fire.state == "on"
+
+    def test_measured_sequence(self, fire, box, clock):
+        lit(box, fire, clock, output=0x80, word=0x80C7)
+        for output, word, expected in (
+            (0x00, 0x81C7, "shutting_down"),
+            (0x00, 0x01C7, "shutting_down"),  # link bit clear: last state stays
+            (0x00, 0x804B, "off"),
+        ):
+            box.status = status_frame(output=output, word=word)
+            fire.refresh_status()
+            assert fire.state == expected
+            clock.advance(10)
+
+    def test_off_does_not_write_an_ignition_off(self, fire, box, clock):
+        """Acknowledged is not obeyed: a receiver that is igniting may go on.
+
+        "Off" from the box does not settle it either, as it also reads off
+        between two attempts. Only the ignition's own time running out does.
+        """
+        fire.ignite_fireplace()
+        clock.advance(3)
+        fire.guard_flame_off()
+        fire.refresh_status()
+        assert fire.state == "igniting"
+        with pytest.raises(MertikStateError):
+            fire.ignite_fireplace()
+
+        clock.advance(proto.IGNITION_SETTLE)
+        fire.refresh_status()
+        assert fire.state == "off"
+
+
+class TestReceiverLink:
+    def test_values_are_kept_while_the_link_is_down(self, fire, box, clock):
+        lit(box, fire, clock, output=0xB9)
+        box.status = status_frame(output=0x00, word=0x0000)
+        fire.refresh_status()
+        assert fire.state == "on"
+        assert fire.flame_height == 6
+        assert fire.receiver_connected is False
+        assert fire.receiver_lost is False
+        assert fire.last_frame == box.status
+
+    def test_link_counts_as_lost_after_a_while(self, fire, box, clock):
+        lit(box, fire, clock)
+        box.status = status_frame(word=0x0000)
+        fire.refresh_status()
+        clock.advance(proto.RECEIVER_LOST_AFTER + 1)
+        fire.refresh_status()
+        assert fire.receiver_lost is True
+
+    def test_link_restored(self, fire, box, clock):
+        lit(box, fire, clock)
+        box.status = status_frame(word=0x0000)
+        fire.refresh_status()
+        clock.advance(proto.RECEIVER_LOST_AFTER + 1)
+        box.status = status_frame(output=0x80, word=PILOT)
+        fire.refresh_status()
+        assert fire.receiver_lost is False
+        assert fire.receiver_connected is True
+        assert fire.flame_height == 1
+
+    def test_box_that_never_sets_the_link_bit_is_not_judged_on_it(self, box, clock):
+        box.status = status_frame(output=0x80, word=0x0080)
+        fire = Mertik("192.0.2.10", connect=box.connect, clock=clock, sleep=clock.sleep)
+        assert fire.state == "on"
+        assert fire.receiver_connected is True
+
+    def test_no_receiver_reply_to_a_poll(self, fire, box, clock):
+        box.no_receiver = True
+        fire.refresh_status()  # an answer, even if not the one hoped for
+        assert fire.receiver_connected is False
+        assert fire.receiver_lost is False
+        assert fire.state == "off"  # last known
+        clock.advance(proto.RECEIVER_LOST_AFTER + 1)
+        assert fire.receiver_lost is True
+
+    def test_status_clears_no_receiver(self, fire, box, clock):
+        box.no_receiver = True
+        fire.refresh_status()
+        clock.advance(proto.RECEIVER_LOST_AFTER + 1)
+        box.no_receiver = False
+        fire.refresh_status()
+        assert fire.receiver_lost is False
+        assert fire.receiver_connected is True
+
+    def test_unknown_before_any_answer(self, box, clock):
+        fire = Mertik("192.0.2.10", connect=box.connect, clock=clock, sleep=clock.sleep, refresh=False)
+        assert fire.receiver_connected is None
+        assert fire.handset_connected is None
+
+
+class TestDeviceInfo:
+    def test_reply_is_kept(self, fire, box):
+        assert fire.device_info is None
+        assert fire.read_device_info().startswith("B6R-H8TV4P")
+        assert fire.device_info.startswith("B6R-H8TV4P")
+        assert box.requests[-1] == "01"
+
+    def test_status_frames_arriving_meanwhile_are_used(self, fire, box):
+        box.script["01"] = [framed(status_frame(output=0x80, word=PILOT), REPLY_HEADER + "01" + "ABCD")]
+        assert fire.read_device_info() == "ABCD"
+        assert fire.burner_output == 0x80
+
+    def test_unanswered_is_not_an_error(self, fire, box):
+        box.script["01"] = []
+        assert fire.read_device_info() is None
+
+
+class TestNeverTwice:
+    """An ignite that may have arrived counts as an ignition, whatever came back."""
+
+    def test_unacknowledged_ignite_counts_as_an_ignition(self, fire, box, clock):
+        box.script["1A"] = []  # received; the acknowledgement is lost
+        with pytest.raises(MertikConnectionError) as error:
+            fire.ignite_fireplace()
+        assert error.value.sent
+        assert fire.state == "igniting"
+
+        del box.script["1A"]
+        clock.advance(5)
+        with pytest.raises(MertikStateError):
+            fire.ignite_fireplace()
+        assert box.commands == ["1A"]
+
+    def test_ignite_answered_with_no_receiver_counts_as_an_ignition(self, fire, box, clock):
+        box.script["1A"] = [framed(NO_RECEIVER)]
+        with pytest.raises(MertikReceiverError):
+            fire.ignite_fireplace()
+        assert fire.state == "igniting"
+        with pytest.raises(MertikStateError):
+            fire.ignite_fireplace()
+        assert box.commands == ["1A"]
+
+    @pytest.mark.parametrize(
+        "chunks",
+        [[framed(NO_RECEIVER), framed(ack("1A"))], [framed(NO_RECEIVER, ack("1A"))]],
+        ids=["two reads", "one read"],
+    )
+    def test_stray_no_receiver_before_the_acknowledgement(self, fire, box, chunks):
+        """An occasional stray "no receiver" frame is normal; the answer follows."""
+        box.script["1A"] = chunks
+        fire.ignite_fireplace()
+        assert fire.state == "igniting"
+
+    def test_ignite_that_never_left_can_be_repeated(self, fire, box, clock):
+        box.fail_connects = 2
+        with pytest.raises(MertikConnectionError) as error:
+            fire.ignite_fireplace()
+        assert not error.value.sent
+        assert fire.state == "off"
+        fire.ignite_fireplace()
+        assert box.commands == ["1A"]
+
+    def test_waits_survive_a_reload(self, fire, box, clock):
+        """A new object takes over from the old one, with an ignition under way."""
+        fire.ignite_fireplace()
+        clock.advance(4)
+        blank = Mertik("192.0.2.10", connect=box.connect, clock=clock, sleep=clock.sleep)
+        assert blank.state == "off"  # it cannot know by itself
+
+        successor = Mertik(
+            "192.0.2.10",
+            connect=box.connect,
+            clock=clock,
+            sleep=clock.sleep,
+            memory=fire.memory(),
+        )
+        assert successor.state == "igniting"
+        with pytest.raises(MertikStateError):
+            successor.ignite_fireplace()
+        assert box.commands == ["1A"]
+
+
+class TestRefusedIsNotDone:
+    """A command the box refused must not pass for one it carried out."""
+
+    @pytest.mark.parametrize(
+        "chunks",
+        [
+            [framed(status_frame(output=0xFF, word=PILOT)), framed(NO_RECEIVER)],
+            [framed(status_frame(output=0xFF, word=PILOT), NO_RECEIVER)],
+            [framed(NO_RECEIVER, status_frame(output=0xFF, word=PILOT))],
+        ],
+        ids=["status, then refusal", "status and refusal", "refusal and status"],
+    )
+    def test_no_receiver_wins_over_a_status_frame(self, burning, box, clock, chunks):
+        box.script["10"] = chunks
+        with pytest.raises(MertikReceiverError):
+            burning.guard_flame_off()
+        assert box.commands == ["10", "10"]  # tried once more before giving up
+        assert burning.state == "on"
+
+    def test_stray_no_receiver_before_the_status_frame(self, box, clock):
+        box.status = status_frame(output=0xFF, word=PILOT)
+        box.script["03"] = [framed(NO_RECEIVER), framed(box.status)]
+        fire = Mertik("192.0.2.10", connect=box.connect, clock=clock, sleep=clock.sleep)
+        assert fire.status is not None
+        assert fire.receiver_connected is True
+
+    def test_first_read_without_a_status_is_an_error(self, box, clock):
+        """Otherwise a burning fire would start out reading as nothing at all."""
+        box.no_receiver = True
+        with pytest.raises(MertikReceiverError):
+            Mertik("192.0.2.10", connect=box.connect, clock=clock, sleep=clock.sleep)
+
+
+class TestRightStateOnly:
+    """Commands are held to the states they make sense in, with the line held."""
+
+    def test_flame_aux_and_modes_need_a_fire(self, fire, box):
+        for command in (
+            lambda: fire.set_flame_height(5),
+            fire.standBy,
+            fire.aux_on,
+            fire.aux_off,
+            fire.set_eco,
+            lambda: fire.set_thermostat(21),
+        ):
+            with pytest.raises(MertikStateError) as error:
+                command()
+            assert error.value.state == "off"
+        assert box.commands == []
+
+    def test_nothing_but_off_is_sent_while_igniting(self, fire, box, clock):
+        fire.ignite_fireplace()
+        for command in (
+            lambda: fire.set_flame_height(5),
+            fire.aux_on,
+            fire.light_on,
+            fire.light_off,
+            lambda: fire.set_light_brightness(200),
+            fire.set_manual,
+            fire.ignite_fireplace,
+        ):
+            with pytest.raises(MertikStateError) as error:
+                command()
+            assert error.value.state == "igniting"
+        assert box.commands == ["1A"]
+
+        fire.guard_flame_off()
+        assert box.commands == ["1A", "10"]
+
+    def test_light_and_manual_work_with_the_fire_off(self, fire, box):
+        fire.light_on()
+        fire.set_manual()
+        assert box.commands == ["3001", "B0"]
+
+    def test_ignite_only_goes_to_a_fireplace_that_is_off(self, burning, box, clock):
+        with pytest.raises(MertikStateError):
+            burning.ignite_fireplace()
+        box.status = status_frame(output=0x00, word=PILOT)  # standby
+        burning.refresh_status()
+        with pytest.raises(MertikStateError):
+            burning.ignite_fireplace()
+        assert box.commands == []
+
+    def test_nothing_follows_an_off(self, burning, box, clock):
+        """The flame command of a moment ago must not land behind the off."""
+        burning.guard_flame_off()
+        with pytest.raises(MertikStateError) as error:
+            burning.set_flame_height(4)
+        assert error.value.state == "shutting_down"
+        with pytest.raises(MertikStateError):
+            burning.ignite_fireplace()
+        assert box.commands == ["10"]
+
+    def test_commands_are_not_sent_without_the_receiver_link(self, burning, box, clock):
+        box.status = status_frame(output=0xFF, word=PILOT & 0x7FFF)
+        burning.refresh_status()
+        with pytest.raises(MertikReceiverError) as error:
+            burning.set_flame_height(3)
+        assert not error.value.sent
+        assert box.commands == []
+
+    def test_link_is_looked_at_again_before_refusing(self, burning, box, clock):
+        box.status = status_frame(output=0xFF, word=PILOT & 0x7FFF)
+        burning.refresh_status()
+        box.status = status_frame(output=0xFF, word=PILOT)  # back since the last poll
+        burning.set_flame_height(3)
+        assert box.commands == ["1697"]
+
+    def test_off_is_sent_whatever_the_link_looks_like(self, burning, box, clock):
+        """Turning off must not depend on a reading being right."""
+        box.status = status_frame(output=0xFF, word=PILOT & 0x7FFF)
+        burning.refresh_status()
+        clock.advance(proto.RECEIVER_LOST_AFTER + 1)
+        burning.refresh_status()
+        assert burning.receiver_lost
+        burning.guard_flame_off()
+        assert box.commands == ["10"]
+
+
+class TestShutdownAndIgnitionSeenThroughALostLink:
+    """What frames without the receiver bit still tell (they come during both)."""
+
+    def test_shutdown_stays_a_shutdown_until_the_link_is_back(self, burning, box, clock):
+        burning.guard_flame_off()
+        seen = []
+        for _ in range(3):
+            clock.advance(10)
+            box.status = status_frame(output=0x00, word=0x01C7)  # link bit clear
+            burning.refresh_status()
+            seen.append(burning.state)
+        assert seen == ["shutting_down"] * 3
+        assert burning.is_on is False
+
+        clock.advance(5)
+        box.status = status_frame(output=0x00, word=0x804B)
+        burning.refresh_status()
+        assert burning.state == "off"
+
+    def test_off_during_an_ignition_stays_a_shutdown(self, fire, box, clock):
+        fire.ignite_fireplace()
+        box.status = status_frame(word=0x821A)
+        fire.refresh_status()
+        clock.advance(5)
+        fire.guard_flame_off()
+        for _ in range(3):
+            clock.advance(10)
+            box.status = status_frame(word=0x021A)  # link down, igniting bit still set
+            fire.refresh_status()
+            assert fire.state == "shutting_down"
+
+    def test_shutdown_with_the_handset_seen_without_the_link(self, burning, box, clock):
+        box.status = status_frame(output=0x00, word=0x0183)  # link down, shutting down
+        burning.refresh_status()
+        assert burning.state == "shutting_down"
+        clock.advance(10)
+        box.status = status_frame(output=0x00, word=0x8003)
+        burning.refresh_status()
+        assert burning.state == "off"
+
+    def test_ignition_with_the_handset_seen_without_the_link(self, fire, box, clock):
+        """The poll missed the short frame that had both the link and the igniting bit."""
+        for _ in range(2):
+            clock.advance(10)
+            box.status = status_frame(word=0x021A)
+            fire.refresh_status()
+            assert fire.state == "igniting"
+        with pytest.raises(MertikError):
+            fire.ignite_fireplace()
+        assert box.commands == []
+
+    def test_lit_without_a_seen_ignition_has_to_settle(self, fire, box, clock):
+        """Off a moment ago, burning now: it was lit with the handset between two polls."""
+        clock.advance(10)
+        box.status = status_frame(output=0xFF, word=0x828A)
+        fire.refresh_status()
+        assert fire.state == "igniting"
+        clock.advance(proto.IGNITION_SETTLE + 1)
+        fire.refresh_status()
+        assert fire.state == "on"
+
+    def test_fire_found_burning_at_start_needs_no_settling(self, box, clock):
+        box.status = status_frame(output=0xFF, word=0x828A)
+        fire = Mertik("192.0.2.10", connect=box.connect, clock=clock, sleep=clock.sleep)
+        assert fire.state == "on"
+
+    def test_between_two_attempts_it_still_reads_igniting(self, fire, box, clock):
+        """Measured: the pilot only held on a later attempt, with "off" in between."""
+        fire.ignite_fireplace()
+        seen = []
+        for word, output in (
+            (0x820A, 0x00),
+            (0x821A, 0x00),
+            (0x021A, 0x00),
+            (0x828A, 0xFF),
+            (0x028A, 0xFF),
+            (0x820A, 0x00),  # the pilot went out; the receiver tries again
+            (0x820A, 0x00),
+            (0x821A, 0x00),
+            (0x828A, 0xFF),
+        ):
+            box.status = status_frame(output=output, word=word)
+            fire.refresh_status()
+            seen.append(fire.state)
+            clock.advance(10)
+        assert seen == ["igniting"] * 9
+
+        clock.advance(proto.IGNITION_SETTLE)
+        fire.refresh_status()
+        assert fire.state == "on"
+
+
+class TestSecondReview:
+    """What a second look at the fixes still found."""
+
+    def test_status_frame_does_not_confirm_an_off(self, burning, box, clock):
+        """Boxes push their status unasked; that is not the fireplace obeying."""
+        box.script["10"] = [framed(box.status)]
+        burning.guard_flame_off()  # sent; whether it was taken is not known
+        assert box.commands == ["10"]
+        assert burning.state == "on"
+
+    def test_refusal_long_after_a_pushed_status_frame_is_still_read(self, burning, box, clock):
+        # The status frame at once, the refusal after two silent seconds.
+        box.script["10"] = [framed(box.status)]
+        connect = box.connect
+
+        def slow_connect(host, port, timeout):
+            connection = connect(host, port, timeout)
+            original = connection.recv
+            calls = []
+
+            def recv(size):
+                calls.append(1)
+                if len(calls) == 2 and box.requests[-1] == "10":
+                    clock.advance(2.0)
+                    return framed(NO_RECEIVER)
+                return original(size)
+
+            connection.recv = recv
+            return connection
+
+        burning._connect = slow_connect
+        with pytest.raises(MertikReceiverError):
+            burning.guard_flame_off()
+
+    def test_successor_knows_the_box_marks_its_unreliable_frames(self, burning, box, clock):
+        """Otherwise a reload would take a frame without the link at face value."""
+        box.status = status_frame(output=0x00, word=0x0003)  # link down; reads "off"
+        successor = Mertik(
+            "192.0.2.10",
+            connect=box.connect,
+            clock=clock,
+            sleep=clock.sleep,
+            memory=burning.memory(),
+        )
+        assert successor.state == "on"
+        assert successor.link_down
+
+    def test_frames_without_the_link_do_not_keep_an_ignition_going_for_ever(self, fire, box, clock):
+        """One such frame a minute, and never long enough to count as lost."""
+        fire.ignite_fireplace()
+        states = set()
+        for minute in range(30):
+            box.status = status_frame(word=0x0003)
+            fire.refresh_status()
+            clock.advance(30)
+            box.status = status_frame(word=0x8003)
+            fire.refresh_status()
+            if minute >= 4:
+                states.add(fire.state)
+            clock.advance(30)
+        assert states == {"off"}
+
+    def test_frames_without_the_link_do_not_keep_a_shutdown_going_for_ever(self, burning, box, clock):
+        burning.guard_flame_off()
+        states = set()
+        for step in range(40):
+            word = 0x0083 if step % 2 else 0x8083  # the link flaps; the fire burns on
+            box.status = status_frame(output=0xFF, word=word)
+            burning.refresh_status()
+            if step >= 12:
+                states.add(burning.state)
+            clock.advance(10)
+        assert states == {"on"}
+
+    def test_retry_does_not_hold_the_line(self, burning, box, clock):
+        box.script["2001"] = [framed(NO_RECEIVER)]
+        free = []
+        original_sleep = clock.sleep
+
+        def sleep_and_probe(seconds):
+            def probe():
+                got = burning._lock.acquire(blocking=False)
+                if got:
+                    burning._lock.release()
+                free.append(got)
+
+            worker = threading.Thread(target=probe)
+            worker.start()
+            worker.join()
+            original_sleep(seconds)
+
+        burning._sleep = sleep_and_probe
+        with pytest.raises(MertikReceiverError):
+            burning.aux_on()
+        assert free and all(free)
+
+    def test_retry_is_dropped_if_the_fire_was_turned_off_meanwhile(self, burning, box, clock):
+        box.script["16AE"] = [framed(NO_RECEIVER)]
+        original_sleep = clock.sleep
+
+        def sleep_and_turn_off(seconds):
+            original_sleep(seconds)
+            if "10" not in box.commands:
+                burning._sleep = original_sleep
+                burning.guard_flame_off()
+
+        burning._sleep = sleep_and_turn_off
+        with pytest.raises(MertikStateError):
+            burning.set_flame_height(5)
+        assert box.commands == ["16AE", "10"]
+
+    def test_serial_counts_reliable_frames_only(self, burning, box, clock):
+        before = burning.status_serial
+        burning.refresh_status()
+        assert burning.status_serial == before + 1
+        box.status = status_frame(output=0xFF, word=0x0083)
+        burning.refresh_status()
+        assert burning.status_serial == before + 1

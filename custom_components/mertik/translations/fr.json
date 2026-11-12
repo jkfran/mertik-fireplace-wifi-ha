@@ -2,19 +2,153 @@
   "config": {
     "step": {
       "user": {
+        "title": "Foyer Mertik Maxitrol",
+        "description": "Choisissez le module Wi-Fi de votre foyer ou saisissez son adresse IP. Trouvés sur votre réseau : {found}",
         "data": {
           "name": "Donner un nom au foyer",
-          "host": "Adresse IP du controleur du foyer"
-        },
-        "description": "Choisir un appareil.",
-        "title": "Appareil"
+          "host": "Adresse IP du module Wi-Fi"
+        }
+      },
+      "reconfigure": {
+        "title": "Changer l'adresse",
+        "description": "Adresse actuelle : {current}. Trouvés sur votre réseau : {found}",
+        "data": {
+          "host": "Adresse IP du module Wi-Fi"
+        }
       }
     },
     "error": {
-      "cannot_connect": "Impossible de se connecter au foyer. Veuillez vérifier l'adresse IP et vous assurer que l'appareil est allumé."
+      "cannot_connect": "Impossible de se connecter au foyer. Veuillez vérifier l'adresse IP et vous assurer que l'appareil est allumé.",
+      "wrong_device": "Un autre foyer répond à cette adresse.",
+      "address_in_use": "Cette adresse est celle d'un foyer déjà configuré."
     },
     "abort": {
-      "already_configured": "Ce foyer est déjà configuré."
+      "already_configured": "Ce foyer est déjà configuré.",
+      "reconfigure_successful": "L'adresse a été changée.",
+      "not_configured": "Ce foyer n'est pas encore configuré."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Thermostat",
+        "description": "Le thermostat du foyer mesure la température de la pièce avec la télécommande. Si vous choisissez ici un capteur de température, Home Assistant règle la flamme d'après ce capteur. Le foyer n'est jamais allumé automatiquement : quand la pièce est assez chaude, la flamme est réduite à la veilleuse, puis remontée quand il faut chauffer.",
+        "data": {
+          "temperature_sensor": "Capteur de température de la pièce"
+        },
+        "data_description": {
+          "temperature_sensor": "Laissez vide pour utiliser le thermostat du foyer."
+        }
+      }
+    }
+  },
+  "entity": {
+    "switch": {
+      "secondary_burner": {
+        "name": "Brûleur secondaire"
+      }
+    },
+    "number": {
+      "flame_height": {
+        "name": "Hauteur de flamme"
+      }
+    },
+    "sensor": {
+      "ambient_temperature": {
+        "name": "Température ambiante"
+      },
+      "status": {
+        "name": "État",
+        "state": {
+          "off": "Éteint",
+          "standby": "Veilleuse",
+          "igniting": "Allumage",
+          "on": "Allumé",
+          "shutting_down": "Extinction"
+        }
+      },
+      "fan_level": {
+        "name": "Vitesse du ventilateur"
+      },
+      "ip_address": {
+        "name": "Adresse IP"
+      }
+    },
+    "binary_sensor": {
+      "pilot_flame": {
+        "name": "Veilleuse"
+      },
+      "igniting": {
+        "name": "Allumage"
+      },
+      "shutting_down": {
+        "name": "Extinction"
+      },
+      "receiver_connection": {
+        "name": "Récepteur"
+      },
+      "remote_connection": {
+        "name": "Télécommande"
+      },
+      "fault": {
+        "name": "Défaut"
+      },
+      "fan": {
+        "name": "Ventilateur"
+      }
+    },
+    "light": {
+      "light": {
+        "name": "Éclairage"
+      }
+    },
+    "climate": {
+      "thermostat": {
+        "name": "Thermostat"
+      }
+    },
+    "select": {
+      "mode": {
+        "name": "Mode",
+        "state": {
+          "manual": "Manuel",
+          "thermostat": "Thermostat",
+          "eco": "Éco"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "fireplace_off": {
+      "message": "Allumez d'abord le foyer."
+    },
+    "shutting_down": {
+      "message": "Le foyer est en train de s'éteindre. Réessayez dans un instant."
+    },
+    "no_receiver": {
+      "message": "Le module Wi-Fi n'a pas de liaison avec le récepteur du foyer."
+    },
+    "cannot_reach": {
+      "message": "Le foyer ne répond pas : {error}"
+    },
+    "wrong_device": {
+      "message": "Un autre foyer répond maintenant à l'adresse de celui-ci. Rien ne lui a été envoyé ; Home Assistant recherche de nouveau ce foyer."
+    },
+    "igniting": {
+      "message": "Le foyer est en cours d'allumage et n'accepte pas encore de commandes. Réessayez dans une minute."
+    },
+    "no_handset": {
+      "message": "Le thermostat du foyer mesure la pièce avec sa télécommande, et aucune télécommande ne transmet de température. Choisissez plutôt un capteur de température dans les options de l'intégration."
+    }
+  },
+  "issues": {
+    "receiver_lost": {
+      "title": "{name} : pas de liaison avec le foyer",
+      "description": "Le module Wi-Fi de {name} répond, mais il a perdu sa liaison radio avec le récepteur du foyer (l'application l'indique par F43). Les commandes n'atteignent plus le foyer tant que la liaison n'est pas rétablie. Vérifiez l'alimentation ou les piles du récepteur. Utiliser la télécommande du foyer, ou couper puis remettre le courant, rétablit généralement la liaison."
+    },
+    "off_failed": {
+      "title": "{name} ne s'est pas éteint",
+      "description": "Home Assistant a demandé à {name} de s'éteindre, et cinq minutes plus tard ce n'était pas fait. Vérifiez le foyer et éteignez-le avec sa télécommande. Ce message disparaît dès que le foyer est éteint."
     }
   }
 }
