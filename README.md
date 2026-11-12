@@ -4,7 +4,56 @@ Control a gas fireplace that has a Mertik Maxitrol WiFi module from Home Assista
 it off, set the flame, the second burner and the light, and let a thermostat hold the room
 temperature. Everything runs on your local network; no cloud account is involved.
 
+These are the fireplaces you control from your phone with the MyFire app or one of its branded
+versions, such as Valor 10 Remote, Gazco MyFire, Barbas Gas or Trimline Fires. The list is under
+[Compatibility](#compatibility).
+
 [![Tests](https://github.com/jkfran/mertik-fireplace-wifi-ha/actions/workflows/tests.yml/badge.svg)](https://github.com/jkfran/mertik-fireplace-wifi-ha/actions/workflows/tests.yml)
+
+## Compatibility
+
+Many fireplace makers fit the Mertik Maxitrol WiFi module, sold as the *myfire Wi-Fi Box* of the
+GV60 control system, and have their own version of its app. If you control your fireplace with one
+of these iOS or Android apps, it has this module (the names are those in the App Store and on Google
+Play in November 2026):
+
+- MyFire (Mertik Maxitrol's own app)
+- attika Fire
+- Barbas Gas (Barbas and Bellfires)
+- Brunner WiFi-control (on Google Play just WiFi-control)
+- Element4 ProControl (on Google Play just ProControl)
+- Fire Connects
+- Gazco MyFire
+- ITALKERO Fires
+- Ortal Heating Solutions
+- Planika Gas Control
+- RAIS Gas (called RAISfire before)
+- SAFIRE
+- Signi Fires
+- Trimline Fires (thermoCet International)
+- Valor 10 Remote
+- Wanders Ecowave (on Google Play just Wanders)
+
+Such a fireplace most likely works with this integration. Valor, Bellfires and Gazco fireplaces have
+been reported to work with it or with one of its forks. What is not known is the newest generation
+of the module, the last row here:
+
+| Part No. | Compatible? | Found automatically? |
+|---|---|---|
+| B6R-WME | Yes | Yes |
+| B6R-W2BE-0 | Yes | Yes |
+| B6R-W2ZV-0 | Yes | Not reported |
+| B6R-WWN | Yes | Not sure; one report says no |
+| B6R-W3… | Not known | Not known |
+
+The app's setup guide calls the B6R-W… boxes V1, the B6R-W2… boxes V2 and the B6R-W3… boxes V3. A
+V1 or V2 box with another ending than the ones in the table probably works too. The V3 box is the
+newer one, which the app finds over Bluetooth during setup. No report of one has reached this
+project, so whether it speaks the same protocol is not known. If you have one, or an app or a module
+that is not listed here, a report of what works is welcome.
+
+The WiFi module must be connected to your network (set that up with the manufacturer's app) and
+Home Assistant must be able to reach it on TCP port 2000. Home Assistant 2024.12 or newer.
 
 ## What you get
 
@@ -22,23 +71,6 @@ temperature. Everything runs on your local network; no cloud account is involved
 | Receiver, Remote | Binary sensors | Whether the WiFi module reaches the fireplace, and whether a handset reports to it. |
 
 Disabled by default, for diagnosing: Igniting, Shutting down, Fault, Fan, Fan level and IP address.
-
-## Compatibility
-
-Fireplaces with one of these Mertik Maxitrol WiFi modules:
-
-| Part No. | Compatible? | Found automatically? |
-|---|---|---|
-| B6R-WME | Yes | Yes |
-| B6R-W2BE-0 | Yes | Yes |
-| B6R-WWN | Yes | Not sure |
-
-These are the fireplaces you can control with one of these apps: MyFire, Trimline Fires, RAISfire,
-Gazco MyFire, Thermocet International, Fire Connects, ITALKERO Fires, Signi Fires, SAFIRE, attika
-Fire, Ortal Heating Solutions, Barbas Gas.
-
-The WiFi module must be connected to your network (set that up with the manufacturer's app) and
-Home Assistant must be able to reach it on TCP port 2000. Home Assistant 2024.12 or newer.
 
 ## Installation
 
