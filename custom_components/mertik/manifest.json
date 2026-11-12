@@ -16,5 +16,5 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/jkfran/mertik-fireplace-wifi-ha/issues",
   "requirements": [],
-  "version": "2.0.0"
+  "version": "1.1.0"
 }

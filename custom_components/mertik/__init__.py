@@ -129,7 +129,7 @@ def _learn_identity(
 ) -> None:
     """Remember the module's MAC address and name, and identify the entry by the MAC.
 
-    Entries made before 2.0 are identified by their IP address. The MAC address
+    Entries made before 1.1 are identified by their IP address. The MAC address
     is what lets the entry follow the module to a new address, and what tells
     this fireplace from another one that is given its address.
     """

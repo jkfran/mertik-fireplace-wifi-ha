@@ -89,7 +89,7 @@ class MertikConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> bool:
         """Whether an entry already covers the fireplace at an address.
 
-        Entries made before 2.0 are known by their address alone. An entry that
+        Entries made before 1.1 are known by their address alone. An entry that
         knows its MAC address only counts if this is its module: the address it
         has stored may have gone to another fireplace since.
         """

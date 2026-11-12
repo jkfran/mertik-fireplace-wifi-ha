@@ -213,7 +213,7 @@ and attach the diagnostics, which you download from the integration's page (**â‹
 diagnostics**). They hold the last status frame of your fireplace, which is what is needed to see
 what it reports. The IP and MAC addresses are removed.
 
-## Upgrading from 1.x
+## Upgrading from 1.0
 
 Your entities keep their IDs, names and history. What changes:
 

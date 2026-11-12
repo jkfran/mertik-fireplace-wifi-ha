@@ -15,7 +15,7 @@ from custom_components.mertik.const import CONF_MAC, CONF_MODEL, DOMAIN
 from .conftest import HOST, MAC, MODEL, NAME, Network, entity_id, fireplace_device
 from .fakes import FakeFireplace
 
-# Unique ID keys of the entities, by platform. The first five existed before 2.0
+# Unique ID keys of the entities, by platform. The first five existed before 1.1
 # and must never change: the unique ID is what keeps a user's entity IDs,
 # history and automations attached.
 LEGACY_KEYS = {
@@ -110,10 +110,10 @@ async def test_entity_ids_and_names(hass: HomeAssistant, entry, coordinator) -> 
         assert hass.states.get(found).name == expected_name
 
 
-async def test_entities_from_version_1_keep_their_entity_ids(
+async def test_entities_from_1_0_keep_their_entity_ids(
     hass: HomeAssistant, entry, fire: FakeFireplace
 ) -> None:
-    """An upgrade attaches to the entities a 1.x install registered."""
+    """An upgrade attaches to the entities a 1.0 install registered."""
     registry = er.async_get(hass)
     old_ids = {
         ("switch", "OnOff"): "switch.fireplace",
@@ -185,10 +185,10 @@ async def test_setup_does_not_take_over_another_fireplace(
     assert entry.data[CONF_HOST] == HOST
 
 
-async def test_entry_from_version_1_is_identified_by_mac(
+async def test_entry_from_1_0_is_identified_by_mac(
     hass: HomeAssistant, network: Network
 ) -> None:
-    """Entries made before 2.0 have the IP address as unique ID and no MAC."""
+    """Entries made before 1.1 have the IP address as unique ID and no MAC."""
     network.add(HOST)
     old = MockConfigEntry(
         domain=DOMAIN,

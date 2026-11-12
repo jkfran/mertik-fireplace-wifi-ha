@@ -54,8 +54,8 @@ async def start_reconfigure_flow(hass: HomeAssistant, entry: MockConfigEntry) ->
     )
 
 
-def version_1_entry(hass: HomeAssistant) -> MockConfigEntry:
-    """An entry as versions before 2.0 made it: known by its address only."""
+def entry_from_1_0(hass: HomeAssistant) -> MockConfigEntry:
+    """An entry as versions before 1.1 made it: known by its address only."""
     entry = MockConfigEntry(
         domain=DOMAIN, title=NAME, unique_id=HOST, data={CONF_NAME: NAME, CONF_HOST: HOST}
     )
@@ -234,12 +234,12 @@ async def test_user_flow_adds_a_new_fireplace_at_an_address_an_old_one_had(
     assert entry.data[CONF_MAC] == MAC
 
 
-async def test_user_flow_does_not_duplicate_a_version_1_entry(
+async def test_user_flow_does_not_duplicate_an_entry_from_1_0(
     hass: HomeAssistant, network: Network
 ) -> None:
-    """Before its first start on 2.0 such an entry is only known by its address."""
+    """Before its first start on 1.1 such an entry is only known by its address."""
     network.add(HOST)
-    version_1_entry(hass)
+    entry_from_1_0(hass)
 
     result = await start_user_flow(hass)
     result = await hass.config_entries.flow.async_configure(
@@ -310,12 +310,12 @@ async def test_reconfigure_cannot_connect(
     assert entry.data[CONF_HOST] == HOST
 
 
-async def test_reconfigure_gives_a_version_1_entry_its_identity(
+async def test_reconfigure_gives_an_entry_from_1_0_its_identity(
     hass: HomeAssistant, network: Network
 ) -> None:
     """The module moved before the entry ever learned its MAC address."""
     network.add(OTHER_HOST)
-    entry = version_1_entry(hass)
+    entry = entry_from_1_0(hass)
 
     result = await start_reconfigure_flow(hass, entry)
     result = await hass.config_entries.flow.async_configure(
@@ -334,7 +334,7 @@ async def test_reconfigure_of_an_entry_known_by_address_only(
     hass: HomeAssistant, network: Network
 ) -> None:
     network.add(OTHER_HOST, mac=None)
-    entry = version_1_entry(hass)
+    entry = entry_from_1_0(hass)
 
     result = await start_reconfigure_flow(hass, entry)
     result = await hass.config_entries.flow.async_configure(
@@ -350,7 +350,7 @@ async def test_reconfigure_of_an_entry_known_by_address_only(
 async def test_reconfigure_does_not_point_two_entries_at_one_fireplace(
     hass: HomeAssistant, entry, coordinator, network: Network
 ) -> None:
-    """A version 1 entry cannot take the address of a fireplace set up already."""
+    """An entry from 1.0 cannot take the address of a fireplace set up already."""
     old = MockConfigEntry(
         domain=DOMAIN,
         title="Old",

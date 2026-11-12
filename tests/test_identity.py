@@ -174,7 +174,7 @@ async def test_module_that_does_not_answer_the_question_is_trusted(
 async def test_entry_without_a_mac_address_works_by_address(
     hass: HomeAssistant, network: Network, clock: FakeClock
 ) -> None:
-    """Modules that ignore discovery are used as before 2.0."""
+    """Modules that ignore discovery are used as before 1.1."""
     box = network.add(HOST, mac=None)
     old = MockConfigEntry(
         domain=DOMAIN, title=NAME, unique_id=HOST, data={CONF_NAME: NAME, CONF_HOST: HOST}

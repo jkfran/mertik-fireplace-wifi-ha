@@ -28,7 +28,7 @@ class MertikEntity(CoordinatorEntity[MertikDataCoordinator]):
     """An entity of one fireplace.
 
     The unique ID is the config entry ID plus a fixed key. The keys of the
-    entities that existed before 2.0 must never change.
+    entities that existed before 1.1 must never change.
     """
 
     _attr_has_entity_name = True
