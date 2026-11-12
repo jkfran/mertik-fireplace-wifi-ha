@@ -64,7 +64,11 @@ class MertikThermostatEntity(MertikEntity, ClimateEntity, RestoreEntity):
         | ClimateEntityFeature.TURN_ON
         | ClimateEntityFeature.TURN_OFF
     )
+    # Home Assistant 2026.11 renamed the temperature members of climate entities
+    # to native_*. Both sets are defined here: versions before it read the old
+    # names, and where both exist the new ones are used, without a warning.
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_min_temp = THERMOSTAT_MIN_TEMPERATURE
     _attr_max_temp = THERMOSTAT_MAX_TEMPERATURE
     _attr_target_temperature_step = 0.5
@@ -114,15 +118,19 @@ class MertikThermostatEntity(MertikEntity, ClimateEntity, RestoreEntity):
         return HVACAction.OFF
 
     @property
-    def current_temperature(self) -> float | None:
+    def native_current_temperature(self) -> float | None:
         return self.coordinator.room_temperature
 
     @property
-    def target_temperature(self) -> float | None:
+    def native_target_temperature(self) -> float | None:
         target = self.coordinator.thermostat_target
         if target is None or not self.min_temp <= target <= self.max_temp:
             return None
         return target
+
+    # What the two are called before Home Assistant 2026.11.
+    current_temperature = native_current_temperature
+    target_temperature = native_target_temperature
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         if kwargs.get(ATTR_HVAC_MODE) == HVACMode.OFF:
@@ -139,5 +147,5 @@ class MertikThermostatEntity(MertikEntity, ClimateEntity, RestoreEntity):
             await self.coordinator.async_stop_thermostat()
             return
         await self.coordinator.async_set_thermostat(
-            self.target_temperature or DEFAULT_TARGET_TEMPERATURE
+            self.native_target_temperature or DEFAULT_TARGET_TEMPERATURE
         )
