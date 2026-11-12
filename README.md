@@ -62,8 +62,8 @@ The fireplace is remembered by the MAC address of its module, not by its IP addr
 - If the module gets a new address, Home Assistant follows it. If that ever fails, change the
   address by hand under the integration's **⋮ → Reconfigure**.
 - If the old address goes to another fireplace, that one is not controlled in this one's place. The
-  integration asks the module who it is before every ignition, whenever the connection comes back,
-  and every few minutes.
+  integration asks the module who it is before every ignition, before any other command unless it
+  asked in the last half minute, whenever the connection comes back, and every few minutes.
 - A fireplace cannot be added twice.
 
 Modules that do not answer the search work too, by their IP address alone; give those a fixed
@@ -80,11 +80,18 @@ turn the fireplace on and set the flame in one go.
 ignited during a shutdown or in the first seconds after it; Home Assistant tells you so instead of
 sending a command the fireplace would ignore.
 
-Turning off is never dropped. A fireplace that is igniting refuses commands; if you turn it off in
-that minute, the switch reads off at once and the command is sent again after every poll until the
-fireplace shuts down. The same happens when the fireplace could not be reached: the command goes out
-as soon as it answers again, for up to five minutes. After that Home Assistant gives up and logs an
-error.
+An off is not taken for done until the fireplace has been seen to obey. A fireplace that is
+igniting refuses commands; if you turn it off in that minute, the switch reads off at once and the
+command is sent again, every ten seconds at most, until the fireplace reports that it is shutting
+down or off. The same happens when the fireplace could not be reached, or acknowledged the command
+and burned on. While the WiFi module has no link to the fireplace, which is what an ignition looks
+like, Home Assistant waits for the link instead of sending into it. If the fireplace has still not
+turned off after five minutes, Home Assistant gives up and raises a repair that says so.
+
+Within those five minutes the off is carried out as soon as it can be, whatever happened at the
+fireplace in between. If it was out of reach, and someone turned it off and lit it again by hand
+meanwhile, it is turned off once more when it answers again. Turning it on in Home Assistant is what
+calls an owed off off.
 
 **Standby.** Setting Flame Height to 0 turns the main burner off and leaves the pilot on. The
 fireplace still counts as on, and any flame height brings the burner back without a new ignition.
@@ -107,9 +114,10 @@ handset reporting a temperature the thermostat refuses to start and points you t
 Home Assistant then regulates the flame itself: full flame when the room is a degree or more below
 the target, a low flame close to it, and down to the pilot once the room is warm enough. It changes
 the flame at most every two minutes. It goes down to the pilot when the sensor has been unavailable
-for five minutes, or has not reported anything for an hour: a sensor with a dead battery keeps
-showing its last value. Choosing eco or thermostat mode on the handset ends it, so that two
-regulators never work against each other.
+for five minutes, or has not reported anything for an hour and a half: a sensor with a dead battery
+keeps showing its last value. A sensor that only reports changes can trip this in a room that holds
+its temperature exactly; the flame comes back with its next report. Choosing eco or thermostat mode
+on the handset ends the regulating, so that two regulators never work against each other.
 
 Either way:
 
@@ -130,9 +138,10 @@ This integration controls a gas appliance.
 - The ignite command only goes to a fireplace whose status was read a moment before and says off.
   It is never sent twice: once it has left, the fireplace counts as igniting for a minute, even if
   no answer came back.
-- The fireplace switch never becomes unavailable, because Home Assistant does not pass commands on
-  to unavailable entities. While the fireplace cannot be reached it reads *unknown*, and turning it
-  off still works as described above.
+- The fireplace switch does not become unavailable when the fireplace stops answering, because
+  Home Assistant does not pass commands on to unavailable entities. It reads *unknown*, and turning
+  it off still works as described above. The exception is a start of Home Assistant during which
+  the fireplace cannot be reached at all: until it can, the integration has no entities to show.
 - While the fireplace ignites or shuts down, nothing but "off" is sent to it.
 - Think about who and what can reach that switch: voice assistants, dashboards on shared tablets,
   automations. Consider an automation that turns the fireplace off after a few hours.
@@ -149,6 +158,11 @@ the handset, or switching the fireplace's power off and on, usually brings the l
 
 **You replaced the WiFi module.** A module with another MAC address is another fireplace to the
 integration. Remove the fireplace from Home Assistant and add it again.
+
+**A repair says the fireplace did not turn off.** Home Assistant sent the command for five
+minutes and the fireplace kept burning. Turn it off with the handset and look for the cause: the
+receiver's batteries, or the WiFi module's link to it. The repair goes away when the fireplace is
+off.
 
 **Ambient Temperature is unknown.** No handset is reporting to the fireplace (the app shows F44).
 The *Remote* sensor tells you.

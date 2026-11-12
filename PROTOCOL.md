@@ -54,8 +54,7 @@ reply:    STX  <header, 10 chars>  <command id, 2 chars>  <payload>  ETX
 - One read can hold several frames or part of one. Split on STX and ETX, drop anything before an STX,
   and take the newest status frame. **D**
 - A control command is acknowledged with a frame holding the header and the command id. The
-  acknowledgement can arrive after a status frame. **G** This integration also takes a status frame
-  alone as the answer, in case a module sends no acknowledgement.
+  acknowledgement can arrive after a status frame. **G**
 - A reply with id `E1` (seen as `…E101`) means the module has no radio link to the receiver in the
   fireplace. The vendor app shows this as fault F43. **G**
 
@@ -144,9 +143,9 @@ In this order: **D**
 4. Burner output above `40`: **on**. Otherwise **standby** (pilot only).
 
 The receiver bit `0x8000` drops for 20 to 30 seconds during every ignition and shutdown, and the
-frames sent meanwhile are unreliable: the pilot bit and the burner output come and go. **D** In
-every such frame measured the igniting bit (`021A`, `001B`, `001D`) or the shutting-down bit
-(`0183`, `01C7`) was still set. **D G**
+frames sent meanwhile are unreliable: the pilot bit and the burner output come and go. **D** Most
+such frames measured still had the igniting bit (`021A`, `001B`, `001D`) or the shutting-down bit
+(`0183`, `01C7`). **D G** Two seen late in an ignition, `028A` and `008A`, had neither. **D**
 
 What this integration makes of that:
 
@@ -162,6 +161,12 @@ What this integration makes of that:
 - A **shutdown** counts as under way for 20 seconds after an acknowledged off command, and the
   count starts again with every frame that lacks the receiver bit or has the shutting-down bit.
   A frame with the receiver bit that reads off ends it.
+- Frames without the receiver bit cannot keep either going for ever: an ignition ends at the latest
+  180 seconds after its last certain sign (the command, or a frame with both the receiver and the
+  igniting bit), a shutdown 90 seconds after the acknowledged command.
+- An acknowledged off does not end an ignition that is under way. The receiver may have ignored
+  it, and "off" is also what it reports between two attempts; only the ignition's time running out
+  settles it.
 - Once the receiver bit has been missing for 45 seconds, or the box has answered `E101` for that
   long, the link counts as lost, whatever the reason.
 
@@ -221,7 +226,11 @@ Status requests are not control commands and can be sent at any time.
   to the connection the fireplace counts as igniting, also if no acknowledgement or an `E101` comes
   back. The command may have arrived all the same, and a stray `E101` can precede the real answer.
 - **Off** always, whatever the state and the receiver bit say: turning off must not depend on a
-  reading being right. If it is not acknowledged it is sent again after every poll.
+  reading being right. It counts as obeyed only when a frame with the receiver bit, read after the
+  command, has the shutting-down bit, or reads off with no ignition under way and at least 20
+  seconds after the command (an ignition started with the handset a moment before shows late).
+  Until then the command is sent again after a poll, at most every 10 seconds, for 5 minutes. It is
+  not repeated into a missing receiver bit, unless the bit has been missing for 45 seconds.
 - **Burner output, secondary burner, eco, thermostat** only while the fireplace reads on or standby.
 - **Light and manual mode** not while it ignites or shuts down.
 - Nothing but off while the receiver bit is missing: the box refuses it then, and commands sent at
@@ -230,8 +239,10 @@ Status requests are not control commands and can be sent at any time.
 The state is looked at once the command has its turn on the line, so a flame command cannot slip in
 behind an off that was on its way.
 
-An `E101` counts as the answer only if no acknowledgement follows within a second, and it outranks a
-status frame: a box that pushes its status must not make a refused command look carried out.
+An `E101` counts as the answer only if no acknowledgement follows within a second. A status frame
+is never an answer to a command: boxes push those unasked, and one must not make a refused command
+look carried out. A command that brought nothing but status frames in 3 seconds is taken as sent,
+in case there are boxes that do not acknowledge, but not as carried out.
 
 Every command except ignite sets an absolute state, so sending it twice does no harm.
 
