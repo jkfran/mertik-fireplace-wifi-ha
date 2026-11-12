@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable
 import logging
 import math
@@ -15,6 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .const import (
@@ -25,6 +25,7 @@ from .const import (
     OPTIMISTIC_SECONDS,
     PENDING_TIMEOUT_SECONDS,
     REIGNITE_DELAY_SECONDS,
+    SENSOR_STALE_SECONDS,
     UPDATE_INTERVAL,
 )
 from .discovery import discover_host
@@ -40,6 +41,7 @@ from .mertik import (
     Mertik,
     MertikError,
     MertikReceiverError,
+    MertikStateError,
 )
 from .thermostat import FLAME_HEIGHT, ThermostatState
 
@@ -48,6 +50,14 @@ _LOGGER = logging.getLogger(__name__)
 type MertikConfigEntry = ConfigEntry[MertikDataCoordinator]
 
 _PILOT_STATES = (STATE_ON, STATE_STANDBY)
+# The order commands kept during an ignition are sent in. Secondary burner
+# before flame height: it is refused while the valve moves to a new flame.
+_PENDING_ORDER = ("aux", "flame_height", "light", "mode", "thermostat")
+
+
+def issue_id(entry: ConfigEntry) -> str:
+    """The repair raised when the box loses its link to the receiver."""
+    return f"receiver_lost_{entry.entry_id}"
 
 
 class MertikDataCoordinator(DataUpdateCoordinator[None]):
@@ -76,7 +86,17 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         # Commands given while the fireplace was lighting, sent once it is lit.
         self._pending: dict[str, Any] = {}
         self._pending_since: float | None = None
-        self._pending_task: asyncio.Task[None] | None = None
+        # Counts the times the fireplace was told to turn off: commands that
+        # were waiting when that happened must not be sent after it.
+        self._generation = 0
+        self._follow_up_running = False
+        # The fireplace is being turned on: its state is checked, then the
+        # ignite command sent. While the command is on its way the fireplace
+        # already counts as igniting.
+        self._turning_on = False
+        self._ignite_in_flight = False
+        # The fireplace was told to turn off and has not been seen to obey.
+        self._off_wanted_since: float | None = None
         self._off_since: float | None = None
         self._last_state: str | None = mertik.state
         # Setting up has just made sure the module is this fireplace.
@@ -84,37 +104,75 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         self._reload_scheduled = False
         self.thermostat = ThermostatState()
 
+    # --- What a reload has to keep ---------------------------------------------------
+
+    def memory(self) -> dict[str, Any] | None:
+        """The waits in force, for the coordinator that replaces this one.
+
+        A reload must not make it possible to ignite twice in a row, or to
+        forget that the fireplace was told to turn off. Nothing is handed on
+        when the last status came from another fireplace at this address.
+        """
+        if self._reload_scheduled:
+            return None
+        return {
+            "timing": self.mertik.timing(),
+            "off_since": self._off_since,
+            "off_wanted_since": self._off_wanted_since,
+        }
+
+    def restore(self, memory: dict[str, Any]) -> None:
+        """Take over from the coordinator this one replaces (same clock)."""
+        self.mertik.restore_timing(memory.get("timing") or {})
+        self._off_since = memory.get("off_since")
+        self._off_wanted_since = memory.get("off_wanted_since")
+        self._last_state = self.mertik.state
+
     # --- State ---------------------------------------------------------------------
 
     @property
     def available(self) -> bool:
         """The fireplace answers and the box still has its link to the receiver."""
-        return self.last_update_success and not self.mertik.receiver_lost
+        return (
+            self.last_update_success
+            and self.mertik.status is not None
+            and not self.mertik.receiver_lost
+        )
 
     @property
     def state(self) -> str | None:
+        if self._ignite_in_flight:
+            return STATE_IGNITING
         return self.mertik.state
+
+    @property
+    def _lighting(self) -> bool:
+        """Commands given now wait for the fire instead of being sent."""
+        return self._turning_on or self.state == STATE_IGNITING
 
     @property
     def is_on(self) -> bool:
         """On, in standby or lighting: the fireplace has been turned on."""
-        return self.mertik.is_on
+        if self._off_wanted_since is not None:
+            # Told to turn off; it will be as soon as it takes the command.
+            return False
+        return self.state in (STATE_ON, STATE_STANDBY, STATE_IGNITING)
 
     @property
     def is_pilot_on(self) -> bool:
-        return self.mertik.is_pilot_on
+        return self.state in _PILOT_STATES
 
     @property
     def is_burning(self) -> bool:
-        return self.mertik.is_burning
+        return self.state == STATE_ON
 
     @property
     def is_igniting(self) -> bool:
-        return self.mertik.is_igniting
+        return self.state == STATE_IGNITING
 
     @property
     def is_shutting_down(self) -> bool:
-        return self.mertik.is_shutting_down
+        return self.state == STATE_SHUTTING_DOWN
 
     def _shown(self, key: str, reported: Any) -> Any:
         """A requested value while it is fresh, otherwise the reported one."""
@@ -148,16 +206,22 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
 
     @property
     def is_light_on(self) -> bool:
+        if "light" in self._pending:
+            return self._pending["light"][0]
         return self._shown("light", self.mertik.is_light_on)
 
     @property
     def light_brightness(self) -> int:
         if not self.is_light_on:
             return 0
+        if "light" in self._pending and self._pending["light"][1] is not None:
+            return self._pending["light"][1]
         return self._shown("brightness", self.mertik.light_brightness)
 
     @property
     def mode(self) -> str | None:
+        if "mode" in self._pending:
+            return self._pending["mode"]
         return self._shown("mode", self.mertik.mode)
 
     @property
@@ -179,7 +243,7 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
 
     @property
     def sensor_temperature(self) -> float | None:
-        """Reading of that sensor in Celsius, None while it has none."""
+        """Reading of that sensor in Celsius, None while it has none to trust."""
         if (entity_id := self.temperature_sensor) is None:
             return None
         if (state := self.hass.states.get(entity_id)) is None:
@@ -189,6 +253,11 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         except ValueError:
             return None
         if not math.isfinite(value):
+            return None
+        # A sensor whose battery died keeps its last value for ever. One that
+        # has not reported for this long is not heated on.
+        age = dt_util.utcnow() - state.last_reported
+        if age.total_seconds() > SENSOR_STALE_SECONDS:
             return None
         if state.attributes.get(ATTR_UNIT_OF_MEASUREMENT) == UnitOfTemperature.FAHRENHEIT:
             value = TemperatureConverter.convert(
@@ -207,6 +276,8 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
     def is_thermostat_on(self) -> bool:
         if self.temperature_sensor is not None:
             return self.thermostat.active or "thermostat" in self._pending
+        if "thermostat" in self._pending:
+            return True
         return self.mode == MODE_THERMOSTAT and self.is_pilot_on
 
     @property
@@ -265,65 +336,105 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
                 self._off_since = now
             self._last_state = state
         if state in (STATE_OFF, STATE_SHUTTING_DOWN):
-            self._pending.clear()
-            self._pending_since = None
+            if not self._turning_on:
+                self._drop_pending("the fireplace is not lit any more")
             # The thermostat ends with the fire; it never lights it again.
             self.thermostat.active = False
+            self._off_wanted_since = None
         if self.temperature_sensor is None:
             # Without a sensor the fireplace's own thermostat is the one in use.
             self.thermostat.active = False
         self._update_issues()
-        if self._pending_task is None or self._pending_task.done():
-            if self._pending or self.thermostat.active:
-                self._pending_task = self.config_entry.async_create_background_task(
-                    self.hass, self._async_follow_up(), f"{DOMAIN} follow-up"
-                )
+        if self._follow_up_running:
+            return
+        if self._pending or self.thermostat.active or self._off_wanted_since is not None:
+            # Set before the task exists: it may run its first steps at once.
+            self._follow_up_running = True
+            self.config_entry.async_create_background_task(
+                self.hass, self._async_follow_up(), f"{DOMAIN} follow-up"
+            )
 
     def _update_issues(self) -> None:
-        issue_id = f"receiver_lost_{self.config_entry.entry_id}"
         if self.mertik.receiver_lost:
             ir.async_create_issue(
                 self.hass,
                 DOMAIN,
-                issue_id,
+                issue_id(self.config_entry),
                 is_fixable=False,
                 severity=ir.IssueSeverity.WARNING,
                 translation_key="receiver_lost",
                 translation_placeholders={"name": self.config_entry.title},
             )
         else:
-            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id(self.config_entry))
 
     async def _async_follow_up(self) -> None:
-        """Send what was asked for during ignition, then let the thermostat act."""
+        """Turn off if that is still owed, send what waited for the fire, regulate."""
         try:
+            await self._async_send_wanted_off()
             await self._async_send_pending()
             await self._async_run_thermostat()
         except HomeAssistantError as err:
             _LOGGER.warning("%s: %s", self.name, err)
+        except Exception:  # noqa: BLE001 (a background task must not die unseen)
+            _LOGGER.exception("%s: unexpected error while following up", self.name)
+        finally:
+            self._follow_up_running = False
+
+    async def _async_send_wanted_off(self) -> None:
+        """Send the off command again until the fireplace has taken it."""
+        if self._off_wanted_since is None:
+            return
+        if self._clock() - self._off_wanted_since > PENDING_TIMEOUT_SECONDS:
+            self._off_wanted_since = None
+            _LOGGER.error(
+                "%s did not take the command to turn off within %d minutes. "
+                "Check the fireplace",
+                self.name,
+                PENDING_TIMEOUT_SECONDS // 60,
+            )
+            self.async_update_listeners()
+            return
+        if self.mertik.link_down and not self.mertik.receiver_lost:
+            # The receiver is busy (an ignition looks like this) and the box
+            # would refuse. The poll that shows the link again sends it.
+            return
+        try:
+            await self._async_send(self.mertik.guard_flame_off)
+        except HomeAssistantError as err:
+            _LOGGER.debug("%s: still to be turned off (%s)", self.name, err)
+            return
+        await self._async_refresh_after_command()
 
     async def _async_send_pending(self) -> None:
         if not self._pending:
             return
         now = self._clock()
         if self._pending_since is not None and now - self._pending_since > PENDING_TIMEOUT_SECONDS:
-            _LOGGER.warning("%s did not light in time; dropping %s", self.name, self._pending)
-            self._pending.clear()
+            self._drop_pending("the fireplace did not light in time")
             return
         if self.state not in _PILOT_STATES:
             return
+        generation = self._generation
         pending, self._pending = self._pending, {}
         self._pending_since = None
-        # Secondary burner before flame height: an aux command sent while the valve
-        # moves is refused.
-        if "aux" in pending:
-            await self.async_set_aux(pending["aux"])
-        if "flame_height" in pending:
-            await self.async_set_flame_height(pending["flame_height"])
-        if "mode" in pending:
-            await self.async_set_mode(pending["mode"])
-        if "thermostat" in pending:
-            await self.async_set_thermostat(pending["thermostat"])
+        for key in _PENDING_ORDER:
+            if key not in pending:
+                continue
+            if generation != self._generation:
+                # Turned off in the meantime: nothing more is sent.
+                return
+            value = pending[key]
+            if key == "aux":
+                await self.async_set_aux(value)
+            elif key == "flame_height":
+                await self.async_set_flame_height(value)
+            elif key == "light":
+                await self.async_set_light(*value)
+            elif key == "mode":
+                await self.async_set_mode(value)
+            else:
+                await self.async_set_thermostat(value)
 
     def _remember(self, key: str, value: Any) -> None:
         """Keep a command for when the fireplace is lit."""
@@ -332,11 +443,22 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         self._pending[key] = value
         self.async_update_listeners()
 
+    def _drop_pending(self, reason: str) -> None:
+        if self._pending:
+            _LOGGER.info(
+                "%s: not sending %s, %s", self.name, sorted(self._pending), reason
+            )
+        self._pending.clear()
+        self._pending_since = None
+
     # --- Commands ------------------------------------------------------------------
 
     async def _async_send(self, func: Callable[..., None], *args: Any) -> None:
         try:
             await self.hass.async_add_executor_job(func, *args)
+        except MertikStateError as err:
+            # The fireplace changed state between the request and its turn.
+            raise self._state_error(err.state) from err
         except MertikReceiverError as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN, translation_key="no_receiver"
@@ -347,6 +469,19 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
                 translation_key="cannot_reach",
                 translation_placeholders={"error": str(err)},
             ) from err
+
+    @staticmethod
+    def _state_error(state: str | None) -> HomeAssistantError:
+        """The error for a command the fireplace cannot take in its state."""
+        if state is None:
+            return HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="no_receiver"
+            )
+        key = {
+            STATE_SHUTTING_DOWN: "shutting_down",
+            STATE_IGNITING: "igniting",
+        }.get(state, "fireplace_off")
+        return ServiceValidationError(translation_domain=DOMAIN, translation_key=key)
 
     async def _async_refresh_after_command(self) -> None:
         """Read the status a command leaves behind and show it."""
@@ -361,39 +496,86 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         self.async_set_updated_data(None)
 
     def _require_lit(self) -> None:
-        if self.state not in _PILOT_STATES:
-            raise ServiceValidationError(
-                translation_domain=DOMAIN, translation_key="fireplace_off"
-            )
+        if (state := self.state) not in _PILOT_STATES:
+            raise self._state_error(state)
 
     async def async_turn_on(self) -> None:
-        """Ignite the fireplace, unless it is on already."""
-        state = self.state
-        if state in (STATE_ON, STATE_STANDBY, STATE_IGNITING):
+        """Ignite the fireplace, unless it is on already.
+
+        The ignite command only ever goes to a fireplace that has just been
+        seen to be off, and to the right one.
+        """
+        if self._turning_on:
             return
-        just_went_off = (
-            self._off_since is not None
-            and self._clock() - self._off_since < REIGNITE_DELAY_SECONDS
-        )
-        if state == STATE_SHUTTING_DOWN or just_went_off:
-            raise ServiceValidationError(
-                translation_domain=DOMAIN, translation_key="shutting_down"
+        # From here on other commands wait for the fire, as during any ignition.
+        self._turning_on = True
+        try:
+            self._off_wanted_since = None
+            try:
+                await self.hass.async_add_executor_job(self.mertik.refresh_status)
+            except MertikError as err:
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN,
+                    translation_key="cannot_reach",
+                    translation_placeholders={"error": str(err)},
+                ) from err
+            # A shutdown that fell between two polls is taken note of here.
+            self._after_status()
+            state = self.state
+            if state in (STATE_ON, STATE_STANDBY, STATE_IGNITING):
+                return
+            if state is None or self.mertik.link_down:
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN, translation_key="no_receiver"
+                )
+            just_went_off = (
+                self._off_since is not None
+                and self._clock() - self._off_since < REIGNITE_DELAY_SECONDS
             )
-        # Never light a fire without knowing it is this one.
-        if await self._async_is_another_fireplace():
-            raise HomeAssistantError(
-                translation_domain=DOMAIN, translation_key="wrong_device"
-            )
-        await self._async_send(self.mertik.ignite_fireplace)
-        await self._async_refresh_after_command()
+            if state == STATE_SHUTTING_DOWN or just_went_off:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN, translation_key="shutting_down"
+                )
+            # Never light a fire without knowing it is this one.
+            if await self._async_is_another_fireplace():
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN, translation_key="wrong_device"
+                )
+            self._ignite_in_flight = True
+            try:
+                await self._async_send(self.mertik.ignite_fireplace)
+            finally:
+                self._ignite_in_flight = False
+                self._turning_on = False
+                await self._async_refresh_after_command()
+        finally:
+            self._turning_on = False
+            self.async_update_listeners()
 
     async def async_turn_off(self) -> None:
-        """Turn the fireplace off completely, pilot included."""
-        self._pending.clear()
-        self._pending_since = None
+        """Turn the fireplace off completely, pilot included.
+
+        The command is sent whatever the fireplace seems to be doing. If it is
+        not taken (a fireplace that is igniting refuses commands), it is sent
+        again after every poll until the fireplace is seen to shut down.
+        """
+        self._generation += 1
+        self._drop_pending("the fireplace was turned off")
         self.thermostat.active = False
         self._overlay.clear()
-        await self._async_send(self.mertik.guard_flame_off)
+        self._off_wanted_since = self._clock()
+        try:
+            await self._async_send(self.mertik.guard_flame_off)
+        except HomeAssistantError:
+            if self.mertik.state != STATE_IGNITING:
+                # Not expected, so the caller is told; it stays owed all the same.
+                self.async_update_listeners()
+                raise
+            _LOGGER.info(
+                "%s is busy igniting and did not take the command to turn off; "
+                "it is sent again until it does",
+                self.name,
+            )
         await self._async_refresh_after_command()
 
     async def async_set_flame_height(self, flame_height: int, *, by_thermostat: bool = False) -> None:
@@ -403,7 +585,7 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
             # A hand on the flame takes over from the thermostat.
             self.thermostat.active = False
             self._pending.pop("thermostat", None)
-        if self.state == STATE_IGNITING:
+        if self._lighting:
             self._remember("flame_height", flame_height)
             return
         self._require_lit()
@@ -413,7 +595,7 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
 
     async def async_set_aux(self, on: bool) -> None:
         """Enable or disable the secondary burner."""
-        if self.state == STATE_IGNITING:
+        if self._lighting:
             self._remember("aux", on)
             return
         if self.state not in _PILOT_STATES:
@@ -426,6 +608,10 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
 
     async def async_set_light(self, on: bool, brightness: int | None = None) -> None:
         """Switch the light, optionally to a brightness of 1-255."""
+        if self._lighting:
+            # The receiver is left alone while it lights the fire.
+            self._remember("light", (on, brightness))
+            return
         if not on:
             await self._async_send(self.mertik.light_off)
             self._expect("light", False)
@@ -440,13 +626,22 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         self._expect("light", True)
         await self._async_refresh_after_command()
 
+    def _require_handset(self) -> None:
+        """The fireplace's own thermostat measures with the handset."""
+        if self.ambient_temperature is None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN, translation_key="no_handset"
+            )
+
     async def async_set_mode(self, mode: str) -> None:
         """Switch between manual, eco and the fireplace's own thermostat mode."""
         if mode not in (MODE_MANUAL, MODE_ECO, MODE_THERMOSTAT):
             raise ServiceValidationError(f"Unknown mode: {mode}")
+        if mode == MODE_THERMOSTAT:
+            self._require_handset()
         self.thermostat.active = False
         self._pending.pop("thermostat", None)
-        if self.state == STATE_IGNITING:
+        if self._lighting:
             self._remember("mode", mode)
             return
         if mode == MODE_MANUAL:
@@ -471,8 +666,10 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         and Home Assistant regulating, a target given while the fireplace is off
         is just kept for later.
         """
+        if self.temperature_sensor is None:
+            self._require_handset()
         self.thermostat.target = temperature
-        if self.state == STATE_IGNITING:
+        if self._lighting:
             self._remember("thermostat", temperature)
             return
         if (
@@ -507,13 +704,26 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
             self.thermostat.active = False
             self.async_update_listeners()
             return
-        await self._async_send(self.mertik.set_manual)
-        self._expect("mode", MODE_MANUAL)
-        await self._async_refresh_after_command()
+        await self.async_set_mode(MODE_MANUAL)
 
     async def _async_run_thermostat(self) -> None:
         """Let the Home Assistant thermostat move the flame if it wants to."""
         if not self.thermostat.active or self.state not in _PILOT_STATES:
+            return
+        if self.mertik.link_down:
+            # What the box reports cannot be trusted right now, and it would
+            # refuse the command.
+            return
+        if self.mode in (MODE_THERMOSTAT, MODE_ECO):
+            # Someone chose one of the fireplace's own modes on the handset.
+            # Two regulators on one flame would fight: the handset wins.
+            self.thermostat.active = False
+            _LOGGER.info(
+                "%s was put in %s mode on the handset; the thermostat steps back",
+                self.name,
+                self.mode,
+            )
+            self.async_update_listeners()
             return
         now = self._clock()
         was_lost = self.thermostat.sensor_lost

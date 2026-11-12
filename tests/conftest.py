@@ -160,6 +160,19 @@ async def poll(hass: HomeAssistant, coordinator: MertikDataCoordinator) -> None:
     await hass.async_block_till_done(wait_background_tasks=True)
 
 
+async def settled(
+    hass: HomeAssistant, coordinator: MertikDataCoordinator, clock: FakeClock
+) -> None:
+    """Poll a fire that was lit behind Home Assistant's back, and let it settle.
+
+    A fire found burning where it was off a moment ago was lit with the handset;
+    like any fresh ignition it only counts as on after a minute.
+    """
+    await poll(hass, coordinator)
+    clock.advance(61)
+    await poll(hass, coordinator)
+
+
 def entity_id(hass: HomeAssistant, entry: MockConfigEntry, platform: str, key: str) -> str:
     """The entity ID behind one of the integration's unique ID keys."""
     found = er.async_get(hass).async_get_entity_id(

@@ -7,11 +7,11 @@ import logging
 from homeassistant.const import CONF_HOST, Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, issue_registry as ir
 from homeassistant.helpers.device_registry import DeviceEntry
 
 from .const import CONF_MAC, CONF_MODEL, DOMAIN
-from .coordinator import MertikConfigEntry, MertikDataCoordinator
+from .coordinator import MertikConfigEntry, MertikDataCoordinator, issue_id
 from .discovery import Module, discover, discover_host
 from .mertik import Mertik, MertikError
 
@@ -71,14 +71,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: MertikConfigEntry) -> bo
     _learn_identity(hass, entry, module)
     await hass.async_add_executor_job(mertik.read_device_info)
 
-    entry.runtime_data = MertikDataCoordinator(hass, entry, mertik)
+    coordinator = MertikDataCoordinator(hass, entry, mertik)
+    # After a reload: an ignition or a shutdown may be under way.
+    if (memory := hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)) is not None:
+        coordinator.restore(memory)
+    entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: MertikConfigEntry) -> bool:
     """Unload a fireplace."""
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+        return False
+    # What the next setup of this entry must know: without it a reload would
+    # allow a second ignite into an ignition, or right after a shutdown.
+    if (memory := entry.runtime_data.memory()) is not None:
+        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = memory
+    ir.async_delete_issue(hass, DOMAIN, issue_id(entry))
+    return True
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: MertikConfigEntry) -> None:
+    """Forget a fireplace that is removed."""
+    hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
 
 
 async def async_remove_config_entry_device(

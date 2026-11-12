@@ -15,10 +15,15 @@ TO_REDACT = {CONF_HOST, CONF_MAC}
 REDACTED = "**REDACTED**"
 
 
+WITHHELD = "withheld: it holds the MAC address, which this entry does not know"
+
+
 def _without_mac(text: str | None, mac: str | None) -> str | None:
-    """Remove the MAC address from a raw reply."""
-    if text is None or mac is None:
-        return text
+    """Remove the MAC address from a raw reply, or keep the reply back."""
+    if text is None:
+        return None
+    if mac is None:
+        return WITHHELD
     compact = mac.replace(":", "")
     for variant in (compact.upper(), compact.lower()):
         text = text.replace(variant, REDACTED)

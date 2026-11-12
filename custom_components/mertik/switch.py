@@ -27,6 +27,11 @@ class MertikOnOffSwitchEntity(MertikEntity, SwitchEntity):
     """The fireplace: on ignites it, off turns it off completely.
 
     It reads on whenever the pilot burns, so also in standby and while igniting.
+
+    Unlike the other entities it never becomes unavailable: Home Assistant does
+    not pass a command on to an unavailable entity, and turning a fire off must
+    not be dropped because the fireplace could not be reached a moment ago.
+    While nothing is known about the fireplace it reads unknown.
     """
 
     _attr_name = None
@@ -36,7 +41,13 @@ class MertikOnOffSwitchEntity(MertikEntity, SwitchEntity):
         super().__init__(coordinator, "OnOff")
 
     @property
-    def is_on(self) -> bool:
+    def available(self) -> bool:
+        return True
+
+    @property
+    def is_on(self) -> bool | None:
+        if not self.coordinator.available:
+            return None
         return self.coordinator.is_on
 
     async def async_turn_on(self, **kwargs: Any) -> None:

@@ -10,7 +10,7 @@ from homeassistant.helpers import entity_registry as er
 
 from custom_components.mertik.const import DOMAIN
 
-from .conftest import HOST, entity_id, poll
+from .conftest import HOST, entity_id, poll, settled
 from .fakes import FakeBox, FakeClock, FakeFireplace
 
 
@@ -77,7 +77,7 @@ async def test_status_sensor_follows_the_fire(
 
     fire.lit(12)
     clock.advance(61)
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
     assert hass.states.get(status).state == "on"
 
     fire.standby()
@@ -94,12 +94,13 @@ async def test_status_sensor_follows_the_fire(
 
 
 async def test_pilot_flame(
-    hass: HomeAssistant, entry, coordinator, fire: FakeFireplace
+    hass: HomeAssistant, entry, coordinator, fire: FakeFireplace,
+    clock: FakeClock,
 ) -> None:
     assert state_of(hass, entry, "binary_sensor", "PilotFlame") == "off"
 
     fire.standby()
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
     assert state_of(hass, entry, "binary_sensor", "PilotFlame") == "on"
 
     fire.lit(7)

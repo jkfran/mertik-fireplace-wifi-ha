@@ -19,7 +19,8 @@
     },
     "error": {
       "cannot_connect": "Unable to connect to the fireplace. Please check the IP address and ensure the device is powered on.",
-      "wrong_device": "A different fireplace answers at that address."
+      "wrong_device": "A different fireplace answers at that address.",
+      "address_in_use": "A fireplace that is already set up has this address."
     },
     "abort": {
       "already_configured": "This fireplace is already configured.",
@@ -132,6 +133,12 @@
     },
     "wrong_device": {
       "message": "Another fireplace now answers at the address of this one. Nothing was sent to it; Home Assistant is looking for this fireplace again."
+    },
+    "igniting": {
+      "message": "The fireplace is igniting and does not take commands yet. Try again in a minute."
+    },
+    "no_handset": {
+      "message": "The fireplace's own thermostat measures the room with its handset, and no handset is reporting a temperature. Pick a temperature sensor in the options of the integration instead."
     }
   },
   "issues": {

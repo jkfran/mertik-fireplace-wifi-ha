@@ -7,7 +7,7 @@ import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
-from .conftest import call, entity_id, poll
+from .conftest import call, entity_id, poll, settled
 from .fakes import FakeBox, FakeClock, FakeFireplace
 
 
@@ -63,10 +63,11 @@ async def test_turn_on_does_not_ignite_a_fire_that_is_on(
     box: FakeBox,
     switch: str,
     flame: int,
+    clock: FakeClock,
 ) -> None:
     """A second ignite would restart the ignition of a burning fire."""
     fire.lit(flame)
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
     assert hass.states.get(switch).state == "on"
 
     await call(hass, "switch", "turn_on", switch)
@@ -90,9 +91,10 @@ async def test_turn_off(
     box: FakeBox,
     switch: str,
     status: str,
+    clock: FakeClock,
 ) -> None:
     fire.lit(12)
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
 
     await call(hass, "switch", "turn_off", switch)
 
@@ -115,7 +117,7 @@ async def test_off_shows_at_once_even_if_the_box_is_slow_to_report_it(
     status: str,
 ) -> None:
     fire.lit(12)
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
     box.on_command = None  # the box keeps reporting the fire as burning
 
     await call(hass, "switch", "turn_off", switch)
@@ -137,7 +139,7 @@ async def test_turn_on_is_refused_while_shutting_down_and_just_after(
 ) -> None:
     """The receiver ignores an ignition during a shutdown and right after it."""
     fire.lit(12)
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
     await call(hass, "switch", "turn_off", switch)
 
     with pytest.raises(ServiceValidationError) as error:
@@ -176,11 +178,13 @@ async def test_failed_ignition_ends_up_off(
     # The pilot does not catch: the box reports the fireplace off again.
     fire.off()
 
-    # Shortly after the command that is still read as the ignition starting.
+    # "Off" does not end an ignition: the receiver tries several times and
+    # reports off between two attempts. A minute without a sign of it does.
+    clock.advance(40)
     await poll(hass, coordinator)
     assert hass.states.get(status).state == "igniting"
 
-    clock.advance(31)
+    clock.advance(21)
     await poll(hass, coordinator)
     assert hass.states.get(status).state == "off"
     assert hass.states.get(switch).state == "off"
@@ -201,15 +205,16 @@ async def test_fire_lit_with_the_handset_is_followed(
 
     fire.lit(12)
     clock.advance(61)
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
     assert hass.states.get(status).state == "on"
 
 
 async def test_secondary_burner(
-    hass: HomeAssistant, coordinator, fire: FakeFireplace, box: FakeBox, aux: str
+    hass: HomeAssistant, coordinator, fire: FakeFireplace, box: FakeBox, aux: str,
+    clock: FakeClock,
 ) -> None:
     fire.lit(12)
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
     assert hass.states.get(aux).state == "off"
 
     await call(hass, "switch", "turn_on", aux)
@@ -246,7 +251,7 @@ async def test_secondary_burner_request_shows_until_the_box_reports_it(
     aux: str,
 ) -> None:
     fire.lit(12)
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
     box.on_command = None  # the box acknowledges, its status lags behind
 
     await call(hass, "switch", "turn_on", aux)
@@ -306,14 +311,14 @@ async def test_commands_waiting_for_the_fire_are_dropped_if_it_does_not_light(
     await call(hass, "number", "set_value", number, value=4)
 
     fire.off()
-    clock.advance(31)
+    clock.advance(61)
     await poll(hass, coordinator)
     assert float(hass.states.get(number).state) == 0
 
     # A fire lit later does not get the old request.
     fire.lit(12)
     clock.advance(600)
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
     assert box.commands == ["1A"]
     assert float(hass.states.get(number).state) == 12
 

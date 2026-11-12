@@ -19,7 +19,8 @@
     },
     "error": {
       "cannot_connect": "No se puede conectar con la chimenea. Comprueba la dirección IP y que el dispositivo está encendido.",
-      "wrong_device": "En esa dirección responde otra chimenea."
+      "wrong_device": "En esa dirección responde otra chimenea.",
+      "address_in_use": "Esta dirección pertenece a una chimenea que ya está configurada."
     },
     "abort": {
       "already_configured": "Esta chimenea ya está configurada.",
@@ -132,6 +133,12 @@
     },
     "wrong_device": {
       "message": "Ahora responde otra chimenea en la dirección de esta. No se le ha enviado nada; Home Assistant está buscando esta chimenea de nuevo."
+    },
+    "igniting": {
+      "message": "La chimenea se está encendiendo y todavía no acepta órdenes. Inténtalo de nuevo en un minuto."
+    },
+    "no_handset": {
+      "message": "El termostato propio de la chimenea mide la habitación con su mando, y ningún mando está enviando una temperatura. Elige en su lugar un sensor de temperatura en las opciones de la integración."
     }
   },
   "issues": {

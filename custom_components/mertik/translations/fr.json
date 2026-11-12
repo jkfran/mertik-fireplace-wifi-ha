@@ -19,7 +19,8 @@
     },
     "error": {
       "cannot_connect": "Impossible de se connecter au foyer. Veuillez vérifier l'adresse IP et vous assurer que l'appareil est allumé.",
-      "wrong_device": "Un autre foyer répond à cette adresse."
+      "wrong_device": "Un autre foyer répond à cette adresse.",
+      "address_in_use": "Cette adresse est celle d'un foyer déjà configuré."
     },
     "abort": {
       "already_configured": "Ce foyer est déjà configuré.",
@@ -132,6 +133,12 @@
     },
     "wrong_device": {
       "message": "Un autre foyer répond maintenant à l'adresse de celui-ci. Rien ne lui a été envoyé ; Home Assistant recherche de nouveau ce foyer."
+    },
+    "igniting": {
+      "message": "Le foyer est en cours d'allumage et n'accepte pas encore de commandes. Réessayez dans une minute."
+    },
+    "no_handset": {
+      "message": "Le thermostat du foyer mesure la pièce avec sa télécommande, et aucune télécommande ne transmet de température. Choisissez plutôt un capteur de température dans les options de l'intégration."
     }
   },
   "issues": {

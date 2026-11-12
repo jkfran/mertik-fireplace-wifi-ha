@@ -19,7 +19,8 @@
     },
     "error": {
       "cannot_connect": "Kan ikke oprette forbindelse til pejsen. Kontrollér IP-adressen, og sørg for, at enheden er tændt.",
-      "wrong_device": "En anden pejs svarer på den adresse."
+      "wrong_device": "En anden pejs svarer på den adresse.",
+      "address_in_use": "Denne adresse tilhører en pejs, der allerede er sat op."
     },
     "abort": {
       "already_configured": "Denne pejs er allerede konfigureret.",
@@ -132,6 +133,12 @@
     },
     "wrong_device": {
       "message": "En anden pejs svarer nu på denne pejs' adresse. Der er ikke sendt noget til den; Home Assistant leder efter denne pejs igen."
+    },
+    "igniting": {
+      "message": "Pejsen er ved at tænde og tager ikke imod kommandoer endnu. Prøv igen om et minut."
+    },
+    "no_handset": {
+      "message": "Pejsens egen termostat måler rumtemperaturen med fjernbetjeningen, og ingen fjernbetjening melder en temperatur. Vælg i stedet en temperatursensor i integrationens indstillinger."
     }
   },
   "issues": {

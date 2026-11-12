@@ -11,7 +11,12 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import CONF_HOST, CONF_NAME, STATE_UNAVAILABLE
+from homeassistant.const import (
+    CONF_HOST,
+    CONF_NAME,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
@@ -101,7 +106,7 @@ async def test_swap_is_noticed_when_the_connection_returns(
     switch = entity_id(hass, entry, "switch", "OnOff")
     box.fail_connects = 2
     await poll(hass, coordinator)
-    assert hass.states.get(switch).state == STATE_UNAVAILABLE
+    assert hass.states.get(switch).state == STATE_UNKNOWN
 
     network.swap(HOST, OTHER_HOST)
     FakeFireplace(other).lit(12)  # the other fireplace happens to be burning

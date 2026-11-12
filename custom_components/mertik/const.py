@@ -26,3 +26,6 @@ REIGNITE_DELAY_SECONDS = 15.0
 # fireplace (addresses get handed out again). It is also asked whenever the
 # connection comes back, and before every ignition.
 IDENTITY_CHECK_SECONDS = 300.0
+# A temperature sensor that has not reported for this long is not regulated on:
+# one whose battery died keeps showing its last value.
+SENSOR_STALE_SECONDS = 3600.0

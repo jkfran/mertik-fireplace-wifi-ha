@@ -6,20 +6,26 @@ import logging
 
 import pytest
 
-from homeassistant.const import STATE_UNAVAILABLE
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import issue_registry as ir
 
 from custom_components.mertik.const import DOMAIN
 
-from .conftest import call, entity_id, poll
+from .conftest import call, entity_id, poll, settled
 from .fakes import NO_RECEIVER, FakeBox, FakeClock, FakeFireplace, framed
 
 
 @pytest.fixture
 def switch(hass: HomeAssistant, entry, coordinator) -> str:
+    """The fireplace switch. It stays usable when the others are unavailable."""
     return entity_id(hass, entry, "switch", "OnOff")
+
+
+@pytest.fixture
+def status(hass: HomeAssistant, entry, coordinator) -> str:
+    return entity_id(hass, entry, "sensor", "Status")
 
 
 def issue(hass: HomeAssistant, entry) -> ir.IssueEntry | None:
@@ -27,11 +33,12 @@ def issue(hass: HomeAssistant, entry) -> ir.IssueEntry | None:
 
 
 async def test_unavailable_while_the_box_does_not_answer(
-    hass: HomeAssistant, coordinator, box: FakeBox, switch: str
+    hass: HomeAssistant, coordinator, box: FakeBox, switch: str, status: str
 ) -> None:
     box.fail_connects = 2  # the request and its one retry
     await poll(hass, coordinator)
-    assert hass.states.get(switch).state == STATE_UNAVAILABLE
+    assert hass.states.get(switch).state == STATE_UNKNOWN
+    assert hass.states.get(status).state == STATE_UNAVAILABLE
 
     await poll(hass, coordinator)
     assert hass.states.get(switch).state == "off"
@@ -73,10 +80,11 @@ async def test_lost_receiver_link_makes_the_fireplace_unavailable(
     fire: FakeFireplace,
     clock: FakeClock,
     switch: str,
+    status: str,
 ) -> None:
     """Without the link nothing the box says about the fire can be trusted."""
     fire.lit(12)
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
 
     fire.set(link=False, pilot=False, output=0x00)
     await poll(hass, coordinator)
@@ -85,7 +93,8 @@ async def test_lost_receiver_link_makes_the_fireplace_unavailable(
 
     clock.advance(46)
     await poll(hass, coordinator)
-    assert hass.states.get(switch).state == STATE_UNAVAILABLE
+    assert hass.states.get(switch).state == STATE_UNKNOWN
+    assert hass.states.get(status).state == STATE_UNAVAILABLE
     found = issue(hass, entry)
     assert found is not None
     assert found.translation_key == "receiver_lost"
@@ -107,6 +116,7 @@ async def test_box_answering_no_receiver_to_polls(
     box: FakeBox,
     clock: FakeClock,
     switch: str,
+    status: str,
 ) -> None:
     """Some boxes answer every request with E101 instead of clearing a bit."""
     box.no_receiver = True
@@ -117,7 +127,8 @@ async def test_box_answering_no_receiver_to_polls(
 
     clock.advance(46)
     await poll(hass, coordinator)
-    assert hass.states.get(switch).state == STATE_UNAVAILABLE
+    assert hass.states.get(switch).state == STATE_UNKNOWN
+    assert hass.states.get(status).state == STATE_UNAVAILABLE
     assert issue(hass, entry) is not None
 
     box.no_receiver = False
@@ -128,10 +139,11 @@ async def test_box_answering_no_receiver_to_polls(
 
 
 async def test_command_refused_for_lack_of_a_receiver(
-    hass: HomeAssistant, entry, coordinator, fire: FakeFireplace, box: FakeBox
+    hass: HomeAssistant, entry, coordinator, fire: FakeFireplace, box: FakeBox,
+    clock: FakeClock,
 ) -> None:
     fire.lit(12)
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
     box.no_receiver = True
 
     with pytest.raises(HomeAssistantError) as error:
@@ -151,10 +163,11 @@ async def test_command_refused_for_lack_of_a_receiver(
 
 
 async def test_command_to_an_unreachable_box(
-    hass: HomeAssistant, entry, coordinator, fire: FakeFireplace, box: FakeBox
+    hass: HomeAssistant, entry, coordinator, fire: FakeFireplace, box: FakeBox,
+    clock: FakeClock,
 ) -> None:
     fire.lit(12)
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
     box.fail_connects = 2
 
     with pytest.raises(HomeAssistantError) as error:
@@ -209,11 +222,12 @@ async def test_failure_of_a_waiting_command_is_logged_not_raised(
 
 
 async def test_status_read_after_a_command_may_fail(
-    hass: HomeAssistant, entry, coordinator, fire: FakeFireplace, box: FakeBox
+    hass: HomeAssistant, entry, coordinator, fire: FakeFireplace, box: FakeBox,
+    clock: FakeClock,
 ) -> None:
     """The command went through; a failed read right after it is not an error."""
     fire.lit(12)
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
     number = entity_id(hass, entry, "number", "FlameHeight")
     box.script["03"] = []
 
@@ -233,7 +247,7 @@ async def test_polls_keep_their_distance_from_commands(
 ) -> None:
     """Two control commands are at least two seconds apart; polls are free."""
     fire.lit(12)
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
     number = entity_id(hass, entry, "number", "FlameHeight")
 
     await call(hass, "number", "set_value", number, value=3)

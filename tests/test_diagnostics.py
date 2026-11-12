@@ -9,16 +9,16 @@ from homeassistant.core import HomeAssistant
 from custom_components.mertik.const import CONF_TEMPERATURE_SENSOR
 from custom_components.mertik.diagnostics import async_get_config_entry_diagnostics
 
-from .conftest import HOST, MAC, poll
-from .fakes import FakeBox, FakeFireplace
+from .conftest import HOST, MAC, settled
+from .fakes import FakeBox, FakeClock, FakeFireplace
 
 
 async def test_diagnostics(
-    hass: HomeAssistant, entry, coordinator, fire: FakeFireplace
+    hass: HomeAssistant, entry, coordinator, fire: FakeFireplace, clock: FakeClock
 ) -> None:
     fire.lit(5)
     fire.set(room=0x00D2, light=True, light_level=0xFB, aux=True)
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
 
     result = await async_get_config_entry_diagnostics(hass, entry)
 

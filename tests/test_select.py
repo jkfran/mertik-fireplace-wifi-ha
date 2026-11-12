@@ -7,7 +7,7 @@ import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
-from .conftest import call, entity_id, poll
+from .conftest import call, entity_id, poll, settled
 from .fakes import FakeBox, FakeClock, FakeFireplace
 
 
@@ -26,10 +26,11 @@ async def test_mode_follows_the_fireplace(
     select: str,
     character: str,
     option: str,
+    clock: FakeClock,
 ) -> None:
     fire.lit(12)
     fire.set(mode=character)
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
 
     state = hass.states.get(select)
     assert state.state == option
@@ -37,10 +38,11 @@ async def test_mode_follows_the_fireplace(
 
 
 async def test_select_eco_and_back(
-    hass: HomeAssistant, coordinator, fire: FakeFireplace, box: FakeBox, select: str
+    hass: HomeAssistant, coordinator, fire: FakeFireplace, box: FakeBox, select: str,
+    clock: FakeClock,
 ) -> None:
     fire.lit(12)
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
 
     await call(hass, "select", "select_option", select, option="eco")
     assert box.commands == ["B301"]
@@ -52,11 +54,12 @@ async def test_select_eco_and_back(
 
 
 async def test_select_thermostat_uses_the_fireplace_target(
-    hass: HomeAssistant, coordinator, fire: FakeFireplace, box: FakeBox, select: str
+    hass: HomeAssistant, coordinator, fire: FakeFireplace, box: FakeBox, select: str,
+    clock: FakeClock,
 ) -> None:
     fire.lit(12)
-    fire.set(target=0x00E6)  # 23.0
-    await poll(hass, coordinator)
+    fire.set(target=0x00E6, room=0x00D2)  # target 23.0; the handset reports 21.0
+    await settled(hass, coordinator, clock)
 
     await call(hass, "select", "select_option", select, option="thermostat")
 
@@ -66,8 +69,15 @@ async def test_select_thermostat_uses_the_fireplace_target(
 
 @pytest.mark.parametrize("option", ["eco", "thermostat"])
 async def test_eco_and_thermostat_need_a_fire(
-    hass: HomeAssistant, coordinator, box: FakeBox, select: str, option: str
+    hass: HomeAssistant,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    select: str,
+    option: str,
 ) -> None:
+    fire.set(room=0x00D2)
+    await poll(hass, coordinator)
     with pytest.raises(ServiceValidationError) as error:
         await call(hass, "select", "select_option", select, option=option)
 

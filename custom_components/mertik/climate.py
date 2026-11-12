@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.climate import (
@@ -14,7 +15,7 @@ from homeassistant.components.climate import (
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 
 from .coordinator import MertikConfigEntry
 from .entity import MertikEntity
@@ -22,6 +23,22 @@ from .mertik import THERMOSTAT_MAX_TEMPERATURE, THERMOSTAT_MIN_TEMPERATURE
 from .thermostat import DEFAULT_TARGET_TEMPERATURE
 
 PARALLEL_UPDATES = 1
+
+
+@dataclass
+class ThermostatMemory(ExtraStoredData):
+    """What the thermostat keeps across a restart.
+
+    The target is kept in Celsius. The entity's own state would not do: on an
+    installation that shows Fahrenheit it holds Fahrenheit, and when the
+    fireplace was unreachable at shutdown it holds nothing.
+    """
+
+    target: float
+    active: bool
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"target": self.target, "active": self.active}
 
 
 async def async_setup_entry(
@@ -58,19 +75,26 @@ class MertikThermostatEntity(MertikEntity, ClimateEntity, RestoreEntity):
     async def async_added_to_hass(self) -> None:
         """Bring back the target, and resume regulating a fire that is burning."""
         await super().async_added_to_hass()
-        if (last := await self.async_get_last_state()) is None:
+        if (extra := await self.async_get_last_extra_data()) is None:
             return
-        target = last.attributes.get(ATTR_TEMPERATURE)
-        if not isinstance(target, (int, float)) or not self.min_temp <= target <= self.max_temp:
-            return
-        coordinator = self.coordinator
-        coordinator.thermostat.target = float(target)
+        memory = extra.as_dict()
+        target = memory.get("target")
         if (
-            coordinator.temperature_sensor is not None
-            and last.state == HVACMode.HEAT
-            and coordinator.is_pilot_on
+            isinstance(target, (int, float))
+            and THERMOSTAT_MIN_TEMPERATURE <= target <= THERMOSTAT_MAX_TEMPERATURE
         ):
-            coordinator.thermostat.active = True
+            self.coordinator.thermostat.target = float(target)
+        if (
+            memory.get("active") is True
+            and self.coordinator.temperature_sensor is not None
+            and self.coordinator.is_pilot_on
+        ):
+            self.coordinator.thermostat.active = True
+
+    @property
+    def extra_restore_state_data(self) -> ThermostatMemory:
+        thermostat = self.coordinator.thermostat
+        return ThermostatMemory(target=thermostat.target, active=thermostat.active)
 
     @property
     def hvac_mode(self) -> HVACMode:

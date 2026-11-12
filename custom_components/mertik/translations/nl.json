@@ -19,7 +19,8 @@
     },
     "error": {
       "cannot_connect": "Kan geen verbinding maken met de haard. Controleer het IP-adres en of het apparaat aan staat.",
-      "wrong_device": "Op dat adres antwoordt een andere haard."
+      "wrong_device": "Op dat adres antwoordt een andere haard.",
+      "address_in_use": "Dit adres hoort bij een haard die al is ingesteld."
     },
     "abort": {
       "already_configured": "Deze haard is al ingesteld.",
@@ -132,6 +133,12 @@
     },
     "wrong_device": {
       "message": "Op het adres van deze haard antwoordt nu een andere haard. Er is niets naartoe gestuurd; Home Assistant zoekt deze haard opnieuw."
+    },
+    "igniting": {
+      "message": "De haard is aan het ontsteken en neemt nog geen opdrachten aan. Probeer het over een minuut opnieuw."
+    },
+    "no_handset": {
+      "message": "De eigen thermostaat van de haard meet de kamertemperatuur met de afstandsbediening, en er meldt geen afstandsbediening een temperatuur. Kies in plaats daarvan een temperatuursensor in de opties van de integratie."
     }
   },
   "issues": {

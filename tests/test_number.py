@@ -7,7 +7,7 @@ import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
-from .conftest import call, entity_id, poll
+from .conftest import call, entity_id, poll, settled
 from .fakes import FakeBox, FakeClock, FakeFireplace
 
 
@@ -52,9 +52,10 @@ async def test_flame_height_is_the_step_nearest_to_the_burner_output(
     number: str,
     output: int,
     step: int,
+    clock: FakeClock,
 ) -> None:
     fire.set(pilot=True, output=output)
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
 
     state = hass.states.get(number)
     assert float(state.state) == step
@@ -62,10 +63,11 @@ async def test_flame_height_is_the_step_nearest_to_the_burner_output(
 
 
 async def test_flame_height_is_zero_without_a_main_flame(
-    hass: HomeAssistant, coordinator, fire: FakeFireplace, number: str
+    hass: HomeAssistant, coordinator, fire: FakeFireplace, number: str,
+    clock: FakeClock,
 ) -> None:
     fire.standby()
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
     assert float(hass.states.get(number).state) == 0
 
     fire.off()
@@ -90,9 +92,10 @@ async def test_set_flame_height(
     number: str,
     value: int,
     command: str,
+    clock: FakeClock,
 ) -> None:
     fire.lit(6)
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
 
     await call(hass, "number", "set_value", number, value=value)
 
@@ -101,10 +104,11 @@ async def test_set_flame_height(
 
 
 async def test_zero_turns_the_burner_down_to_the_pilot(
-    hass: HomeAssistant, entry, coordinator, fire: FakeFireplace, box: FakeBox, number: str
+    hass: HomeAssistant, entry, coordinator, fire: FakeFireplace, box: FakeBox, number: str,
+    clock: FakeClock,
 ) -> None:
     fire.lit(6)
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
 
     await call(hass, "number", "set_value", number, value=0)
 
@@ -116,10 +120,11 @@ async def test_zero_turns_the_burner_down_to_the_pilot(
 
 
 async def test_flame_comes_back_up_from_standby(
-    hass: HomeAssistant, entry, coordinator, fire: FakeFireplace, box: FakeBox, number: str
+    hass: HomeAssistant, entry, coordinator, fire: FakeFireplace, box: FakeBox, number: str,
+    clock: FakeClock,
 ) -> None:
     fire.standby()
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
 
     await call(hass, "number", "set_value", number, value=5)
 
@@ -136,7 +141,7 @@ async def test_requested_height_shows_while_the_valve_moves(
     number: str,
 ) -> None:
     fire.lit(12)
-    await poll(hass, coordinator)
+    await settled(hass, coordinator, clock)
     box.on_command = None  # acknowledged, but the old output is still reported
 
     await call(hass, "number", "set_value", number, value=3)

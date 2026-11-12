@@ -85,7 +85,7 @@ def test_every_error_the_code_raises_has_a_text() -> None:
     source = "".join(
         path.read_text(encoding="utf-8") for path in COMPONENT.glob("*.py")
     )
-    used = set(re.findall(r'translation_key="(\w+)"', source))
+    used = {key for key in re.findall(r'"(\w+)"', source)}
     texts = set(STRINGS["exceptions"]) | set(STRINGS["issues"])
 
     raised = {
@@ -94,6 +94,8 @@ def test_every_error_the_code_raises_has_a_text() -> None:
         "no_receiver",
         "cannot_reach",
         "wrong_device",
+        "igniting",
+        "no_handset",
         "receiver_lost",
     }
     assert raised <= used

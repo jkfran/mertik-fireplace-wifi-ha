@@ -84,7 +84,9 @@ class MertikConfigFlow(ConfigFlow, domain=DOMAIN):
             for other in self._async_current_entries(include_ignore=False)
         )
 
-    def _is_set_up_at(self, host: str, module: Module | None) -> bool:
+    def _is_set_up_at(
+        self, host: str, module: Module | None, *, apart_from: ConfigEntry | None = None
+    ) -> bool:
         """Whether an entry already covers the fireplace at an address.
 
         Entries made before 2.0 are known by their address alone. An entry that
@@ -92,6 +94,8 @@ class MertikConfigFlow(ConfigFlow, domain=DOMAIN):
         has stored may have gone to another fireplace since.
         """
         for entry in self._async_current_entries(include_ignore=False):
+            if apart_from is not None and entry.entry_id == apart_from.entry_id:
+                continue
             if entry.data.get(CONF_HOST) != host:
                 continue
             known_mac = entry.data.get(CONF_MAC)
@@ -156,6 +160,9 @@ class MertikConfigFlow(ConfigFlow, domain=DOMAIN):
                 or self._is_another_entry(entry, module.mac)
             ):
                 errors["base"] = "wrong_device"
+            elif self._is_set_up_at(host, module, apart_from=entry):
+                # Two entries on one fireplace: each would undo what the other does.
+                errors["base"] = "address_in_use"
             elif not await self.hass.async_add_executor_job(_can_connect, host):
                 errors["base"] = "cannot_connect"
             else:
