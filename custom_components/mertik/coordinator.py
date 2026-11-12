@@ -221,9 +221,19 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
 
     @property
     def flame_height(self) -> int:
+        """The flame height to show.
+
+        During an ignition this is what the fireplace reports, so that a fire
+        that burns already does not read 0 until it counts as lit.
+        """
         if "flame_height" in self._pending:
             return self._pending["flame_height"]
-        return self._shown("flame_height", self.mertik.flame_height)
+        return self._shown("flame_height", self.mertik.reported_flame_height)
+
+    @property
+    def pilot_flame(self) -> bool:
+        """Whether the pilot burns, to show: also during an ignition under way."""
+        return self.mertik.reported_pilot
 
     def get_flame_height(self) -> int:
         return self.flame_height

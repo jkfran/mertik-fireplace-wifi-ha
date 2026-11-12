@@ -35,7 +35,7 @@ DESCRIPTIONS = (
         key="pilot_flame",
         unique_key="PilotFlame",
         translation_key="pilot_flame",
-        value=lambda coordinator: coordinator.is_pilot_on,
+        value=lambda coordinator: coordinator.pilot_flame,
     ),
     MertikBinarySensorDescription(
         key="igniting",

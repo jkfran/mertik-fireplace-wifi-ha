@@ -162,3 +162,60 @@ async def test_flame_height_needs_a_fire(
 
     assert error.value.translation_key == "fireplace_off"
     assert box.commands == []
+
+
+async def test_a_fire_that_burns_shows_while_its_ignition_still_counts(
+    hass: HomeAssistant,
+    entry,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    number: str,
+) -> None:
+    """An ignition counts for a minute after its last sign; the fire burns meanwhile."""
+    switch = entity_id(hass, entry, "switch", "OnOff")
+    pilot = entity_id(hass, entry, "binary_sensor", "PilotFlame")
+    status = entity_id(hass, entry, "sensor", "Status")
+
+    await call(hass, "switch", "turn_on", switch)
+    assert float(hass.states.get(number).state) == 0
+    assert hass.states.get(pilot).state == "off"
+
+    fire.lit(12)
+    await poll(hass, coordinator)
+    assert hass.states.get(status).state == "igniting"
+    assert float(hass.states.get(number).state) == 12
+    assert hass.states.get(pilot).state == "on"
+
+    # Shown, but the receiver is still left alone: a new flame height waits.
+    await call(hass, "number", "set_value", number, value=6)
+    assert box.commands == ["1A"]
+    assert float(hass.states.get(number).state) == 6
+
+    clock.advance(61)
+    await poll(hass, coordinator)
+    assert hass.states.get(status).state == "on"
+    assert box.commands == ["1A", "16B9"]
+    assert float(hass.states.get(number).state) == 6
+
+
+async def test_no_flame_height_shows_while_it_shuts_down(
+    hass: HomeAssistant,
+    entry,
+    coordinator,
+    fire: FakeFireplace,
+    clock: FakeClock,
+    number: str,
+) -> None:
+    """The burner output can read full for seconds after an off."""
+    pilot = entity_id(hass, entry, "binary_sensor", "PilotFlame")
+    fire.lit(6)
+    await settled(hass, coordinator, clock)
+    assert float(hass.states.get(number).state) == 6
+
+    fire.set(shutting_down=True, output=0xFF)
+    await poll(hass, coordinator)
+
+    assert float(hass.states.get(number).state) == 0
+    assert hass.states.get(pilot).state == "off"

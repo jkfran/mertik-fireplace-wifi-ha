@@ -107,10 +107,11 @@ address in your router.
 
 ## Using it
 
-**Turning on.** Igniting takes about a minute, and the fireplace must be left alone meanwhile.
-Status reads *Igniting* until the fire has settled. Anything you set during that time (flame height,
-secondary burner, mode, thermostat) is kept and applied once the fire is lit, so an automation can
-turn the fireplace on and set the flame in one go.
+**Turning on.** Igniting takes about half a minute, and the fireplace must be left alone for a
+minute after it. Status reads *Igniting* for all of that time. Flame Height and Pilot flame show
+what the fireplace reports as soon as it burns. Anything you set meanwhile (flame height, secondary
+burner, mode, thermostat) is kept and applied once the fire has settled, so an automation can turn
+the fireplace on and set the flame in one go.
 
 **Turning off.** Status reads *Shutting down* for about half a minute. The fireplace cannot be
 ignited during a shutdown or in the first seconds after it; Home Assistant tells you so instead of

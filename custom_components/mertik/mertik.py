@@ -557,6 +557,30 @@ class Mertik:
         return self.flame_height
 
     @property
+    def reported_flame_height(self) -> int:
+        """Flame step 1-12 the fireplace reports for a burning fire, otherwise 0.
+
+        It differs from flame_height during an ignition, which counts as under
+        way for a minute after its last sign: for most of that minute the fire
+        usually burns already. This is what to show meanwhile. What may be sent
+        is decided on the state alone.
+        """
+        if self._status is None or self.state not in (STATE_ON, STATE_IGNITING):
+            return 0
+        if not self._status.burner_lit:
+            return 0
+        return flame_step_for_output(self._status.burner_output)
+
+    @property
+    def reported_pilot(self) -> bool:
+        """The pilot burns, also during an ignition that still counts as under way."""
+        if self._status is None:
+            return False
+        if self.is_pilot_on:
+            return True
+        return self.state == STATE_IGNITING and self._status.pilot_on
+
+    @property
     def mode(self) -> str | None:
         """manual, thermostat or eco."""
         return None if self._status is None else self._status.mode

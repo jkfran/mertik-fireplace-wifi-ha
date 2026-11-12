@@ -680,6 +680,45 @@ class TestIgnition:
         assert fire.state == "on"
         assert fire.flame_height == 12
 
+    def test_a_lit_fire_is_reported_while_it_settles(self, fire, box, clock):
+        """What to show differs from what decisions go by, for that minute."""
+        fire.ignite_fireplace()
+        box.status = status_frame(word=IGNITING)
+        fire.refresh_status()
+        assert fire.reported_flame_height == 0
+        assert fire.reported_pilot is False
+
+        clock.advance(10)
+        box.status = status_frame(output=0xFF, word=PILOT)
+        fire.refresh_status()
+        assert fire.state == "igniting"
+        assert fire.flame_height == 0
+        assert fire.is_pilot_on is False
+        assert fire.reported_flame_height == 12
+        assert fire.reported_pilot is True
+
+        # Pilot only, as after a standby given with the handset meanwhile.
+        box.status = status_frame(output=0x00, word=PILOT)
+        fire.refresh_status()
+        assert fire.state == "igniting"
+        assert fire.reported_flame_height == 0
+        assert fire.reported_pilot is True
+
+    def test_a_shutdown_reports_no_flame(self, burning, box):
+        """A real fireplace kept full output and the pilot bit for seconds after an off."""
+        box.status = status_frame(output=0xFF, word=SHUTTING_DOWN)
+        burning.refresh_status()
+        assert burning.state == "shutting_down"
+        assert burning.reported_flame_height == 0
+        assert burning.reported_pilot is False
+
+    def test_a_cold_fireplace_at_full_output_reports_no_flame(self, fire, box):
+        box.status = status_frame(output=0xFF, word=0x8003)
+        fire.refresh_status()
+        assert fire.state == "off"
+        assert fire.reported_flame_height == 0
+        assert fire.reported_pilot is False
+
     def test_frames_without_the_receiver_link_keep_it_igniting(self, fire, box, clock):
         box.status = status_frame(word=0x821A)
         fire.refresh_status()
