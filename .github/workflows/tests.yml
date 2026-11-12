@@ -10,8 +10,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.12", "3.13"]
+        # Each Python version brings the newest Home Assistant that supports it,
+        # so the three jobs cover Home Assistant 2024.12 up to the current release.
+        python-version: ["3.12", "3.13", "3.14"]
 
     steps:
       - uses: actions/checkout@v4
@@ -24,5 +27,15 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements_test.txt
 
+      - name: Show the Home Assistant version under test
+        run: python -c "import homeassistant.const as c; print(c.__version__)"
+
       - name: Run tests
         run: pytest tests/ -v
+
+  hassfest:
+    name: Home Assistant validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
