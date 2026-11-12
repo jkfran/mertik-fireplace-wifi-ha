@@ -216,8 +216,12 @@ what it reports. The IP and MAC addresses are removed.
 
 ## Upgrading from 1.0
 
-Your entities keep their IDs, names and history. What changes:
+Your entities keep their entity IDs and history. What changes:
 
+- The *Aux* switch is now called *Secondary burner*. Its entity ID stays, so automations are not
+  affected; a voice assistant knows it by the new name.
+- There are new entities: Thermostat, Mode, Status, Pilot flame, Receiver and Remote. Where a voice
+  assistant or a HomeKit bridge takes in new entities by itself, the thermostat appears there too.
 - Flame Height now starts at 0 (standby) and reads the handset's steps correctly. Steps 8 to 12 used
   to read as 9 to 13.
 - The fireplace switch reads on whenever the pilot burns, so also in standby and while igniting.
