@@ -204,6 +204,25 @@ async def test_ha_thermostat_reads_a_fahrenheit_sensor(
     assert hass.states.get(climate).attributes["current_temperature"] == 20.0
 
 
+@pytest.mark.parametrize("value", ["unavailable", "unknown", "", "warm", "nan", "inf"])
+async def test_ha_thermostat_takes_only_numbers_for_a_reading(
+    hass: HomeAssistant, with_sensor, coordinator, climate: str, value: str
+) -> None:
+    hass.states.async_set(ROOM, value)
+    await poll(hass, coordinator)
+
+    assert hass.states.get(climate).attributes["current_temperature"] is None
+
+
+async def test_ha_thermostat_without_its_sensor_entity(
+    hass: HomeAssistant, with_sensor, coordinator, climate: str
+) -> None:
+    hass.states.async_remove(ROOM)
+    await poll(hass, coordinator)
+
+    assert hass.states.get(climate).attributes["current_temperature"] is None
+
+
 async def test_ha_thermostat_never_ignites(
     hass: HomeAssistant, with_sensor, coordinator, box: FakeBox, climate: str
 ) -> None:
@@ -329,6 +348,45 @@ async def test_ha_thermostat_goes_to_the_pilot_when_the_sensor_is_lost(
     clock.advance(121)
     await poll(hass, coordinator)
     assert box.commands == ["1600", "16FF"]
+
+
+async def test_ha_thermostat_does_not_repeat_itself_while_the_valve_moves(
+    hass: HomeAssistant,
+    with_sensor,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    climate: str,
+) -> None:
+    """The fireplace reports its flame for a while after being told to go down."""
+    fire.lit(12)
+    await poll(hass, coordinator)
+    await call(hass, "climate", "set_temperature", climate, temperature=21)
+    box.on_command = None  # acknowledged, but the flame is still reported
+
+    hass.states.async_set(ROOM, "unavailable")
+    await poll(hass, coordinator)
+    clock.advance(301)
+    await poll(hass, coordinator)
+    assert box.commands == ["1600"]
+
+    for _ in range(3):
+        clock.advance(10)
+        await poll(hass, coordinator)
+    assert box.commands == ["1600"]
+
+    # Still a flame two minutes later: the command did not take, so once more.
+    clock.advance(121)
+    await poll(hass, coordinator)
+    assert box.commands == ["1600", "1600"]
+
+    # The same holds with a reading: warm room, flame reported, one command.
+    set_room(hass, "25.0")
+    for _ in range(3):
+        clock.advance(10)
+        await poll(hass, coordinator)
+    assert box.commands == ["1600", "1600"]
 
 
 async def test_ha_thermostat_stops_when_the_flame_is_set_by_hand(

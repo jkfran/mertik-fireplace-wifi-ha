@@ -94,7 +94,9 @@ handset reporting to the fireplace there is no room temperature, and this cannot
 **With any temperature sensor.** Under the integration's **Configure**, pick a temperature sensor.
 Home Assistant then regulates the flame itself: full flame when the room is a degree or more below
 the target, a low flame close to it, and down to the pilot once the room is warm enough. It changes
-the flame at most every two minutes, and goes down to the pilot if the sensor stops reporting.
+the flame at most every two minutes, and goes down to the pilot when the sensor has been unavailable
+for five minutes. A sensor that silently keeps showing its last value cannot be told from a steady
+room, so pick one you trust.
 
 Either way:
 

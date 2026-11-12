@@ -119,6 +119,19 @@ def test_lost_sensor_means_the_pilot_whatever_the_interval() -> None:
     assert state.decide(now=SENSOR_GRACE + 60, room=None, burning=False, flame_height=0) is None
 
 
+def test_pilot_command_for_a_lost_sensor_is_repeated_sparingly() -> None:
+    """The fireplace reports its flame for a while after the command."""
+    state = ThermostatState(active=True, target=20.0)
+    state.decide(now=0.0, room=None, burning=True, flame_height=12)
+    assert state.decide(now=SENSOR_GRACE, room=None, burning=True, flame_height=12) == LEVEL_STANDBY
+    state.last_change = SENSOR_GRACE  # set by whoever sends the command
+
+    assert state.decide(now=SENSOR_GRACE + 10, room=None, burning=True, flame_height=12) is None
+    # Still a flame after the interval: the command did not take, so once more.
+    later = SENSOR_GRACE + MIN_CHANGE_INTERVAL
+    assert state.decide(now=later, room=None, burning=True, flame_height=12) == LEVEL_STANDBY
+
+
 def test_sensor_coming_back_clears_the_lost_flag() -> None:
     state = ThermostatState(active=True, target=20.0)
     state.decide(now=0.0, room=None, burning=False, flame_height=0)

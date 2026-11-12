@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 import logging
+import math
 import time
 from typing import Any
 
@@ -180,6 +181,8 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         try:
             value = float(state.state)
         except ValueError:
+            return None
+        if not math.isfinite(value):
             return None
         if state.attributes.get(ATTR_UNIT_OF_MEASUREMENT) == UnitOfTemperature.FAHRENHEIT:
             value = TemperatureConverter.convert(

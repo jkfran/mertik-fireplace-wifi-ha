@@ -87,9 +87,20 @@ class ThermostatState:
             if now - self.sensor_missing_since < SENSOR_GRACE:
                 return None
             # Not knowing the room temperature, heating blind is the wrong side
-            # to err on. This is not subject to the change interval.
+            # to err on: down to the pilot at once, whatever the change interval
+            # says. Only a repeat of that command waits for the interval, while
+            # the fireplace still reports a flame.
+            repeat = self.sensor_lost
             self.sensor_lost = True
-            return LEVEL_STANDBY if current != LEVEL_STANDBY else None
+            if current == LEVEL_STANDBY:
+                return None
+            if (
+                repeat
+                and self.last_change is not None
+                and now - self.last_change < MIN_CHANGE_INTERVAL
+            ):
+                return None
+            return LEVEL_STANDBY
         self.sensor_missing_since = None
         self.sensor_lost = False
 
