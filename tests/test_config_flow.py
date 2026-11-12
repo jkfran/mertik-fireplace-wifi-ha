@@ -203,6 +203,25 @@ async def test_user_flow_recognises_a_configured_fireplace_at_a_new_address(
     assert entry.runtime_data.mertik.ip == OTHER_HOST
 
 
+async def test_user_flow_adds_a_new_fireplace_at_an_address_an_old_one_had(
+    hass: HomeAssistant, entry, network: Network
+) -> None:
+    """The entry of a fireplace that moved away still has the address stored."""
+    network.add(HOST, mac=OTHER_MAC)  # a different fireplace lives there now
+
+    result = await start_user_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_NAME: "New fire", CONF_HOST: HOST}
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["result"].unique_id == OTHER_MAC
+    # The old entry is not touched, and does not take the new fireplace for its own.
+    assert entry.unique_id == MAC
+    assert entry.data[CONF_MAC] == MAC
+
+
 async def test_user_flow_does_not_duplicate_a_version_1_entry(
     hass: HomeAssistant, network: Network
 ) -> None:

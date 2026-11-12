@@ -84,6 +84,21 @@ class MertikConfigFlow(ConfigFlow, domain=DOMAIN):
             for other in self._async_current_entries(include_ignore=False)
         )
 
+    def _is_set_up_at(self, host: str, module: Module | None) -> bool:
+        """Whether an entry already covers the fireplace at an address.
+
+        Entries made before 2.0 are known by their address alone. An entry that
+        knows its MAC address only counts if this is its module: the address it
+        has stored may have gone to another fireplace since.
+        """
+        for entry in self._async_current_entries(include_ignore=False):
+            if entry.data.get(CONF_HOST) != host:
+                continue
+            known_mac = entry.data.get(CONF_MAC)
+            if module is None or known_mac is None or known_mac == module.mac:
+                return True
+        return False
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -92,8 +107,8 @@ class MertikConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             host = user_input[CONF_HOST].strip()
             module = await self._async_module_at(host)
-            # Entries made before 2.0 are identified by their address.
-            self._async_abort_entries_match({CONF_HOST: host})
+            if self._is_set_up_at(host, module):
+                return self.async_abort(reason="already_configured")
             await self.async_set_unique_id(module.mac if module else host)
             self._abort_if_unique_id_configured(updates={CONF_HOST: host})
 
