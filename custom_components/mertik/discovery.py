@@ -131,8 +131,16 @@ def discover_host(
     *,
     socket_factory: Callable[[], socket.socket] | None = None,
 ) -> Module | None:
-    """Ask one address for its name and MAC address."""
-    for module in discover(timeout, (host,), host=host, socket_factory=socket_factory):
-        if module.host == host:
-            return module
+    """Ask one host for its name and MAC address.
+
+    The answer comes from an IP address, so a host name is looked up first.
+    """
+    try:
+        address = socket.gethostbyname(host)
+    except (OSError, ValueError):
+        return None
+    for module in discover(timeout, (address,), host=address, socket_factory=socket_factory):
+        if module.host == address:
+            return Module(host=host, name=module.name, mac=module.mac)
     return None
+

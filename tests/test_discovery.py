@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import socket
 import threading
 import time
+
+import pytest
 
 from custom_components.mertik.discovery import (
     QUERY,
@@ -163,7 +166,33 @@ def test_discover_survives_a_target_that_is_not_an_address() -> None:
         def sendto(self, data: bytes, address: tuple[str, int]) -> None:
             raise UnicodeError("label empty or too long")
 
-    assert discover_host("192.168..1.4", 0.05, socket_factory=PickySocket) is None
+    # Asked through the search itself, which sends to whatever it is given:
+    assert discover(0.05, ("192.168..1.4",), socket_factory=PickySocket) == []
+
+
+def test_discover_host_looks_a_name_up(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The answer comes from an IP address; the name it was asked by is kept."""
+    monkeypatch.setattr(socket, "gethostbyname", lambda name: "192.168.1.4")
+    sock = FakeSocket([(REPLY, "192.168.1.4")])
+
+    module = discover_host("fireplace.lan", 0.05, socket_factory=lambda: sock)
+
+    assert module == Module(host="fireplace.lan", name="mmWiFiBoxV2", mac="00:23:3c:00:5a:b1")
+    assert sock.sent == [(QUERY, ("192.168.1.4", QUERY_PORT))]
+
+
+def test_discover_host_with_a_name_that_does_not_resolve(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail(name: str) -> str:
+        raise socket.gaierror("Name or service not known")
+
+    monkeypatch.setattr(socket, "gethostbyname", fail)
+    assert discover_host("fireplace.lan", 0.05, socket_factory=FakeSocket) is None
+
+    def not_a_name(name: str) -> str:
+        raise UnicodeError("label empty or too long")
+
+    monkeypatch.setattr(socket, "gethostbyname", not_a_name)
+    assert discover_host("192.168..1.4", 0.05, socket_factory=FakeSocket) is None
 
 
 def test_discover_survives_having_no_socket() -> None:
