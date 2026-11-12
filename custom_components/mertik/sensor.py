@@ -33,7 +33,7 @@ async def async_setup_entry(
 
 
 class MertikAmbientTemperatureSensorEntity(MertikEntity, SensorEntity):
-    """Room temperature measured by the handset; unknown without a handset."""
+    """Room temperature measured by the handset; unknown while it reports none."""
 
     _attr_translation_key = "ambient_temperature"
     _attr_device_class = SensorDeviceClass.TEMPERATURE

@@ -597,8 +597,8 @@ class Mertik:
     def is_faulted(self) -> bool | None:
         """Whether the fireplace has a fault stored.
 
-        The bit stays set until the fault is cleared in the vendor app, and is
-        set for good on a fireplace without a handset (fault F44).
+        The bit stays set until the fault is cleared in the vendor app. A
+        handset that does not report leaves such a fault (F44).
         """
         return None if self._status is None else self._status.faulted
 

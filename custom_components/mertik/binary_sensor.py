@@ -69,7 +69,7 @@ DESCRIPTIONS = (
         value=lambda coordinator: coordinator.mertik.handset_connected,
     ),
     MertikBinarySensorDescription(
-        # A fault the fireplace has stored; a fireplace without a handset always has one.
+        # A fault the fireplace has stored; a handset that stops reporting leaves one (F44).
         key="fault",
         unique_key="Fault",
         translation_key="fault",

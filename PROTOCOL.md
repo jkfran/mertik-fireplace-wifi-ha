@@ -8,7 +8,7 @@ Nothing here comes from the manufacturer. Each statement carries the letter of i
 
 | | Source |
 |---|---|
-| **J** | Measured for this repository on a fireplace whose module answers as `mmWiFiBoxV2`, with no handset paired, and only with the fire off (2026-11) |
+| **J** | Measured for this repository on a fireplace whose module answers as `mmWiFiBoxV2`, while its handset was not reporting, and only with the fire off (2026-11) |
 | **D** | [`diederikm/mertik-fireplace-wifi-ha`](https://github.com/diederikm/mertik-fireplace-wifi-ha) `PROTOCOL.md`: measurements on a Bellfires fireplace with a B6R-W2BE-0 module, and the names the vendor apps use |
 | **G** | [`DaveJesse/mertik-fireplace-wifi-with-thermostat`](https://github.com/DaveJesse/mertik-fireplace-wifi-with-thermostat) `PROTOCOL.md`: measurements on a Gazco fireplace |
 | **V** | [`omarshahine/valor-fireplace-cli`](https://github.com/omarshahine/valor-fireplace-cli) `PROTOCOL.md` |
@@ -109,7 +109,7 @@ Character positions after STX:
 | 22-23 | Fan level | |
 | 24 | Mode | `0` manual, `1` thermostat, `2` eco **T D** |
 | 26-27 | Flags | `01` countdown, `02` thermostat, `08` child lock, `10` program. Unverified **D** |
-| 28-31 | Room temperature x10 | From the handset. `0666` while no handset reports one (the app shows F44) **G J** |
+| 28-31 | Room temperature x10 | From the handset. `0666` while no handset reports one (the app shows F44) **G J**. A handset can show a temperature on its own display and still not report it: here the field stayed `0666` for days with the fire off **J**, and G's README says its handset only reports while it shows APP |
 | 32-35 | Target temperature x10 | `00C8` = 20.0 |
 | 36- | Name | ASCII as hex, padded with `FF` (zeros on the module measured here) |
 
@@ -118,7 +118,7 @@ A status frame read from a `mmWiFiBoxV2` with the fire off: **J**
 ```
 0303000000 03 47 00 8003 00 00 0 0 00 0666 00C8 0000…  043E01
 header     id |  |  |    |  |  |   |  |    target 20.0
-              |  |  |    |  |  |   |  room: no handset
+              |  |  |    |  |  |   |  room: no reading
               |  |  |    |  |  |   flags
               |  |  |    |  |  mode: manual
               |  |  |    |  fan level
@@ -148,7 +148,7 @@ That fits what is known of those fireplaces, but nobody has confirmed the order.
 | `0x0010` | igniting | |
 | `0x0008` | aux | Secondary burner enabled; stays set in standby and with the fire off |
 | `0x0004` | light | |
-| `0x0002` | faulted | A fault is stored. It stays set until the error is cleared in the app **G**, and is always set on a fireplace without a handset (F44): `8003` is such a fireplace, off **J** |
+| `0x0002` | faulted | A fault is stored. It stays set until the error is cleared in the app **G**. `8003` was read from a fireplace that was off and whose handset was not reporting (room temperature `0666`) **J** |
 | `0x0001` | module connected | |
 
 Read the word as 16 bits. Older code padded it to 8, which shifts every bit whenever the top bit is
@@ -295,9 +295,9 @@ Command `01` is answered with 110 characters on the `mmWiFiBoxV2` **J** and with
 | 84- | Zeros to the end here. A's reply has `1D00FF` at 114-119 and the ASCII text `B6R-HATV4P` at 120-139 |
 
 `B6R-HATV4P` is a part number. A Gazco's reply holds `B6R-H8TV4P`, which G gives as the part number
-of its receiver. **G** The reply of the module measured here, which has no handset, holds none. The
-integration reads none of these fields; it keeps the reply for its diagnostics download, with the
-MAC address removed.
+of its receiver. **G** The reply of the module measured here holds none; its handset was not
+reporting at the time. The integration reads none of these fields; it keeps the reply for its
+diagnostics download, with the MAC address removed.
 
 ## What is not known
 

@@ -51,7 +51,7 @@ async def test_ambient_temperature(
 async def test_ambient_temperature_is_unknown_without_a_handset(
     hass: HomeAssistant, entry, coordinator, fire: FakeFireplace
 ) -> None:
-    """Without a handset the box reports 0666, which is not 163.8 degrees."""
+    """Without a handset reading the box reports 0666, which is not 163.8 degrees."""
     fire.set(room="0666")
     await poll(hass, coordinator)
 
@@ -156,7 +156,7 @@ async def test_entities_disabled_by_default(
     assert state_of(hass, entry, "binary_sensor", "Fan") == "off"
     assert state_of(hass, entry, "binary_sensor", "Igniting") == "off"
     assert state_of(hass, entry, "binary_sensor", "ShuttingDown") == "off"
-    # A fireplace without a handset keeps the fault F44 stored.
+    # A fireplace whose handset does not report keeps the fault F44 stored.
     assert state_of(hass, entry, "binary_sensor", "Fault") == "on"
 
     fire.set(fan=True, fan_level=3, igniting=True)

@@ -201,7 +201,8 @@ receiver's batteries, or the WiFi module's link to it. The repair goes away when
 off.
 
 **Ambient Temperature is unknown.** No handset is reporting to the fireplace (the app shows F44).
-The *Remote* sensor tells you.
+The *Remote* sensor tells you. A handset can show a temperature on its own display and still not
+report it: one was seen to report only while it shows APP, another not while the fire was off.
 
 **The app stops working.** Some modules serve one connection at a time. The integration only
 connects for a moment every ten seconds, which leaves room for the app, but two apps open at once

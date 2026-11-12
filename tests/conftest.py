@@ -127,7 +127,7 @@ def box(network: Network) -> FakeBox:
 
 @pytest.fixture
 def fire(box: FakeBox) -> FakeFireplace:
-    """That fireplace: off, linked to its receiver, no handset."""
+    """That fireplace: off, linked to its receiver, no handset reading."""
     return FakeFireplace(box)
 
 

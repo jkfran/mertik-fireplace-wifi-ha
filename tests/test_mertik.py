@@ -638,7 +638,7 @@ class TestStateTracking:
         assert fire.is_fan_on
 
     def test_fault_stored(self, fire, box, clock):
-        # The real frame has the bit set: a fireplace without a handset (F44).
+        # The real frame has the bit set: its handset was not reporting (F44).
         assert fire.is_faulted is True
         lit(box, fire, clock, word=0x8081)
         assert fire.is_faulted is False
