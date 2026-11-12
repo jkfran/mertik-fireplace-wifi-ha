@@ -8,7 +8,7 @@ Nothing here comes from the manufacturer. Each statement carries the letter of i
 
 | | Source |
 |---|---|
-| **J** | Measured for this repository on a fireplace whose module answers as `mmWiFiBoxV2`, while its handset was not reporting, and only with the fire off (2026-11) |
+| **J** | Measured for this repository on a fireplace whose module answers as `mmWiFiBoxV2`, while its handset was not reporting (2026-11). With the fire lit there is one session, polled every 5 seconds from the moment it burned; the ignition itself was not recorded |
 | **D** | [`diederikm/mertik-fireplace-wifi-ha`](https://github.com/diederikm/mertik-fireplace-wifi-ha) `PROTOCOL.md`: measurements on a Bellfires fireplace with a B6R-W2BE-0 module, and the names the vendor apps use |
 | **G** | [`DaveJesse/mertik-fireplace-wifi-with-thermostat`](https://github.com/DaveJesse/mertik-fireplace-wifi-with-thermostat) `PROTOCOL.md`: measurements on a Gazco fireplace |
 | **V** | [`omarshahine/valor-fireplace-cli`](https://github.com/omarshahine/valor-fireplace-cli) `PROTOCOL.md` |
@@ -17,7 +17,7 @@ Nothing here comes from the manufacturer. Each statement carries the letter of i
 | **S** | [`dsmagghe/mertik-ha`](https://github.com/dsmagghe/mertik-ha): discovery |
 | **O** | The original notes in this repository and [`djerik/mertik-ha`](https://github.com/djerik/mertik-ha) |
 
-Almost every statement about a burning fire rests on one fireplace each (D or G). Where sources
+Most statements about a burning fire rest on one fireplace each (D or G). Where sources
 disagree or nobody measured, it says so. See [What is not known](#what-is-not-known).
 
 ## Transport
@@ -181,7 +181,8 @@ What this integration makes of that:
   frame with the igniting bit (with or without the receiver bit), or a frame without the receiver
   bit while igniting. Until then the fireplace reads as igniting whatever the box reports. That
   covers the fire that is lit but has to hold, and the "off" the receiver reports between two of
-  its own attempts (see the table below).
+  its own attempts (see the table below). Only the flame height and the pilot flame that are shown
+  follow the reports meanwhile: for most of that minute the fire burns.
 - A fire that reads lit where it read off a poll before was lit with the handset between two polls.
   It gets the same 60 seconds.
 - A **shutdown** counts as under way for 20 seconds after an acknowledged off command, and the
@@ -207,6 +208,23 @@ Frames from a relight on which the pilot only held at the third try: **D**
 | `FF` | `028A` | unreliable, link down |
 | `00` | `820A` | off: the pilot went out, the receiver tries again |
 
+A session on the `mmWiFiBoxV2`, one frame every 5 seconds: **J**
+
+| Asked for | Output | State word | |
+|---|---|---|---|
+| Ignite (`1A`) | `FF` | `808B` | As first read, 90 seconds after the command: burning, secondary burner on |
+| Flame step 6 (`16B9`) | `B5` | `808B` | |
+| Flame step 1 (`1680`) | `FF`, then `80` | `808B` | Full for one frame before the lowest |
+| Standby (`1600`) | `00` | `808B` | The pilot bit stays |
+| Flame step 12 (`16FF`) | `FF` | `808B` | Burning again within 8 seconds, without an ignition |
+| Secondary burner off (`2000`), on (`2001`) | `FF` | `8083`, `808B` | |
+| Eco (`B301`) | `B8` | `808B` | Mode `2`; the output moved within 5 seconds |
+| Manual (`B0`) | `B8` | `808B` | Mode `0`; the output stayed |
+| Secondary burner off, then off (`10`) | `FF`, then `00` | `8183` | Shutting down, pilot bit still set |
+| | `00` | `800B` | Off after 15 to 20 seconds, and the aux bit is back |
+
+The receiver bit was set in every frame of that session, the shutdown included.
+
 ## Burner output
 
 The handset has 12 flame steps. Their outputs are `80 8B 97 A2 AE B9 C5 D0 DC E7 F3 FF`. **O V**
@@ -222,13 +240,15 @@ a reading is mapped to the nearest step. Measured values: **D**
 | Lowest and highest manual step | `80` and `FF` |
 
 The Valor app sets any output from `80` to `FF`, not only the twelve steps, and that Valor reported
-`76` and `7A` while it burned, which the app had not set. **A**
+`76` and `7A` while it burned, which the app had not set. **A** Step 6, sent as `B9`, read back as
+`B5`, and after the lowest step was asked for the output read `FF` for a moment before `80`. **J**
 
 ## Light
 
 The vendor app's slider sends levels `66` to `FF`. **D** On a Gazco fire the levels `63` and `66`
 leave the light dark, `77` is very dim, and above `CC` little changes. **G** This integration spreads
-brightness over `77` to `FB` and clamps what it reads back to that range.
+brightness over `77` to `FB` and clamps what it reads back to that range. A light whose level read
+`00` came on with `3001` at level `80`. **J**
 
 ## Timing
 
