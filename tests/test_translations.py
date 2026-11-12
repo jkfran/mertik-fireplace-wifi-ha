@@ -88,7 +88,14 @@ def test_every_error_the_code_raises_has_a_text() -> None:
     used = set(re.findall(r'translation_key="(\w+)"', source))
     texts = set(STRINGS["exceptions"]) | set(STRINGS["issues"])
 
-    raised = {"fireplace_off", "shutting_down", "no_receiver", "cannot_reach", "receiver_lost"}
+    raised = {
+        "fireplace_off",
+        "shutting_down",
+        "no_receiver",
+        "cannot_reach",
+        "wrong_device",
+        "receiver_lost",
+    }
     assert raised <= used
     assert raised == texts
 

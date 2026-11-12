@@ -18,13 +18,16 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .const import (
+    CONF_MAC,
     CONF_TEMPERATURE_SENSOR,
     DOMAIN,
+    IDENTITY_CHECK_SECONDS,
     OPTIMISTIC_SECONDS,
     PENDING_TIMEOUT_SECONDS,
     REIGNITE_DELAY_SECONDS,
     UPDATE_INTERVAL,
 )
+from .discovery import discover_host
 from .mertik import (
     MODE_ECO,
     MODE_MANUAL,
@@ -76,6 +79,9 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         self._pending_task: asyncio.Task[None] | None = None
         self._off_since: float | None = None
         self._last_state: str | None = mertik.state
+        # Setting up has just made sure the module is this fireplace.
+        self._identity_checked_at = self._clock()
+        self._reload_scheduled = False
         self.thermostat = ThermostatState()
 
     # --- State ---------------------------------------------------------------------
@@ -212,11 +218,43 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
     # --- Polling ---------------------------------------------------------------------
 
     async def _async_update_data(self) -> None:
+        recovering = not self.last_update_success
         try:
             await self.hass.async_add_executor_job(self.mertik.refresh_status)
         except MertikError as err:
             raise UpdateFailed(f"Error communicating with fireplace: {err}") from err
+        # A connection that comes back may come back to another device: after
+        # a router restart the addresses can have been dealt out anew.
+        check_due = self._clock() - self._identity_checked_at >= IDENTITY_CHECK_SECONDS
+        if (recovering or check_due) and await self._async_is_another_fireplace():
+            raise UpdateFailed("Another fireplace answers at this fireplace's address")
         self._after_status()
+
+    async def _async_is_another_fireplace(self) -> bool:
+        """Whether the module at the stored address has stopped being this fireplace.
+
+        The module is asked for its MAC address. One that does not answer is
+        given the benefit of the doubt, and so is an entry that never learned
+        its MAC address. On a mismatch the entry is set up again, which looks
+        for the fireplace at its new address.
+        """
+        known_mac = self.config_entry.data.get(CONF_MAC)
+        if known_mac is None:
+            return False
+        module = await self.hass.async_add_executor_job(discover_host, self.mertik.ip)
+        self._identity_checked_at = self._clock()
+        if module is None or module.mac == known_mac:
+            return False
+        if not self._reload_scheduled:
+            self._reload_scheduled = True
+            _LOGGER.error(
+                "%s: another fireplace now answers at %s. It will not be controlled; "
+                "looking for this fireplace at its new address",
+                self.name,
+                self.mertik.ip,
+            )
+            self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
+        return True
 
     def _after_status(self) -> None:
         """Follow up on a fresh status: state changes, waiting commands, thermostat."""
@@ -340,6 +378,11 @@ class MertikDataCoordinator(DataUpdateCoordinator[None]):
         if state == STATE_SHUTTING_DOWN or just_went_off:
             raise ServiceValidationError(
                 translation_domain=DOMAIN, translation_key="shutting_down"
+            )
+        # Never light a fire without knowing it is this one.
+        if await self._async_is_another_fireplace():
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="wrong_device"
             )
         await self._async_send(self.mertik.ignite_fireplace)
         await self._async_refresh_after_command()

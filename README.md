@@ -61,7 +61,13 @@ The fireplace is remembered by the MAC address of its module, not by its IP addr
 
 - If the module gets a new address, Home Assistant follows it. If that ever fails, change the
   address by hand under the integration's **⋮ → Reconfigure**.
+- If the old address goes to another fireplace, that one is not controlled in this one's place. The
+  integration asks the module who it is before every ignition, whenever the connection comes back,
+  and every few minutes.
 - A fireplace cannot be added twice.
+
+Modules that do not answer the search work too, by their IP address alone; give those a fixed
+address in your router.
 
 ## Using it
 
@@ -126,6 +132,9 @@ address under Reconfigure), or the module has lost its radio link to the receive
 In the second case the *Receiver* sensor reads disconnected and a repair appears under **Settings →
 Repairs**; the manufacturer's app shows fault F43. Check the receiver's power or batteries. Using
 the handset, or switching the fireplace's power off and on, usually brings the link back.
+
+**You replaced the WiFi module.** A module with another MAC address is another fireplace to the
+integration. Remove the fireplace from Home Assistant and add it again.
 
 **Ambient Temperature is unknown.** No handset is reporting to the fireplace (the app shows F44).
 The *Remote* sensor tells you.

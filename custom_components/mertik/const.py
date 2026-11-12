@@ -22,3 +22,7 @@ OPTIMISTIC_SECONDS = 12.0
 PENDING_TIMEOUT_SECONDS = 300.0
 # The receiver ignores an ignition right after a shutdown.
 REIGNITE_DELAY_SECONDS = 15.0
+# How often the module at the stored address is asked whether it is still this
+# fireplace (addresses get handed out again). It is also asked whenever the
+# connection comes back, and before every ignition.
+IDENTITY_CHECK_SECONDS = 300.0

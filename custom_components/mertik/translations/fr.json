@@ -129,6 +129,9 @@
     },
     "cannot_reach": {
       "message": "Le foyer ne répond pas : {error}"
+    },
+    "wrong_device": {
+      "message": "Un autre foyer répond maintenant à l'adresse de celui-ci. Rien ne lui a été envoyé ; Home Assistant recherche de nouveau ce foyer."
     }
   },
   "issues": {

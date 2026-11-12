@@ -129,6 +129,9 @@
     },
     "cannot_reach": {
       "message": "Pejsen svarer ikke: {error}"
+    },
+    "wrong_device": {
+      "message": "En anden pejs svarer nu på denne pejs' adresse. Der er ikke sendt noget til den; Home Assistant leder efter denne pejs igen."
     }
   },
   "issues": {

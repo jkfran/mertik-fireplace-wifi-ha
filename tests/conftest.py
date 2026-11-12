@@ -57,6 +57,16 @@ class Network:
             module = self.modules.pop(old)
             self.modules[new] = Module(host=new, name=module.name, mac=module.mac)
 
+    def swap(self, first: str, second: str) -> None:
+        """Two fireplaces come back from a router restart with each other's address."""
+        self.boxes[first], self.boxes[second] = self.boxes[second], self.boxes[first]
+        one, two = self.modules.get(first), self.modules.get(second)
+        for host, module in ((first, two), (second, one)):
+            if module is None:
+                self.modules.pop(host, None)
+            else:
+                self.modules[host] = Module(host=host, name=module.name, mac=module.mac)
+
     def connect(self, host: str, port: int, timeout: float):
         if host not in self.boxes:
             raise OSError("No route to host")
@@ -99,6 +109,7 @@ def network(clock: FakeClock) -> Generator[Network]:
         ),
         patch("custom_components.mertik.discover", new=net.discover),
         patch("custom_components.mertik.discover_host", new=net.discover_host),
+        patch("custom_components.mertik.coordinator.discover_host", new=net.discover_host),
         patch("custom_components.mertik.config_flow.discover", new=net.discover),
         patch("custom_components.mertik.config_flow.discover_host", new=net.discover_host),
     ):

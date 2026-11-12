@@ -129,6 +129,9 @@
     },
     "cannot_reach": {
       "message": "The fireplace did not respond: {error}"
+    },
+    "wrong_device": {
+      "message": "Another fireplace now answers at the address of this one. Nothing was sent to it; Home Assistant is looking for this fireplace again."
     }
   },
   "issues": {

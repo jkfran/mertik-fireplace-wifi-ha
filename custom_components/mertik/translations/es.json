@@ -129,6 +129,9 @@
     },
     "cannot_reach": {
       "message": "La chimenea no responde: {error}"
+    },
+    "wrong_device": {
+      "message": "Ahora responde otra chimenea en la dirección de esta. No se le ha enviado nada; Home Assistant está buscando esta chimenea de nuevo."
     }
   },
   "issues": {

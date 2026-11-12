@@ -129,6 +129,9 @@
     },
     "cannot_reach": {
       "message": "De haard reageert niet: {error}"
+    },
+    "wrong_device": {
+      "message": "Op het adres van deze haard antwoordt nu een andere haard. Er is niets naartoe gestuurd; Home Assistant zoekt deze haard opnieuw."
     }
   },
   "issues": {
