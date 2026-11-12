@@ -8,7 +8,7 @@ Nothing here comes from the manufacturer. Each statement carries the letter of i
 
 | | Source |
 |---|---|
-| **J** | Measured for this repository on a fireplace whose module answers as `mmWiFiBoxV2`, while its handset was not reporting (2026-11). With the fire lit there is one session, polled every 5 seconds from the moment it burned; the ignition itself was not recorded |
+| **J** | Measured for this repository on a fireplace whose module answers as `mmWiFiBoxV2` (2026-11): with the fire off, both with and without a handset reporting, and one session with the fire lit, without a handset reporting, polled every 5 seconds from the moment it burned; the ignition itself was not recorded |
 | **D** | [`diederikm/mertik-fireplace-wifi-ha`](https://github.com/diederikm/mertik-fireplace-wifi-ha) `PROTOCOL.md`: measurements on a Bellfires fireplace with a B6R-W2BE-0 module, and the names the vendor apps use |
 | **G** | [`DaveJesse/mertik-fireplace-wifi-with-thermostat`](https://github.com/DaveJesse/mertik-fireplace-wifi-with-thermostat) `PROTOCOL.md`: measurements on a Gazco fireplace |
 | **V** | [`omarshahine/valor-fireplace-cli`](https://github.com/omarshahine/valor-fireplace-cli) `PROTOCOL.md` |
@@ -109,7 +109,7 @@ Character positions after STX:
 | 22-23 | Fan level | |
 | 24 | Mode | `0` manual, `1` thermostat, `2` eco **T D** |
 | 26-27 | Flags | `01` countdown, `02` thermostat, `08` child lock, `10` program. Unverified **D** |
-| 28-31 | Room temperature x10 | From the handset. `0666` while no handset reports one (the app shows F44) **G J**. A handset can show a temperature on its own display and still not report it: here the field stayed `0666` for days with the fire off **J**, and G's README says its handset only reports while it shows APP |
+| 28-31 | Room temperature x10 | From the handset. `0666` while no handset reports one (the app shows F44) **G J**. A handset reports by itself every five to six minutes, also while the fire is off and its display reads OFF **J**; G's README has its handset report only while it shows APP. When a handset stops sending, its last reading stays for about 90 minutes before `0666` **G** |
 | 32-35 | Target temperature x10 | `00C8` = 20.0 |
 | 36- | Name | ASCII as hex, padded with `FF` (zeros on the module measured here) |
 
@@ -128,6 +128,9 @@ header     id |  |  |    |  |  |   |  |    target 20.0
               setup state
 ```
 
+With a handset reporting, the state word has the handset bit as well and the room temperature reads,
+for instance, `00FA`: 25.0. **J**
+
 ### Setup state
 
 In the vendor apps these are feature bits, in the order fan, light, aux, LED 0, LED 1, cloud, setup
@@ -141,14 +144,14 @@ That fits what is known of those fireplaces, but nobody has confirmed the order.
 | Bit | Name in the vendor apps | Meaning |
 |---|---|---|
 | `0x8000` | receiver connected | The module has its radio link to the receiver |
-| `0x0200` | handset connected | Set on D's fireplace, never on G's although its handset works. A room temperature other than `0666` is the better sign |
+| `0x0200` | handset connected | Set on D's fireplace, never on G's although its handset works. On the module measured here it is set while a handset reports and clear while none does **J**. A room temperature other than `0666` is the better sign |
 | `0x0100` | shutting down | |
 | `0x0080` | pilot | Set whenever the pilot burns: fire on, and standby |
 | `0x0040` | fan | |
 | `0x0010` | igniting | |
 | `0x0008` | aux | Secondary burner enabled; stays set in standby and with the fire off |
 | `0x0004` | light | |
-| `0x0002` | faulted | A fault is stored. It stays set until the error is cleared in the app **G**. `8003` was read from a fireplace that was off and whose handset was not reporting (room temperature `0666`) **J** |
+| `0x0002` | faulted | A fault is stored. It stays set until the error is cleared in the app **G**. `8003` was read from a fireplace that was off and whose handset was not reporting (room temperature `0666`); the bit was still set twenty minutes after a handset reported again **J** |
 | `0x0001` | module connected | |
 
 Read the word as 16 bits. Older code padded it to 8, which shifts every bit whenever the top bit is
@@ -299,8 +302,8 @@ Every command except ignite sets an absolute state, so sending it twice does no 
 
 ## Device information
 
-Command `01` is answered with 110 characters on the `mmWiFiBoxV2` **J** and with 130 on A's module.
-**A** Character positions after STX, as for the status frame:
+The answer to command `01` has 110 characters after the command id while no handset reports and 130
+while one does **J**; A's has 130. **A** Character positions after STX, as for the status frame:
 
 | Chars | Content |
 |---|---|
@@ -312,11 +315,14 @@ Command `01` is answered with 110 characters on the `mmWiFiBoxV2` **J** and with
 | 56-69 | The ASCII text `88.p131` on both, which looks like a firmware version |
 | 70-75 | Zeros |
 | 76-83 | `B844402C` on both |
-| 84- | Zeros to the end here. A's reply has `1D00FF` at 114-119 and the ASCII text `B6R-HATV4P` at 120-139 |
+| 84-113 | Zeros |
+| 114-119 | Zeros while no handset reports. With one, `3600FF` here **J** and `1D00FF` on A's |
+| 120-139 | Only there while a handset reports: its part number as ASCII, such as `B6R-H8TV4P` **G** or `B6R-HATV4P` **A** |
+| last 2 | `00` |
 
-`B6R-HATV4P` is a part number. A Gazco's reply holds `B6R-H8TV4P`, which G gives as the part number
-of its receiver. **G** The reply of the module measured here holds none; its handset was not
-reporting at the time. The integration reads none of these fields; it keeps the reply for its
+The text at 120-139 is the part number of the handset, cut to ten characters: the module only sends
+it while a handset reports, and it matches the label on the handset. **J** G gives it as the part
+number of the receiver. **G** The integration reads none of these fields; it keeps the reply for its
 diagnostics download, with the MAC address removed.
 
 ## What is not known
@@ -334,7 +340,7 @@ diagnostics download, with the MAC address removed.
 - The flags at chars 26-27 and the bits of the setup state.
 - The fields after the name. The vendor apps read an icon, the WiFi signal, the handset mode, pilot
   and burner voltages and the handset signal there. **D** The `mmWiFiBoxV2` ends its frame with three
-  bytes after a 32-byte name: `04`, a value that changes from one read to the next (`3E` to `44`
+  bytes after a 32-byte name: `04`, a value that changes from one read to the next (`3E` to `47`
   seen), and `01`. **J** A's module ends the same way, with the middle value between `3F` and `4D`.
   **A** That fits icon, WiFi signal and handset mode, but nobody has confirmed it.
 - Whether `B2FD` alone changes the target without entering thermostat mode.

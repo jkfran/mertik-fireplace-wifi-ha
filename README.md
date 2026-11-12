@@ -201,9 +201,11 @@ minutes and the fireplace kept burning. Turn it off with the handset and look fo
 receiver's batteries, or the WiFi module's link to it. The repair goes away when the fireplace is
 off.
 
-**Ambient Temperature is unknown.** No handset is reporting to the fireplace (the app shows F44).
-The *Remote* sensor tells you. A handset can show a temperature on its own display and still not
-report it: one was seen to report only while it shows APP, another not while the fire was off.
+**Ambient Temperature is unknown.** No handset is reporting to the fireplace (the app shows F44),
+and the *Remote* sensor reads disconnected. Check the handset's batteries, and that it is within
+range of the fireplace. A working handset reports by itself every few minutes, also while the fire
+is off, so the temperature comes back shortly after. Until then the thermostat can use any other
+temperature sensor, see [Thermostat](#thermostat).
 
 **The app stops working.** Some modules serve one connection at a time. The integration only
 connects for a moment every ten seconds, which leaves room for the app, but two apps open at once
