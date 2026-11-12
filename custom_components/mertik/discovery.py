@@ -104,7 +104,8 @@ def _discover(
                 for target in targets:
                     try:
                         sock.sendto(QUERY, (target, QUERY_PORT))
-                    except OSError as err:
+                    except (OSError, ValueError) as err:
+                        # ValueError: a target that is not an address at all.
                         _LOGGER.debug("Discovery query to %s failed: %s", target, err)
                 next_query = now + QUERY_INTERVAL
             try:

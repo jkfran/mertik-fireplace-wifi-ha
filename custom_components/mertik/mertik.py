@@ -698,7 +698,14 @@ class Mertik:
                     last = attempt == attempts
                     sent = False
                     try:
-                        connection = self._connect(self.ip, TCP_PORT, SOCKET_TIMEOUT)
+                        try:
+                            connection = self._connect(self.ip, TCP_PORT, SOCKET_TIMEOUT)
+                        except ValueError as err:
+                            # Not an address at all, such as the typo "192.168..1.4":
+                            # Python refuses it before anything is looked up.
+                            raise MertikConnectionError(
+                                f"{self.ip} is not a usable address: {err}"
+                            ) from err
                         try:
                             connection.sendall(payload)
                             sent = True

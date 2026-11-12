@@ -68,6 +68,9 @@ class Network:
                 self.modules[host] = Module(host=host, name=module.name, mac=module.mac)
 
     def connect(self, host: str, port: int, timeout: float):
+        if ".." in host:
+            # What Python does with an address like "192.168..1.4".
+            raise UnicodeError("label empty or too long")
         if host not in self.boxes:
             raise OSError("No route to host")
         return self.boxes[host].connect(host, port, timeout)

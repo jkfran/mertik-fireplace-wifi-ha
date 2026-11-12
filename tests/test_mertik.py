@@ -314,6 +314,17 @@ class TestStatusPoll:
         with pytest.raises(MertikConnectionError):
             Mertik("192.0.2.10", connect=box.connect, clock=clock, sleep=clock.sleep)
 
+    def test_address_that_is_not_one_is_a_connection_error(self, clock):
+        """A typo like "192.168..1.4" makes Python raise a ValueError, not an OSError."""
+
+        def connect(host, port, timeout):
+            raise UnicodeError("label empty or too long")
+
+        with pytest.raises(MertikConnectionError, match="not a usable address"):
+            Mertik("192.168..1.4", connect=connect, clock=clock, sleep=clock.sleep)
+        # Nothing to wait for: trying again cannot help.
+        assert clock.sleeps == []
+
     def test_connection_is_closed_after_an_error(self, fire, box):
         box.fail_sends = 2
         with pytest.raises(MertikConnectionError):

@@ -156,6 +156,16 @@ def test_discover_survives_a_network_without_broadcast() -> None:
     assert len(discover(0.05, socket_factory=lambda: sock)) == 1
 
 
+def test_discover_survives_a_target_that_is_not_an_address() -> None:
+    """A typo like "192.168..1.4" fails before anything is sent, with a ValueError."""
+
+    class PickySocket(FakeSocket):
+        def sendto(self, data: bytes, address: tuple[str, int]) -> None:
+            raise UnicodeError("label empty or too long")
+
+    assert discover_host("192.168..1.4", 0.05, socket_factory=PickySocket) is None
+
+
 def test_discover_survives_having_no_socket() -> None:
     def no_socket():
         raise OSError("Too many open files")

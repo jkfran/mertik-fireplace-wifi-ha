@@ -155,6 +155,18 @@ async def test_user_flow_cannot_connect(hass: HomeAssistant, network: Network) -
     assert result["type"] is FlowResultType.CREATE_ENTRY
 
 
+async def test_user_flow_with_a_mistyped_address(hass: HomeAssistant, network: Network) -> None:
+    """An address that is not one is an error on the form, not a crash."""
+    result = await start_user_flow(hass)
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_NAME: NAME, CONF_HOST: "192.168..1.4"}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "cannot_connect"}
+
+
 async def test_user_flow_suggests_the_module_not_set_up_yet(
     hass: HomeAssistant, entry, coordinator, network: Network
 ) -> None:
