@@ -13,6 +13,7 @@ Nothing here comes from the manufacturer. Each statement carries the letter of i
 | **G** | [`DaveJesse/mertik-fireplace-wifi-with-thermostat`](https://github.com/DaveJesse/mertik-fireplace-wifi-with-thermostat) `PROTOCOL.md`: measurements on a Gazco fireplace |
 | **V** | [`omarshahine/valor-fireplace-cli`](https://github.com/omarshahine/valor-fireplace-cli) `PROTOCOL.md` |
 | **T** | [`tritter/homebridge-mertik-fireplace`](https://github.com/tritter/homebridge-mertik-fireplace) |
+| **A** | [`ggreenland/alflex-b6r-hatv4p-protocol`](https://github.com/ggreenland/alflex-b6r-hatv4p-protocol): captures of what the Valor app and a Valor fireplace send each other. The values are taken from there; what they mean is this document's reading |
 | **S** | [`dsmagghe/mertik-ha`](https://github.com/dsmagghe/mertik-ha): discovery |
 | **O** | The original notes in this repository and [`djerik/mertik-ha`](https://github.com/djerik/mertik-ha) |
 
@@ -25,6 +26,8 @@ disagree or nobody measured, it says so. See [What is not known](#what-is-not-kn
 - A B6R-W2BE-0 serves one client at a time and pushes status frames on an open socket; a second
   client gets stale data or none. **D** The `mmWiFiBoxV2` answered a second client while Home
   Assistant held a connection, and pushed nothing while the fire was off. **J**
+- The Valor app keeps one connection open while it is in use and asks for the status about every
+  5 seconds. **A**
 - This integration opens one short connection per request and closes it again. That works on both
   kinds of module and leaves the vendor app room to connect.
 
@@ -49,7 +52,8 @@ reply:    STX  <header, 10 chars>  <command id, 2 chars>  <payload>  ETX
 ```
 
 - STX is `0x02`, ETX is `0x03`. As bytes, every request starts `02 33 30 33 30 33 30 33 30 38 30`. **O**
-- The reply header is `3030303000` or `0303000000`; the `mmWiFiBoxV2` sends the second. **O J**
+- The reply header is `3030303000` or `0303000000`; the `mmWiFiBoxV2` and A's module send the
+  second. **O J A**
 - The secondary burner commands are followed by a line feed (`0x0A`) after ETX. **O**
 - One read can hold several frames or part of one. Split on STX and ETX, drop anything before an STX,
   and take the newest status frame. **D**
@@ -78,8 +82,17 @@ The text after the request header:
 | `B2FD` + 4 hex | Thermostat target, degrees Celsius x10 (`00D7` = 21.5) | T V |
 | `B301` | Eco mode | O |
 
-Ids the vendor apps know that this integration does not send: `40` fan, `B1` countdown timer, `A0`
-week program, `06` clock, `05` name, `D1` settings, `C0`-`C2` fault history, `0C` reboot. **D O**
+Ids the vendor apps know that this integration does not send: `40` fan, `50` LED, `B1` countdown
+timer, `A0` week program, `06` clock, `05` name, `D1` settings, `C0`-`C2` fault history, `0C`
+reboot. **D O** Nobody has documented what the apps send with them.
+
+When they start, the apps read more than the status: `50FF00` and `50FF01`, by their id the two LED
+channels, and in the MyFire app `C2`, the last fault. **A G D** A Valor answered the first two with
+`000080FF00000A` and `000180FF00000A` whether the fire burned or not; **A** a Gazco answered none of
+the three within 3 seconds. **G** The Valor app also sends `FE00` and then `01` at its start and
+before a `1A`, half a second apart, and `FE00` does not always get an answer. **A** `FE` is one of
+the ids the apps use for the module itself; what it does here is not known. **D** The Home Assistant
+integrations, this one included, ignite with `1A` alone.
 
 ## Status frame
 
@@ -89,7 +102,7 @@ Character positions after STX:
 |---|---|---|
 | 0-9 | Header | |
 | 10-11 | Command id | `03` |
-| 12-13 | Setup state | Feature bits; `47` on the module measured here. Meaning of the bits unverified **D J** |
+| 12-13 | Setup state | Feature bits, see below |
 | 14-15 | Burner output | `00`-`FF`, see [Burner output](#burner-output) |
 | 16-19 | State word | 16 bits, see below |
 | 20-21 | Light level | Also reported with the light off **D** |
@@ -114,6 +127,14 @@ header     id |  |  |    |  |  |   |  |    target 20.0
               |  burner output
               setup state
 ```
+
+### Setup state
+
+In the vendor apps these are feature bits, in the order fan, light, aux, LED 0, LED 1, cloud, setup
+complete, timer. **D** Three values are known: `47` on the module measured here **J**, `C6` on a
+Gazco **G** and `5C` on a Valor. **A** With fan as the lowest bit, all three have "setup complete",
+the Gazco has light, aux and timer, and the Valor has aux and both LEDs, which its app asks for.
+That fits what is known of those fireplaces, but nobody has confirmed the order.
 
 ### State word
 
@@ -141,6 +162,11 @@ In this order: **D**
 2. `0x0010` set: **igniting**.
 3. `0x0080` clear: **off**. The burner output says nothing here: a cold fireplace can report `FF`.
 4. Burner output above `40`: **on**. Otherwise **standby** (pilot only).
+
+A Valor shows the same bits. In two ignitions the igniting bit was set for 19 and 24 seconds and
+cleared in the frame in which the pilot bit came on. After an off the pilot bit stayed for about 20
+seconds, and `0x0100` cleared in the same frame as it. The aux bit followed the secondary burner
+commands. **A**
 
 The receiver bit `0x8000` drops for 20 to 30 seconds during every ignition and shutdown, and the
 frames sent meanwhile are unreliable: the pilot bit and the burner output come and go. **D** Most
@@ -195,6 +221,9 @@ a reading is mapped to the nearest step. Measured values: **D**
 | Lowest real flame seen (handset "flame wave") | `69` |
 | Lowest and highest manual step | `80` and `FF` |
 
+The Valor app sets any output from `80` to `FF`, not only the twelve steps, and that Valor reported
+`76` and `7A` while it burned, which the app had not set. **A**
+
 ## Light
 
 The vendor app's slider sends levels `66` to `FF`. **D** On a Gazco fire the levels `63` and `66`
@@ -217,7 +246,9 @@ Measured on a Gazco fire: **G**
   acknowledged and ignored; 35 seconds later it worked. This integration refuses to ignite until the
   fire has read off for 15 seconds.
 
-Status requests are not control commands and can be sent at any time.
+Status requests are not control commands and can be sent at any time. A reply took at most 0.6
+seconds in the captures of the Valor app **A** and under 0.2 seconds on the `mmWiFiBoxV2` with the
+fire off. **J**
 
 ### What this integration sends, and when
 
@@ -248,13 +279,29 @@ Every command except ignite sets an absolute state, so sending it twice does no 
 
 ## Device information
 
-Command `01` is answered with 110 characters on the `mmWiFiBoxV2`. They contain the MAC address and
-the ASCII text `Z88.p131`, which looks like a firmware version. The layout is not decoded; the
-integration keeps the reply for its diagnostics download. **J**
+Command `01` is answered with 110 characters on the `mmWiFiBoxV2` **J** and with 130 on A's module.
+**A** Character positions after STX, as for the status frame:
+
+| Chars | Content |
+|---|---|
+| 12-25 | `00540000000005` on both |
+| 26-37 | The MAC address of the module |
+| 38-43 | `160205` here and `170116` on A's, which may be a date |
+| 44-53 | Zeros |
+| 54-55 | `5A` here, `F0` on A's |
+| 56-69 | The ASCII text `88.p131` on both, which looks like a firmware version |
+| 70-75 | Zeros |
+| 76-83 | `B844402C` on both |
+| 84- | Zeros to the end here. A's reply has `1D00FF` at 114-119 and the ASCII text `B6R-HATV4P` at 120-139 |
+
+`B6R-HATV4P` is a part number. A Gazco's reply holds `B6R-H8TV4P`, which G gives as the part number
+of its receiver. **G** The reply of the module measured here, which has no handset, holds none. The
+integration reads none of these fields; it keeps the reply for its diagnostics download, with the
+MAC address removed.
 
 ## What is not known
 
-- Whether everything above holds on fireplaces other than the three measured. Reports are welcome as
+- Whether everything above holds on fireplaces other than the four measured. Reports are welcome as
   an [issue](https://github.com/jkfran/mertik-fireplace-wifi-ha/issues): the integration's
   diagnostics download contains the last status frame and the device information reply, with the MAC
   address removed.
@@ -267,8 +314,9 @@ integration keeps the reply for its diagnostics download. **J**
 - The flags at chars 26-27 and the bits of the setup state.
 - The fields after the name. The vendor apps read an icon, the WiFi signal, the handset mode, pilot
   and burner voltages and the handset signal there. **D** The `mmWiFiBoxV2` ends its frame with three
-  bytes after a 32-byte name: `04`, a value that moved between `3E` and `41` within minutes, and
-  `01`. **J** That fits icon, WiFi signal and handset mode, but nobody has confirmed it.
+  bytes after a 32-byte name: `04`, a value that changes from one read to the next (`3E` to `44`
+  seen), and `01`. **J** A's module ends the same way, with the middle value between `3F` and `4D`.
+  **A** That fits icon, WiFi signal and handset mode, but nobody has confirmed it.
 - Whether `B2FD` alone changes the target without entering thermostat mode.
 - What a module does with a light level between the ones the app's slider can send.
 

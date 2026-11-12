@@ -253,8 +253,9 @@ on the work of people who measured their own fireplaces and published what they 
 - [@dsmagghe](https://github.com/dsmagghe): discovery and the MAC address as identity.
 - [@vanDonselaar](https://github.com/vanDonselaar) and [@fmarceau90](https://github.com/fmarceau90):
   standby and flame handling.
-- [`omarshahine/valor-fireplace-cli`](https://github.com/omarshahine/valor-fireplace-cli) and
-  [`tritter/homebridge-mertik-fireplace`](https://github.com/tritter/homebridge-mertik-fireplace).
+- [`omarshahine/valor-fireplace-cli`](https://github.com/omarshahine/valor-fireplace-cli),
+  [`tritter/homebridge-mertik-fireplace`](https://github.com/tritter/homebridge-mertik-fireplace)
+  and [`ggreenland/alflex-b6r-hatv4p-protocol`](https://github.com/ggreenland/alflex-b6r-hatv4p-protocol).
 
 ## Disclaimer
 
