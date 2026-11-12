@@ -254,9 +254,10 @@ integration keeps the reply for its diagnostics download. **J**
 
 ## What is not known
 
-- Whether everything above holds on fireplaces other than the three measured. Reports are welcome:
-  the integration's diagnostics download contains the last status frame and the device information
-  reply, with the MAC address removed.
+- Whether everything above holds on fireplaces other than the three measured. Reports are welcome as
+  an [issue](https://github.com/jkfran/mertik-fireplace-wifi-ha/issues): the integration's
+  diagnostics download contains the last status frame and the device information reply, with the MAC
+  address removed.
 - Whether any of it holds on the newest module. The vendor app's setup guide tells three generations
   apart by part number: B6R-W… (V1), B6R-W2… (V2) and B6R-W3… (V3), which the app finds over
   Bluetooth during setup. Every module whose part number was reported is a V1 or a V2.

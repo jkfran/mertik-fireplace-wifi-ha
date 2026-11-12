@@ -49,8 +49,12 @@ of the module, the last row here:
 The app's setup guide calls the B6R-W… boxes V1, the B6R-W2… boxes V2 and the B6R-W3… boxes V3. A
 V1 or V2 box with another ending than the ones in the table probably works too. The V3 box is the
 newer one, which the app finds over Bluetooth during setup. No report of one has reached this
-project, so whether it speaks the same protocol is not known. If you have one, or an app or a module
-that is not listed here, a report of what works is welcome.
+project, so whether it speaks the same protocol is not known.
+
+If you have a V3 box, or an app or a module that is not listed here, please
+[open an issue](https://github.com/jkfran/mertik-fireplace-wifi-ha/issues) and say what works.
+What this list needs is the name of the app, the part number on the label of the WiFi box, and
+whether the integration found the fireplace by itself.
 
 The WiFi module must be connected to your network (set that up with the manufacturer's app) and
 Home Assistant must be able to reach it on TCP port 2000. Home Assistant 2024.12 or newer.
@@ -203,9 +207,10 @@ The *Remote* sensor tells you.
 connects for a moment every ten seconds, which leaves room for the app, but two apps open at once
 can still get in each other's way.
 
-**Reporting a problem.** Download the diagnostics from the integration's page (**⋮ → Download
-diagnostics**) and include them. They hold the last status frame of your fireplace, which is what
-is needed to see what it reports. The IP and MAC addresses are removed.
+**Reporting a problem.** [Open an issue](https://github.com/jkfran/mertik-fireplace-wifi-ha/issues)
+and attach the diagnostics, which you download from the integration's page (**⋮ → Download
+diagnostics**). They hold the last status frame of your fireplace, which is what is needed to see
+what it reports. The IP and MAC addresses are removed.
 
 ## Upgrading from 1.x
 
