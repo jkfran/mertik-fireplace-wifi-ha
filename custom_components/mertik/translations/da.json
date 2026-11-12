@@ -145,6 +145,10 @@
     "receiver_lost": {
       "title": "{name}: ingen forbindelse til pejsen",
       "description": "Wifi-modulet til {name} svarer, men har mistet radioforbindelsen til modtageren i pejsen (appen viser det som F43). Kommandoer når ikke pejsen, før forbindelsen er tilbage. Kontrollér modtagerens strømforsyning eller batterier. Forbindelsen kommer som regel tilbage, når pejsen betjenes med fjernbetjeningen, eller strømmen slås fra og til."
+    },
+    "off_failed": {
+      "title": "{name} slukkede ikke",
+      "description": "Home Assistant bad {name} om at slukke, og fem minutter senere var det ikke sket. Kontrollér pejsen, og sluk den med fjernbetjeningen. Denne besked forsvinder, når pejsen er slukket."
     }
   }
 }

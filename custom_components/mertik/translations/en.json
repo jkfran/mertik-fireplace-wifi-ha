@@ -145,6 +145,10 @@
     "receiver_lost": {
       "title": "{name}: no connection to the fireplace",
       "description": "The WiFi module of {name} answers, but it has lost its radio link to the receiver in the fireplace (the app shows this as F43). Commands do not reach the fireplace until the link is back. Check the receiver's power supply or batteries. Operating the fireplace with its handset, or switching its power off and on, usually restores the link."
+    },
+    "off_failed": {
+      "title": "{name} did not turn off",
+      "description": "Home Assistant told {name} to turn off, and five minutes later the fireplace had not done so. Check the fireplace and turn it off with its handset. This message goes away once the fireplace is off."
     }
   }
 }

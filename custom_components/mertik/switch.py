@@ -11,7 +11,10 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .coordinator import MertikConfigEntry
 from .entity import MertikEntity
 
-PARALLEL_UPDATES = 1
+# Calls are not queued one behind the other here: an off must not wait for a
+# turn-on that is still being checked. The coordinator and the protocol layer
+# keep what is sent in order.
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(

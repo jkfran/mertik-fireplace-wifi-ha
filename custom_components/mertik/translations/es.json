@@ -145,6 +145,10 @@
     "receiver_lost": {
       "title": "{name}: sin conexión con la chimenea",
       "description": "El módulo wifi de {name} responde, pero ha perdido el enlace de radio con el receptor de la chimenea (la aplicación lo muestra como F43). Las órdenes no llegan a la chimenea hasta que vuelva el enlace. Comprueba la alimentación o las pilas del receptor. Usar la chimenea con su mando, o quitarle y devolverle la corriente, suele restablecer el enlace."
+    },
+    "off_failed": {
+      "title": "{name} no se ha apagado",
+      "description": "Home Assistant ordenó a {name} que se apagara, y cinco minutos después no lo había hecho. Comprueba la chimenea y apágala con su mando. Este mensaje desaparece cuando la chimenea está apagada."
     }
   }
 }

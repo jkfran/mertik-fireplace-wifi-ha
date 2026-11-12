@@ -278,6 +278,7 @@ async def test_refused_off_is_not_passed_off_as_done(
 
     # It is owed, and sent again after the next poll.
     del box.script["10"]
+    clock.advance(10)
     await poll(hass, coordinator)
     assert box.commands == ["10", "10", "10"]
     assert hass.states.get(switch).state == "off"
@@ -344,9 +345,18 @@ async def test_off_that_is_never_taken_is_given_up_loudly(
     with caplog.at_level(logging.ERROR):
         await poll(hass, coordinator)
 
-    assert "did not take the command to turn off" in caplog.text
-    # The switch shows the truth again.
+    assert "did not turn off within 5 minutes" in caplog.text
+    # The switch shows the truth again, and a repair says what happened.
     assert hass.states.get(switch).state == "on"
+    registry = ir.async_get(hass)
+    found = registry.async_get_issue(DOMAIN, f"off_failed_{coordinator.config_entry.entry_id}")
+    assert found is not None
+    assert found.severity is ir.IssueSeverity.ERROR
+
+    # It goes away when the fireplace is off at last.
+    fire.off()
+    await poll(hass, coordinator)
+    assert registry.async_get_issue(DOMAIN, found.issue_id) is None
 
 
 async def test_off_works_while_everything_else_is_unavailable(
@@ -616,7 +626,7 @@ async def test_sensor_that_stopped_reporting_is_not_heated_on(
     await call(hass, "climate", "set_temperature", CLIMATE, temperature=21)
     assert box.commands == ["16FF"]
 
-    freezer.tick(timedelta(minutes=61))
+    freezer.tick(timedelta(minutes=91))
     await poll(hass, coordinator)
     assert hass.states.get(CLIMATE).attributes["current_temperature"] is None
 
@@ -745,3 +755,416 @@ async def test_diagnostics_keep_the_raw_reply_back_without_a_known_mac(
     result = await async_get_config_entry_diagnostics(hass, entry)
 
     assert result["device_info"] == WITHHELD
+
+
+# --- Found by a second look at the fixes above -------------------------------------------
+
+
+async def test_status_frame_does_not_settle_an_off(
+    hass: HomeAssistant,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    switch: str,
+    status: str,
+) -> None:
+    """Boxes push their status unasked. That is not an answer, let alone obedience."""
+    fire.lit(12)
+    await settled(hass, coordinator, clock)
+    box.script["10"] = [framed(box.status)]
+
+    await call(hass, "switch", "turn_off", switch)
+    assert hass.states.get(switch).state == "off"  # told to; still owed
+    assert hass.states.get(status).state == "on"  # what the box reports
+
+    del box.script["10"]
+    clock.advance(10)
+    await poll(hass, coordinator)
+    assert box.commands == ["10", "10"]
+    assert hass.states.get(status).state == "shutting_down"
+
+
+async def test_off_stays_owed_while_the_fire_only_seems_off(
+    hass: HomeAssistant,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    switch: str,
+    status: str,
+) -> None:
+    """Someone has just started an ignition with the handset; it does not show yet."""
+    box.script["10"] = [framed(NO_RECEIVER)]
+    with pytest.raises(HomeAssistantError):
+        await call(hass, "switch", "turn_off", switch)
+    del box.script["10"]
+
+    clock.advance(5)
+    await poll(hass, coordinator)  # still reads off
+    sent = box.commands.count("10")
+
+    fire.set(igniting=True)
+    clock.advance(10)
+    await poll(hass, coordinator)
+
+    assert box.commands.count("10") == sent + 1
+    assert hass.states.get(status).state == "shutting_down"
+
+
+async def test_off_is_not_settled_by_a_reading_from_before_it(
+    hass: HomeAssistant,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    switch: str,
+) -> None:
+    """The receiver link is down: "off" is what the box said some time ago."""
+    fire.set(link=False)
+    await poll(hass, coordinator)
+    box.on_command = None
+
+    await call(hass, "switch", "turn_off", switch)
+    clock.advance(30)
+    await poll(hass, coordinator)
+
+    # The link returns, and the fire turns out to be burning.
+    fire.lit(12)
+    fire.set(link=True)
+    box.on_command = fire._on_command
+    clock.advance(10)
+    await poll(hass, coordinator)
+    assert box.commands[-1] == "10"
+    assert box.commands.count("10") >= 2
+
+
+async def test_failed_turn_on_does_not_call_an_owed_off_off(
+    hass: HomeAssistant,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    switch: str,
+) -> None:
+    """The switch reads unknown; a toggle from the dashboard is sent as "turn on"."""
+    fire.lit(12)
+    await settled(hass, coordinator, clock)
+    box.fail_connects = 99
+    with pytest.raises(HomeAssistantError):
+        await call(hass, "switch", "turn_off", switch)
+    with pytest.raises(HomeAssistantError):
+        await call(hass, "switch", "turn_on", switch)
+
+    box.fail_connects = 0
+    clock.advance(20)
+    await poll(hass, coordinator)
+    assert box.commands == ["10"]
+
+
+async def test_turn_on_calls_an_owed_off_off_when_the_fire_is_to_stay_on(
+    hass: HomeAssistant,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    switch: str,
+) -> None:
+    fire.lit(12)
+    await settled(hass, coordinator, clock)
+    box.script["10"] = [framed(NO_RECEIVER)]
+    with pytest.raises(HomeAssistantError):
+        await call(hass, "switch", "turn_off", switch)
+    refused = len(box.commands)
+
+    await call(hass, "switch", "turn_on", switch)  # changed their mind: leave it burning
+    del box.script["10"]
+    clock.advance(30)
+    await poll(hass, coordinator)
+
+    assert len(box.commands) == refused
+    assert hass.states.get(switch).state == "on"
+
+
+async def test_reload_keeps_what_the_box_cannot_vouch_for_apart(
+    hass: HomeAssistant,
+    entry,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    switch: str,
+    status: str,
+) -> None:
+    """A reload in the middle of an ignition, with the receiver link down."""
+    number = entity_id(hass, entry, "number", "FlameHeight")
+    await call(hass, "switch", "turn_on", switch)
+    await call(hass, "number", "set_value", number, value=4)
+    fire.set(link=False, igniting=False)  # reads "off", without the link
+    clock.advance(10)
+    await poll(hass, coordinator)
+
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = entry.runtime_data
+    assert hass.states.get(status).state == "igniting"
+
+    await call(hass, "switch", "turn_on", switch)
+    assert box.commands == ["1A"]
+
+    # What waited for the fire is still waiting.
+    fire.lit(12)
+    fire.set(link=True)
+    clock.advance(61)
+    await poll(hass, coordinator)
+    assert box.commands == ["1A", "16A2"]
+
+
+async def test_light_asked_for_during_a_failed_ignition_is_still_switched(
+    hass: HomeAssistant,
+    entry,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    switch: str,
+) -> None:
+    """The light does not need the fire, only a moment in which commands are taken."""
+    light = entity_id(hass, entry, "light", "Light")
+    await call(hass, "switch", "turn_on", switch)
+    await call(hass, "light", "turn_on", light)
+
+    fire.off()  # the pilot never caught
+    clock.advance(61)
+    await poll(hass, coordinator)
+
+    assert box.commands == ["1A", "3001"]
+    assert hass.states.get(light).state == "on"
+
+
+async def test_light_off_right_after_the_fire_is_turned_off(
+    hass: HomeAssistant,
+    entry,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    switch: str,
+) -> None:
+    """An automation: fireplace off, then its light off."""
+    light = entity_id(hass, entry, "light", "Light")
+    fire.lit(12)
+    fire.set(light=True, light_level=0xFB)
+    await settled(hass, coordinator, clock)
+
+    await call(hass, "switch", "turn_off", switch)
+    await call(hass, "light", "turn_off", light)  # no error; it follows
+    assert box.commands == ["10"]
+    assert hass.states.get(light).state == "off"
+
+    fire.off()
+    clock.advance(10)
+    await poll(hass, coordinator)
+    assert box.commands == ["10", "3000"]
+
+
+@pytest.fixture
+def swapped(
+    hass: HomeAssistant, network: Network, fire: FakeFireplace, clock: FakeClock
+) -> FakeBox:
+    """Another fireplace, burning, that will get this one's address."""
+    other = network.add("192.168.1.150", mac="00:23:3c:11:22:33")
+    FakeFireplace(other).lit(12)
+    return other
+
+
+async def test_no_command_goes_to_a_fireplace_that_took_the_address(
+    hass: HomeAssistant,
+    entry,
+    coordinator,
+    network: Network,
+    fire: FakeFireplace,
+    box: FakeBox,
+    swapped: FakeBox,
+    clock: FakeClock,
+    switch: str,
+    number: str,
+) -> None:
+    """Two fireplaces have swapped addresses and no poll has noticed yet."""
+    fire.lit(12)
+    await settled(hass, coordinator, clock)
+    network.swap(HOST, "192.168.1.150")
+    clock.advance(31)
+
+    with pytest.raises(HomeAssistantError) as error:
+        await call(hass, "number", "set_value", number, value=3)
+    assert error.value.translation_key == "wrong_device"
+    assert swapped.commands == []
+
+    # The entry is set up again at the fireplace's new address; from then on
+    # commands reach the right one.
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert entry.data[CONF_HOST] == "192.168.1.150"
+    await call(hass, "switch", "turn_off", switch)
+    assert box.commands == ["10"]
+    assert swapped.commands == []
+
+
+async def test_off_asked_for_at_a_swapped_address_reaches_the_right_fireplace(
+    hass: HomeAssistant,
+    entry,
+    coordinator,
+    network: Network,
+    fire: FakeFireplace,
+    box: FakeBox,
+    swapped: FakeBox,
+    clock: FakeClock,
+    switch: str,
+) -> None:
+    """The other fireplace is not turned off, and this one still is."""
+    fire.lit(12)
+    await settled(hass, coordinator, clock)
+    network.swap(HOST, "192.168.1.150")
+    clock.advance(31)
+
+    with pytest.raises(HomeAssistantError) as error:
+        await hass.services.async_call(
+            "switch", "turn_off", {"entity_id": switch}, blocking=True
+        )
+    assert error.value.translation_key == "wrong_device"
+    assert swapped.commands == []
+    assert box.commands == []
+
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert entry.data[CONF_HOST] == "192.168.1.150"
+    clock.advance(10)
+    await poll(hass, entry.runtime_data)
+    assert box.commands == ["10"]
+    assert swapped.commands == []
+
+
+async def test_thermostat_waits_for_the_fireplace_to_leave_its_own_mode(
+    hass: HomeAssistant,
+    with_sensor,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+) -> None:
+    """The box is slow to report manual mode after being told to switch to it."""
+    fire.lit(12)
+    fire.set(mode="2")
+    await settled(hass, coordinator, clock)
+    box.on_command = None  # acknowledged; eco is still what it reports
+
+    await call(hass, "climate", "set_hvac_mode", CLIMATE, hvac_mode="heat")
+    assert box.commands == ["B0"]
+    clock.advance(13)
+    await poll(hass, coordinator)
+    assert hass.states.get(CLIMATE).state == "heat"
+
+    # It follows after all, and regulating starts.
+    fire.set(mode="0")
+    set_room(hass, "25.0")
+    clock.advance(10)
+    await poll(hass, coordinator)
+    assert hass.states.get(CLIMATE).state == "heat"
+    assert box.commands == ["B0", "1600"]
+
+
+async def test_thermostat_gives_up_on_a_fireplace_that_stays_in_its_own_mode(
+    hass: HomeAssistant,
+    with_sensor,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+) -> None:
+    fire.lit(12)
+    fire.set(mode="2")
+    await settled(hass, coordinator, clock)
+    box.on_command = None
+
+    await call(hass, "climate", "set_hvac_mode", CLIMATE, hvac_mode="heat")
+    clock.advance(61)
+    await poll(hass, coordinator)
+
+    assert hass.states.get(CLIMATE).state == "off"
+    assert box.commands == ["B0"]
+
+
+async def test_command_given_while_a_refused_turn_on_is_checked_is_not_dropped_quietly(
+    hass: HomeAssistant,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    switch: str,
+    number: str,
+) -> None:
+    """It gets the answer the turn-on gets, instead of waiting for a fire that never comes."""
+    fire.set(pilot=True, shutting_down=True)  # the turn-on will be refused
+    started, release = threading.Event(), threading.Event()
+
+    def slow_status() -> list[bytes]:
+        started.set()
+        release.wait(5)
+        return [framed(box.status)]
+
+    box.script["03"] = slow_status
+    on = hass.async_create_task(
+        hass.services.async_call("switch", "turn_on", {"entity_id": switch}, blocking=True)
+    )
+    await hass.async_add_executor_job(started.wait, 5)
+    flame = hass.async_create_task(
+        hass.services.async_call(
+            "number", "set_value", {"entity_id": number, "value": 4}, blocking=True
+        )
+    )
+    await asyncio.sleep(0.1)
+    del box.script["03"]
+    release.set()
+
+    with pytest.raises(ServiceValidationError) as error:
+        await on
+    assert error.value.translation_key == "shutting_down"
+    with pytest.raises(ServiceValidationError) as error:
+        await flame
+    assert error.value.translation_key == "shutting_down"
+    assert box.commands == []
+
+
+async def test_off_that_arrives_while_a_turn_on_is_checked_wins(
+    hass: HomeAssistant,
+    coordinator,
+    fire: FakeFireplace,
+    box: FakeBox,
+    clock: FakeClock,
+    switch: str,
+) -> None:
+    """On, then off a moment later: the last word counts, and nothing is ignited."""
+    started, release = threading.Event(), threading.Event()
+
+    def slow_status() -> list[bytes]:
+        started.set()
+        release.wait(5)
+        return [framed(box.status)]
+
+    box.script["03"] = slow_status
+    on = hass.async_create_task(
+        hass.services.async_call("switch", "turn_on", {"entity_id": switch}, blocking=True)
+    )
+    await hass.async_add_executor_job(started.wait, 5)
+    off = hass.async_create_task(
+        hass.services.async_call("switch", "turn_off", {"entity_id": switch}, blocking=True)
+    )
+    await asyncio.sleep(0.1)
+    del box.script["03"]
+    release.set()
+    await on
+    await off
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert "1A" not in box.commands
+    assert box.commands == ["10"]
+    assert hass.states.get(switch).state == "off"

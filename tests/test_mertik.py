@@ -421,8 +421,8 @@ class TestAcknowledgements:
         before = clock.now
         fire.set_flame_height(1)
         assert box.commands == ["1680"]
-        # It waited a little for an acknowledgement, not the full timeout.
-        assert clock.now - before == pytest.approx(proto.ACK_AFTER_STATUS)
+        # It gave the acknowledgement, or a refusal, all the time they may take.
+        assert clock.now - before == pytest.approx(proto.ACK_TIMEOUT)
         assert fire.burner_output == 0x80
 
     def test_unanswered_command_is_sent_again(self, fire, box):
@@ -742,10 +742,21 @@ class TestShutdown:
             assert fire.state == expected
             clock.advance(10)
 
-    def test_off_cancels_a_pending_ignition(self, fire, box, clock):
+    def test_off_does_not_write_an_ignition_off(self, fire, box, clock):
+        """Acknowledged is not obeyed: a receiver that is igniting may go on.
+
+        "Off" from the box does not settle it either, as it also reads off
+        between two attempts. Only the ignition's own time running out does.
+        """
         fire.ignite_fireplace()
         clock.advance(3)
         fire.guard_flame_off()
+        fire.refresh_status()
+        assert fire.state == "igniting"
+        with pytest.raises(MertikStateError):
+            fire.ignite_fireplace()
+
+        clock.advance(proto.IGNITION_SETTLE)
         fire.refresh_status()
         assert fire.state == "off"
 
@@ -876,10 +887,16 @@ class TestNeverTwice:
         """A new object takes over from the old one, with an ignition under way."""
         fire.ignite_fireplace()
         clock.advance(4)
-        successor = Mertik("192.0.2.10", connect=box.connect, clock=clock, sleep=clock.sleep)
-        assert successor.state == "off"  # it cannot know by itself
+        blank = Mertik("192.0.2.10", connect=box.connect, clock=clock, sleep=clock.sleep)
+        assert blank.state == "off"  # it cannot know by itself
 
-        successor.restore_timing(fire.timing())
+        successor = Mertik(
+            "192.0.2.10",
+            connect=box.connect,
+            clock=clock,
+            sleep=clock.sleep,
+            memory=fire.memory(),
+        )
         assert successor.state == "igniting"
         with pytest.raises(MertikStateError):
             successor.ignite_fireplace()
@@ -1095,3 +1112,123 @@ class TestShutdownAndIgnitionSeenThroughALostLink:
         clock.advance(proto.IGNITION_SETTLE)
         fire.refresh_status()
         assert fire.state == "on"
+
+
+class TestSecondReview:
+    """What a second look at the fixes still found."""
+
+    def test_status_frame_does_not_confirm_an_off(self, burning, box, clock):
+        """Boxes push their status unasked; that is not the fireplace obeying."""
+        box.script["10"] = [framed(box.status)]
+        burning.guard_flame_off()  # sent; whether it was taken is not known
+        assert box.commands == ["10"]
+        assert burning.state == "on"
+
+    def test_refusal_long_after_a_pushed_status_frame_is_still_read(self, burning, box, clock):
+        # The status frame at once, the refusal after two silent seconds.
+        box.script["10"] = [framed(box.status)]
+        connect = box.connect
+
+        def slow_connect(host, port, timeout):
+            connection = connect(host, port, timeout)
+            original = connection.recv
+            calls = []
+
+            def recv(size):
+                calls.append(1)
+                if len(calls) == 2 and box.requests[-1] == "10":
+                    clock.advance(2.0)
+                    return framed(NO_RECEIVER)
+                return original(size)
+
+            connection.recv = recv
+            return connection
+
+        burning._connect = slow_connect
+        with pytest.raises(MertikReceiverError):
+            burning.guard_flame_off()
+
+    def test_successor_knows_the_box_marks_its_unreliable_frames(self, burning, box, clock):
+        """Otherwise a reload would take a frame without the link at face value."""
+        box.status = status_frame(output=0x00, word=0x0003)  # link down; reads "off"
+        successor = Mertik(
+            "192.0.2.10",
+            connect=box.connect,
+            clock=clock,
+            sleep=clock.sleep,
+            memory=burning.memory(),
+        )
+        assert successor.state == "on"
+        assert successor.link_down
+
+    def test_frames_without_the_link_do_not_keep_an_ignition_going_for_ever(self, fire, box, clock):
+        """One such frame a minute, and never long enough to count as lost."""
+        fire.ignite_fireplace()
+        states = set()
+        for minute in range(30):
+            box.status = status_frame(word=0x0003)
+            fire.refresh_status()
+            clock.advance(30)
+            box.status = status_frame(word=0x8003)
+            fire.refresh_status()
+            if minute >= 4:
+                states.add(fire.state)
+            clock.advance(30)
+        assert states == {"off"}
+
+    def test_frames_without_the_link_do_not_keep_a_shutdown_going_for_ever(self, burning, box, clock):
+        burning.guard_flame_off()
+        states = set()
+        for step in range(40):
+            word = 0x0083 if step % 2 else 0x8083  # the link flaps; the fire burns on
+            box.status = status_frame(output=0xFF, word=word)
+            burning.refresh_status()
+            if step >= 12:
+                states.add(burning.state)
+            clock.advance(10)
+        assert states == {"on"}
+
+    def test_retry_does_not_hold_the_line(self, burning, box, clock):
+        box.script["2001"] = [framed(NO_RECEIVER)]
+        free = []
+        original_sleep = clock.sleep
+
+        def sleep_and_probe(seconds):
+            def probe():
+                got = burning._lock.acquire(blocking=False)
+                if got:
+                    burning._lock.release()
+                free.append(got)
+
+            worker = threading.Thread(target=probe)
+            worker.start()
+            worker.join()
+            original_sleep(seconds)
+
+        burning._sleep = sleep_and_probe
+        with pytest.raises(MertikReceiverError):
+            burning.aux_on()
+        assert free and all(free)
+
+    def test_retry_is_dropped_if_the_fire_was_turned_off_meanwhile(self, burning, box, clock):
+        box.script["16AE"] = [framed(NO_RECEIVER)]
+        original_sleep = clock.sleep
+
+        def sleep_and_turn_off(seconds):
+            original_sleep(seconds)
+            if "10" not in box.commands:
+                burning._sleep = original_sleep
+                burning.guard_flame_off()
+
+        burning._sleep = sleep_and_turn_off
+        with pytest.raises(MertikStateError):
+            burning.set_flame_height(5)
+        assert box.commands == ["16AE", "10"]
+
+    def test_serial_counts_reliable_frames_only(self, burning, box, clock):
+        before = burning.status_serial
+        burning.refresh_status()
+        assert burning.status_serial == before + 1
+        box.status = status_frame(output=0xFF, word=0x0083)
+        burning.refresh_status()
+        assert burning.status_serial == before + 1

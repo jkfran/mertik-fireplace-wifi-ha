@@ -158,8 +158,9 @@ async def test_command_refused_for_lack_of_a_receiver(
     assert not isinstance(error.value, ServiceValidationError)
     assert error.value.translation_domain == DOMAIN
     assert error.value.translation_key == "no_receiver"
-    # Sent, refused, and tried once more.
-    assert box.commands == ["1697", "1697"]
+    # Sent and refused. Before trying again it looked at the box once more,
+    # which still had no receiver: nothing more is thrown at it.
+    assert box.commands == ["1697"]
 
 
 async def test_command_to_an_unreachable_box(

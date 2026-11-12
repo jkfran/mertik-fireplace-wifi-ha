@@ -145,6 +145,10 @@
     "receiver_lost": {
       "title": "{name} : pas de liaison avec le foyer",
       "description": "Le module Wi-Fi de {name} répond, mais il a perdu sa liaison radio avec le récepteur du foyer (l'application l'indique par F43). Les commandes n'atteignent plus le foyer tant que la liaison n'est pas rétablie. Vérifiez l'alimentation ou les piles du récepteur. Utiliser la télécommande du foyer, ou couper puis remettre le courant, rétablit généralement la liaison."
+    },
+    "off_failed": {
+      "title": "{name} ne s'est pas éteint",
+      "description": "Home Assistant a demandé à {name} de s'éteindre, et cinq minutes plus tard ce n'était pas fait. Vérifiez le foyer et éteignez-le avec sa télécommande. Ce message disparaît dès que le foyer est éteint."
     }
   }
 }

@@ -145,6 +145,10 @@
     "receiver_lost": {
       "title": "{name}: geen verbinding met de haard",
       "description": "De wifi-module van {name} antwoordt, maar heeft geen radioverbinding meer met de ontvanger in de haard (de app toont dit als F43). Opdrachten bereiken de haard niet tot de verbinding terug is. Controleer de voeding of batterijen van de ontvanger. De haard met de afstandsbediening bedienen, of de stroom even uit- en aanzetten, herstelt de verbinding meestal."
+    },
+    "off_failed": {
+      "title": "{name} is niet uitgegaan",
+      "description": "Home Assistant heeft {name} opdracht gegeven uit te gaan, en vijf minuten later was dat niet gebeurd. Controleer de haard en zet hem uit met de afstandsbediening. Dit bericht verdwijnt zodra de haard uit is."
     }
   }
 }

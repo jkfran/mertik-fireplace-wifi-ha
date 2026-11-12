@@ -123,10 +123,13 @@ async def test_off_shows_at_once_even_if_the_box_is_slow_to_report_it(
     await call(hass, "switch", "turn_off", switch)
     assert hass.states.get(status).state == "shutting_down"
 
-    # It does not stay that way for ever if the fire really keeps burning.
+    # It does not stay that way if the fire really keeps burning: the status
+    # shows what the box reports, and the off is sent again.
     clock.advance(21)
     await poll(hass, coordinator)
     assert hass.states.get(status).state == "on"
+    assert hass.states.get(switch).state == "off"
+    assert box.commands == ["10", "10"]
 
 
 async def test_turn_on_is_refused_while_shutting_down_and_just_after(

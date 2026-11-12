@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from functools import partial
 import logging
 
 from homeassistant.const import CONF_HOST, Platform
@@ -11,7 +12,12 @@ from homeassistant.helpers import config_validation as cv, issue_registry as ir
 from homeassistant.helpers.device_registry import DeviceEntry
 
 from .const import CONF_MAC, CONF_MODEL, DOMAIN
-from .coordinator import MertikConfigEntry, MertikDataCoordinator, issue_id
+from .coordinator import (
+    MertikConfigEntry,
+    MertikDataCoordinator,
+    issue_id,
+    off_failed_issue_id,
+)
 from .discovery import Module, discover, discover_host
 from .mertik import Mertik, MertikError
 
@@ -40,8 +46,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: MertikConfigEntry) -> bo
     known_mac = entry.data.get(CONF_MAC)
     mertik: Mertik | None = None
     module: Module | None = None
+    # After a reload: what the coordinator before this one knew. An ignition or
+    # a shutdown may be under way.
+    memory = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None) or {}
+    connect = partial(Mertik, memory=memory.get("protocol"))
     try:
-        mertik = await hass.async_add_executor_job(Mertik, host)
+        mertik = await hass.async_add_executor_job(connect, host)
     except MertikError as err:
         problem = f"Unable to connect to fireplace at {host}: {err}"
     else:
@@ -61,7 +71,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MertikConfigEntry) -> bo
             entry, data={**entry.data, CONF_HOST: moved.host}
         )
         try:
-            mertik = await hass.async_add_executor_job(Mertik, moved.host)
+            mertik = await hass.async_add_executor_job(connect, moved.host)
         except MertikError as err:
             raise ConfigEntryNotReady(
                 f"Unable to connect to fireplace at {moved.host}: {err}"
@@ -72,8 +82,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MertikConfigEntry) -> bo
     await hass.async_add_executor_job(mertik.read_device_info)
 
     coordinator = MertikDataCoordinator(hass, entry, mertik)
-    # After a reload: an ignition or a shutdown may be under way.
-    if (memory := hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)) is not None:
+    if memory:
         coordinator.restore(memory)
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -86,8 +95,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: MertikConfigEntry) -> b
         return False
     # What the next setup of this entry must know: without it a reload would
     # allow a second ignite into an ignition, or right after a shutdown.
-    if (memory := entry.runtime_data.memory()) is not None:
-        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = memory
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = entry.runtime_data.memory()
     ir.async_delete_issue(hass, DOMAIN, issue_id(entry))
     return True
 
@@ -95,6 +103,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: MertikConfigEntry) -> b
 async def async_remove_entry(hass: HomeAssistant, entry: MertikConfigEntry) -> None:
     """Forget a fireplace that is removed."""
     hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+    ir.async_delete_issue(hass, DOMAIN, off_failed_issue_id(entry))
 
 
 async def async_remove_config_entry_device(

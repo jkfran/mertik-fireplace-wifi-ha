@@ -97,6 +97,7 @@ def test_every_error_the_code_raises_has_a_text() -> None:
         "igniting",
         "no_handset",
         "receiver_lost",
+        "off_failed",
     }
     assert raised <= used
     assert raised == texts

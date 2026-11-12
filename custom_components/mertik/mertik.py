@@ -76,9 +76,8 @@ RETRY_DELAY = 1.0
 # After the burner output is changed the valve moves for a while; an aux command
 # sent meanwhile is refused.
 VALVE_SETTLE = 10.0
-# A box that answers with something else than what was asked for (a status
-# frame instead of an acknowledgement, or a stray "no receiver") gets this much
-# longer to send the real answer.
+# After a "no receiver" frame the box gets this much longer to acknowledge
+# after all: a stray one can precede the real answer.
 ACK_AFTER_STATUS = 1.0
 # After an off command the fireplace counts as shutting down for this long even
 # if the box still reports it on. Frames without the receiver link, which is
@@ -90,6 +89,10 @@ OFF_GRACE = 20.0
 # box reports: lit (it has to hold), or off (the receiver tries several times,
 # and reports off between two attempts).
 IGNITION_SETTLE = 60.0
+# Frames without the receiver link keep an ignition, or a shutdown, counting as
+# under way, but not for ever: at most this long after its last certain sign.
+IGNITION_LIMIT = 180.0
+SHUTDOWN_LIMIT = 90.0
 # The receiver link has to be missing for this long before it counts as lost;
 # it drops for 20-30 s during every ignition and shutdown.
 RECEIVER_LOST_AFTER = 45.0
@@ -390,8 +393,11 @@ class Mertik:
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
         refresh: bool = True,
+        memory: dict[str, Any] | None = None,
     ) -> None:
         """Set up the fireplace and, unless told otherwise, read its status once.
+
+        memory is what the object this one replaces knew (see memory()).
 
         Raises MertikConnectionError when that first read fails.
         """
@@ -408,11 +414,18 @@ class Mertik:
         self._link_seen = False
         self._link_down_since: float | None = None
         self._no_receiver_since: float | None = None
-        # An ignition, or a shutdown, is under way until these times.
+        # An ignition, or a shutdown, is under way until these times. The base
+        # is its last certain sign, which limits what uncertain ones can add.
         self._ignition_until: float | None = None
+        self._ignition_base: float | None = None
         self._shutdown_until: float | None = None
+        self._shutdown_base: float | None = None
         self._last_command_done: float | None = None
         self._valve_busy_until: float | None = None
+        # Counts the reliable frames taken over, to tell a fresh one from an old.
+        self.status_serial = 0
+        if memory:
+            self._recall(memory)
 
         if refresh:
             self.refresh_status()
@@ -620,13 +633,16 @@ class Mertik:
             CMD_IGNITE, resend=False, allowed=(STATE_OFF,), on_sent=self._note_ignition
         )
 
-    def guard_flame_off(self) -> None:
+    def guard_flame_off(self, *, assume_shutdown: bool = True) -> None:
         """Turn the fireplace off completely, pilot included.
 
         Sent whatever the state and the receiver link look like: turning off
-        must not depend on a reading being right.
+        must not depend on a reading being right. Once acknowledged the
+        fireplace counts as shutting down for a moment, unless told not to
+        assume that: a command that is being repeated because the fireplace
+        did not obey should not paint over what the box reports.
         """
-        self._request(CMD_OFF, on_done=self._note_shutdown)
+        self._request(CMD_OFF, on_done=self._note_shutdown if assume_shutdown else None)
 
     def standBy(self) -> None:  # noqa: N802 (kept: the name older code calls)
         """Turn the main burner down to the pilot. Does not light a cold fire."""
@@ -684,33 +700,57 @@ class Mertik:
 
     # --- What a reload has to keep ---------------------------------------------------
 
-    def timing(self) -> dict[str, float | None]:
-        """The waits in force, for an object that takes over from this one.
+    _REMEMBERED = (
+        "_status",
+        "_link_seen",
+        "_link_down_since",
+        "_no_receiver_since",
+        "_ignition_until",
+        "_ignition_base",
+        "_shutdown_until",
+        "_shutdown_base",
+        "_last_command_done",
+        "_valve_busy_until",
+    )
 
-        Without them a reload would forget an ignition or a shutdown under way
-        and allow a second ignite.
+    def memory(self) -> dict[str, Any]:
+        """What an object that takes over from this one has to know.
+
+        Without it a reload would forget an ignition or a shutdown under way,
+        and that this box marks the frames it cannot vouch for. Only good for
+        an object with the same clock.
         """
-        return {
-            "ignition_until": self._ignition_until,
-            "shutdown_until": self._shutdown_until,
-            "last_command_done": self._last_command_done,
-            "valve_busy_until": self._valve_busy_until,
-        }
+        return {name: getattr(self, name) for name in self._REMEMBERED}
 
-    def restore_timing(self, timing: dict[str, float | None]) -> None:
-        """Take over the waits of the object this one replaces (same clock)."""
-        self._ignition_until = timing.get("ignition_until")
-        self._shutdown_until = timing.get("shutdown_until")
-        self._last_command_done = timing.get("last_command_done")
-        self._valve_busy_until = timing.get("valve_busy_until")
+    def _recall(self, memory: dict[str, Any]) -> None:
+        for name in self._REMEMBERED:
+            if name in memory:
+                setattr(self, name, memory[name])
 
     def _note_ignition(self) -> None:
-        self._ignition_until = self._clock() + IGNITION_SETTLE
+        """A certain sign of an ignition: the command, or a reliable frame."""
+        now = self._clock()
+        self._ignition_base = now
+        self._ignition_until = now + IGNITION_SETTLE
         self._shutdown_until = None
 
     def _note_shutdown(self) -> None:
-        self._shutdown_until = self._clock() + OFF_GRACE
-        self._ignition_until = None
+        """An off command was acknowledged.
+
+        An ignition that was under way is not written off for that: the
+        receiver may have ignored the command, and whether it did only shows
+        once the ignition has run its time.
+        """
+        now = self._clock()
+        self._shutdown_base = now
+        self._shutdown_until = now + OFF_GRACE
+
+    def _extend(self, until: float | None, base: float | None, by: float, limit: float) -> float:
+        """Let an uncertain sign keep a wait going, within its limit."""
+        now = self._clock()
+        if base is None:
+            return now + by
+        return max(until or 0.0, min(now + by, base + limit))
 
     def _note_valve(self) -> None:
         self._valve_busy_until = self._clock() + VALVE_SETTLE
@@ -815,12 +855,16 @@ class Mertik:
                             handed_over,
                         ) from err
                     _LOGGER.debug("Request %s to %s failed (%s), retrying", command, self.ip, err)
-                    self._sleep(RETRY_DELAY)
+                    self._pause(RETRY_DELAY, control, command, allowed)
                     continue
 
                 if outcome == _ANSWERED:
                     if on_done is not None:
                         on_done()
+                    return
+                if outcome == _STATUS_ONLY:
+                    # The box answered, but did not acknowledge: taken as sent,
+                    # not as carried out.
                     return
                 if outcome == _NO_RECEIVER:
                     if not control:
@@ -835,7 +879,7 @@ class Mertik:
                             True,
                         )
                     _LOGGER.debug("Command %s answered with 'no receiver', retrying", command)
-                    self._sleep(COMMAND_GAP)
+                    self._pause(COMMAND_GAP, control, command, allowed)
                     continue
                 # No answer at all.
                 if last or not resend:
@@ -844,20 +888,36 @@ class Mertik:
                         True,
                     )
                 _LOGGER.debug("Request %s to %s not answered, retrying", command, self.ip)
-                self._sleep(RETRY_DELAY)
+                self._pause(RETRY_DELAY, control, command, allowed)
         finally:
             if control and handed_over:
                 self._last_command_done = self._clock()
             self._lock.release()
 
+    def _pause(
+        self, seconds: float, control: bool, command: str, allowed: tuple[str, ...] | None
+    ) -> None:
+        """Wait before trying a request again, leaving the line to others.
+
+        An off may have gone out meanwhile, so a command is checked again.
+        """
+        self._lock.release()
+        try:
+            self._sleep(seconds)
+        finally:
+            self._lock.acquire()
+        if control:
+            self._check_before_command(command, allowed)
+
     def _read_replies(self, connection: Any, command_id: str, control: bool) -> int:
         """Read frames until the request is answered or the time is up.
 
         A control command is answered by its acknowledgement. A "no receiver"
-        frame counts as the answer if no acknowledgement follows it (a stray one
-        can precede the real answer), and a status frame alone only if neither
-        came: some boxes may not acknowledge. A status or device info request
-        is answered by that frame.
+        frame counts as the answer if no acknowledgement follows it within a
+        moment (a stray one can precede the real answer). A status frame is
+        neither: boxes push those unasked. If nothing else comes in the time
+        allowed it is reported as such, for boxes that may not acknowledge.
+        A status or device info request is answered by that frame.
         """
         deadline = self._clock() + (ACK_TIMEOUT if control else SOCKET_TIMEOUT)
         buffer = ""
@@ -901,8 +961,8 @@ class Mertik:
                     answered = True
             if newest_status is not None:
                 self._process_status(newest_status)
-            if not answered and (no_receiver or status_seen) and not shortened:
-                # Not what was asked for; the real answer gets a moment more.
+            if not answered and no_receiver and not shortened:
+                # A refusal; an acknowledgement right behind it would overrule it.
                 shortened = True
                 deadline = min(deadline, self._clock() + ACK_AFTER_STATUS)
         if answered:
@@ -910,7 +970,7 @@ class Mertik:
         if no_receiver:
             return _NO_RECEIVER
         if control and status_seen:
-            return _ANSWERED
+            return _STATUS_ONLY
         return _UNANSWERED
 
     def _note_no_receiver(self) -> None:
@@ -934,17 +994,26 @@ class Mertik:
             if self._link_down_since is None:
                 self._link_down_since = now
             if self._shutdown_pending() or status.shutting_down:
-                self._note_shutdown()
-            elif (
+                if not self._shutdown_pending():
+                    self._shutdown_base = now
+                self._shutdown_until = self._extend(
+                    self._shutdown_until, self._shutdown_base, OFF_GRACE, SHUTDOWN_LIMIT
+                )
+            if (
                 self._ignition_pending()
                 or status.igniting
                 or (self._status is not None and self._status.igniting)
             ):
-                self._ignition_until = now + IGNITION_SETTLE
+                if not self._ignition_pending():
+                    self._ignition_base = now
+                self._ignition_until = self._extend(
+                    self._ignition_until, self._ignition_base, IGNITION_SETTLE, IGNITION_LIMIT
+                )
             return
 
         previous = self._status
         self._status = status
+        self.status_serial += 1
         state = status.state
         if state == STATE_IGNITING:
             self._note_ignition()
@@ -961,7 +1030,7 @@ class Mertik:
         ):
             # Lit without an ignition having been seen: it was started with the
             # handset and fell between two polls. It has to settle all the same.
-            self._ignition_until = now + IGNITION_SETTLE
+            self._note_ignition()
 
 
 _LIT = (STATE_ON, STATE_STANDBY)
