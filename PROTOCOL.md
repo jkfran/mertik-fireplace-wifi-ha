@@ -144,10 +144,26 @@ In this order: **D**
 4. Burner output above `40`: **on**. Otherwise **standby** (pilot only).
 
 The receiver bit `0x8000` drops for 20 to 30 seconds during every ignition and shutdown, and the
-frames sent meanwhile are unreliable: the pilot bit and the burner output come and go. **D** This
-integration keeps the last frame that had the bit, counts a fresh ignition as lit only after it has
-held for 60 seconds, and calls the link lost once the bit has been missing for 45 seconds without an
-ignition explaining it. A module that has never shown the bit is not judged on it.
+frames sent meanwhile are unreliable: the pilot bit and the burner output come and go. **D** In
+every such frame measured the igniting bit (`021A`, `001B`, `001D`) or the shutting-down bit
+(`0183`, `01C7`) was still set. **D G**
+
+What this integration makes of that:
+
+- A frame without the receiver bit is not taken over; the last frame that had it stays in force. A
+  module that has never shown the bit is not judged on it.
+- An **ignition** counts as under way until 60 seconds after its last sign: the ignite command, a
+  frame with the igniting bit (with or without the receiver bit), or a frame without the receiver
+  bit while igniting. Until then the fireplace reads as igniting whatever the box reports. That
+  covers the fire that is lit but has to hold, and the "off" the receiver reports between two of
+  its own attempts (see the table below).
+- A fire that reads lit where it read off a poll before was lit with the handset between two polls.
+  It gets the same 60 seconds.
+- A **shutdown** counts as under way for 20 seconds after an acknowledged off command, and the
+  count starts again with every frame that lacks the receiver bit or has the shutting-down bit.
+  A frame with the receiver bit that reads off ends it.
+- Once the receiver bit has been missing for 45 seconds, or the box has answered `E101` for that
+  long, the link counts as lost, whatever the reason.
 
 Frames from a relight on which the pilot only held at the third try: **D**
 
@@ -198,8 +214,26 @@ Measured on a Gazco fire: **G**
 
 Status requests are not control commands and can be sent at any time.
 
-Every command except ignite sets an absolute state, so sending it twice does no harm. Ignite is
-never repeated: a second one could restart an ignition that is under way.
+### What this integration sends, and when
+
+- **Ignite** only to a fireplace that reads off, with its status read a moment before, and never
+  twice: a second ignite could restart an ignition under way. From the moment the command is handed
+  to the connection the fireplace counts as igniting, also if no acknowledgement or an `E101` comes
+  back. The command may have arrived all the same, and a stray `E101` can precede the real answer.
+- **Off** always, whatever the state and the receiver bit say: turning off must not depend on a
+  reading being right. If it is not acknowledged it is sent again after every poll.
+- **Burner output, secondary burner, eco, thermostat** only while the fireplace reads on or standby.
+- **Light and manual mode** not while it ignites or shuts down.
+- Nothing but off while the receiver bit is missing: the box refuses it then, and commands sent at
+  such moments are what cost a receiver for 90 minutes.
+
+The state is looked at once the command has its turn on the line, so a flame command cannot slip in
+behind an off that was on its way.
+
+An `E101` counts as the answer only if no acknowledgement follows within a second, and it outranks a
+status frame: a box that pushes its status must not make a refused command look carried out.
+
+Every command except ignite sets an absolute state, so sending it twice does no harm.
 
 ## Device information
 

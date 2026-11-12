@@ -80,6 +80,12 @@ turn the fireplace on and set the flame in one go.
 ignited during a shutdown or in the first seconds after it; Home Assistant tells you so instead of
 sending a command the fireplace would ignore.
 
+Turning off is never dropped. A fireplace that is igniting refuses commands; if you turn it off in
+that minute, the switch reads off at once and the command is sent again after every poll until the
+fireplace shuts down. The same happens when the fireplace could not be reached: the command goes out
+as soon as it answers again, for up to five minutes. After that Home Assistant gives up and logs an
+error.
+
 **Standby.** Setting Flame Height to 0 turns the main burner off and leaves the pilot on. The
 fireplace still counts as on, and any flame height brings the burner back without a new ignition.
 
@@ -95,14 +101,15 @@ The Thermostat entity works in one of two ways.
 
 **With the handset (default).** It drives the fireplace's own thermostat mode, the one you set on
 the remote. The fireplace measures the room with the handset and adjusts its flame. Without a
-handset reporting to the fireplace there is no room temperature, and this cannot work.
+handset reporting a temperature the thermostat refuses to start and points you to the other way.
 
 **With any temperature sensor.** Under the integration's **Configure**, pick a temperature sensor.
 Home Assistant then regulates the flame itself: full flame when the room is a degree or more below
 the target, a low flame close to it, and down to the pilot once the room is warm enough. It changes
-the flame at most every two minutes, and goes down to the pilot when the sensor has been unavailable
-for five minutes. A sensor that silently keeps showing its last value cannot be told from a steady
-room, so pick one you trust.
+the flame at most every two minutes. It goes down to the pilot when the sensor has been unavailable
+for five minutes, or has not reported anything for an hour: a sensor with a dead battery keeps
+showing its last value. Choosing eco or thermostat mode on the handset ends it, so that two
+regulators never work against each other.
 
 Either way:
 
@@ -120,15 +127,22 @@ This integration controls a gas appliance.
 - It only ignites the fireplace when you, or an automation you wrote, turn the fireplace switch on.
   Nothing else in it lights a fire: not the thermostat, not a flame height, not a restart of Home
   Assistant.
-- An ignite command is never sent twice, and never to a fireplace that is already on.
+- The ignite command only goes to a fireplace whose status was read a moment before and says off.
+  It is never sent twice: once it has left, the fireplace counts as igniting for a minute, even if
+  no answer came back.
+- The fireplace switch never becomes unavailable, because Home Assistant does not pass commands on
+  to unavailable entities. While the fireplace cannot be reached it reads *unknown*, and turning it
+  off still works as described above.
+- While the fireplace ignites or shuts down, nothing but "off" is sent to it.
 - Think about who and what can reach that switch: voice assistants, dashboards on shared tablets,
   automations. Consider an automation that turns the fireplace off after a few hours.
 - It does not replace the fireplace's own safety devices or your attention.
 
 ## Troubleshooting
 
-**Entities are unavailable.** Either Home Assistant cannot reach the WiFi module (check its
-address under Reconfigure), or the module has lost its radio link to the receiver in the fireplace.
+**Entities are unavailable and the switch reads unknown.** Either Home Assistant cannot reach the
+WiFi module (check its address under Reconfigure), or the module has lost its radio link to the
+receiver in the fireplace.
 In the second case the *Receiver* sensor reads disconnected and a repair appears under **Settings →
 Repairs**; the manufacturer's app shows fault F43. Check the receiver's power or batteries. Using
 the handset, or switching the fireplace's power off and on, usually brings the link back.
